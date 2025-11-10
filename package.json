@@ -16,7 +16,7 @@
     "package": "npm run build && electron-builder"
   },
   "dependencies": {
-    "@meshtastic/js": "2.6.0-0",
+    "@meshtastic/js": "2.3.7-5",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
     "recharts": "^2.10.3",
