@@ -147,14 +147,63 @@ export class WebSerialRadioManager {
       this.statistics.radioStats[radioId] = { received: 0, sent: 0, errors: 0 };
       this.emit('radio-status-change', Array.from(this.radios.values()));
 
-      // TODO: Request node info from the device via serial commands
-      // For Meshtastic, we would send a request for device info here
-      // and populate radio.nodeInfo when we receive the response
+      // Initialize Meshtastic connection - tell the device we want to receive messages
+      if (writer) {
+        await this.initializeMeshtasticConnection(radioId, writer);
+      }
 
       return { success: true, radioId };
     } catch (error) {
       this.log('error', `Failed to connect to radio`, undefined, error);
       return { success: false, error: (error as Error).message };
+    }
+  }
+
+  private async initializeMeshtasticConnection(radioId: string, writer: WritableStreamDefaultWriter<Uint8Array>) {
+    this.log('info', 'Initializing Meshtastic connection - requesting configuration...', radioId);
+
+    try {
+      // Send "want config" message to initialize the connection
+      // This tells the radio to send us its config and start forwarding mesh messages
+      //
+      // Meshtastic protocol: ToRadio message with wantConfigId set to a unique ID
+      // For simplicity, we'll send a basic initialization packet
+
+      // Create a minimal ToRadio protobuf message
+      // Field 100: wantConfigId (varint) = current timestamp
+      const configId = Date.now() % 0xFFFFFFFF; // Use timestamp as config ID
+
+      // Protobuf encoding: field 100, wire type 0 (varint)
+      // Tag = (100 << 3) | 0 = 800 = 0x320
+      const tag1 = 0x90; // field 100 & 0x7F
+      const tag2 = 0x06; // field 100 >> 7
+
+      // Simple varint encoding of configId
+      const payload: number[] = [tag1, tag2];
+      let value = configId;
+      while (value > 127) {
+        payload.push((value & 0x7F) | 0x80);
+        value >>= 7;
+      }
+      payload.push(value & 0x7F);
+
+      // Build packet: magic (0x94) + length (2 bytes) + packet index + payload
+      const payloadLength = payload.length;
+      const packet = new Uint8Array(4 + payloadLength);
+      packet[0] = 0x94; // Magic byte
+      packet[1] = (payloadLength >> 8) & 0xFF; // Length MSB
+      packet[2] = payloadLength & 0xFF; // Length LSB
+      packet[3] = 0; // Packet index
+      packet.set(payload, 4);
+
+      this.log('info', `Sending wantConfigId=${configId} to radio`, radioId);
+      this.log('debug', `Init packet: ${Array.from(packet).map(b => b.toString(16).padStart(2, '0')).join(' ')}`, radioId);
+
+      await writer.write(packet);
+
+      this.log('info', 'Configuration request sent - radio should now send node info and mesh messages', radioId);
+    } catch (error) {
+      this.log('error', `Failed to initialize Meshtastic connection: ${(error as Error).message}`, radioId, error);
     }
   }
 
@@ -202,23 +251,18 @@ export class WebSerialRadioManager {
     // Update last seen timestamp
     radio.lastSeen = new Date();
 
-    // Log ALL incoming data for debugging
-    const hexPreview = Array.from(data.slice(0, Math.min(64, data.length)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join(' ');
-    this.log('debug', `RAW DATA (${data.length} bytes): ${hexPreview}${data.length > 64 ? '...' : ''}`, radioId);
-
-    // Check for any magic bytes in the data
+    // Check for any magic bytes in the data first
     let magicByteFound = false;
     for (let i = 0; i < data.length; i++) {
       if (data[i] === 0x94) {
         magicByteFound = true;
-        this.log('info', `Found magic byte 0x94 at offset ${i}`, radioId);
+        // Log incoming data only when we find a packet
+        const hexPreview = Array.from(data.slice(0, Math.min(64, data.length)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        this.log('info', `PACKET DATA (${data.length} bytes): ${hexPreview}${data.length > 64 ? '...' : ''}`, radioId);
+        break;
       }
-    }
-
-    if (!magicByteFound && data.length > 0) {
-      this.log('warn', `No magic bytes found in ${data.length} byte chunk`, radioId);
     }
 
     // Append to buffer for this radio
@@ -228,7 +272,9 @@ export class WebSerialRadioManager {
     newBuffer.set(data, existingBuffer.length);
     this.receiveBuffers.set(radioId, newBuffer);
 
-    this.log('debug', `Buffer now contains ${newBuffer.length} bytes total`, radioId);
+    if (magicByteFound) {
+      this.log('debug', `Buffer now contains ${newBuffer.length} bytes total`, radioId);
+    }
 
     // Try to parse packets from buffer
     this.parsePackets(radioId);
