@@ -112,8 +112,8 @@ function MessageMonitor({ messages, radios }: MessageMonitorProps) {
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-300 font-mono">{msg.from}</td>
                     <td className="px-4 py-3 text-sm text-slate-300 font-mono">{msg.to}</td>
-                    <td className="px-4 py-3 text-sm text-slate-300 max-w-xs truncate">
-                      {msg.payload?.text || JSON.stringify(msg.payload) || '-'}
+                    <td className="px-4 py-3 text-sm text-slate-300 max-w-xs truncate" title={msg.payload?.text || 'No text data'}>
+                      {msg.payload?.text || (msg.payload?.raw ? `[Binary: ${msg.payload.raw.length} bytes]` : '-')}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-300">{msg.channel}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{msg.portnum}</td>

@@ -16,6 +16,7 @@ export class WebSerialRadioManager {
   private startTime: Date;
   private messageTimestamps: Date[] = [];
   private listeners: Map<string, Set<Function>> = new Map();
+  private receiveBuffers: Map<string, Uint8Array> = new Map();
 
   constructor() {
     this.startTime = new Date();
@@ -158,31 +159,169 @@ export class WebSerialRadioManager {
     // Update last seen timestamp
     radio.lastSeen = new Date();
 
-    // Log raw data for debugging (first 32 bytes)
-    const preview = Array.from(data.slice(0, 32))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join(' ');
-    this.log('debug', `Received ${data.length} bytes: ${preview}${data.length > 32 ? '...' : ''}`, radioId);
+    // Append to buffer for this radio
+    const existingBuffer = this.receiveBuffers.get(radioId) || new Uint8Array(0);
+    const newBuffer = new Uint8Array(existingBuffer.length + data.length);
+    newBuffer.set(existingBuffer);
+    newBuffer.set(data, existingBuffer.length);
+    this.receiveBuffers.set(radioId, newBuffer);
 
-    // TODO: Implement Meshtastic protocol parsing here
-    // The Meshtastic protocol uses protobuf messages with a specific framing:
-    // 1. Magic byte (0x94 or 0x95)
-    // 2. Packet length (2 bytes)
-    // 3. Protobuf encoded message
-    //
-    // For now, we just acknowledge the data without creating fake messages.
-    // Real implementation would:
-    // - Parse the frame header
-    // - Decode the protobuf message
-    // - Extract sender, recipient, channel, payload
-    // - Create Message objects only for actual mesh messages
-    // - Forward to other radios based on bridge configuration
+    // Try to parse packets from buffer
+    this.parsePackets(radioId);
+  }
 
-    // Example: Check for potential Meshtastic packet
-    if (data.length > 0 && (data[0] === 0x94 || data[0] === 0x95)) {
-      this.log('debug', 'Potential Meshtastic packet detected (magic byte present)', radioId);
-      // In a real implementation, we would parse this packet here
+  private parsePackets(radioId: string) {
+    const radio = this.radios.get(radioId);
+    if (!radio) return;
+
+    let buffer = this.receiveBuffers.get(radioId);
+    if (!buffer || buffer.length === 0) return;
+
+    let offset = 0;
+    let packetsProcessed = 0;
+
+    while (offset < buffer.length) {
+      // Look for Meshtastic packet start (0x94 for binary mode)
+      if (buffer[offset] === 0x94) {
+        // Need at least 4 bytes for header (magic + msb + lsb + index)
+        if (offset + 4 > buffer.length) {
+          break; // Wait for more data
+        }
+
+        // Get packet length (16-bit big-endian)
+        const lengthMsb = buffer[offset + 1];
+        const lengthLsb = buffer[offset + 2];
+        const payloadLength = (lengthMsb << 8) | lengthLsb;
+
+        // Total packet size: magic (1) + length (2) + index (1) + payload + checksum (optional)
+        const totalPacketLength = 4 + payloadLength;
+
+        if (offset + totalPacketLength > buffer.length) {
+          break; // Wait for more data
+        }
+
+        // Extract packet
+        const packet = buffer.slice(offset, offset + totalPacketLength);
+        const packetIndex = buffer[offset + 3];
+        const payload = packet.slice(4);
+
+        this.log('info', `Parsed Meshtastic packet: index=${packetIndex}, length=${payloadLength}`, radioId);
+
+        // Log hex dump of payload
+        const hexDump = Array.from(payload.slice(0, Math.min(32, payload.length)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        this.log('debug', `Payload: ${hexDump}${payload.length > 32 ? '...' : ''}`, radioId);
+
+        // Try to parse as a mesh packet
+        this.parseMeshPacket(radioId, payload, packet);
+
+        offset += totalPacketLength;
+        packetsProcessed++;
+
+        // Update statistics
+        radio.messagesReceived++;
+        this.statistics.totalMessagesReceived++;
+        this.statistics.radioStats[radioId].received++;
+        this.messageTimestamps.push(new Date());
+
+      } else {
+        // Not a valid packet start, skip this byte
+        offset++;
+      }
     }
+
+    // Update buffer to remove processed data
+    if (offset > 0) {
+      this.receiveBuffers.set(radioId, buffer.slice(offset));
+    }
+
+    if (packetsProcessed > 0) {
+      this.emit('radio-status-change', Array.from(this.radios.values()));
+    }
+  }
+
+  private parseMeshPacket(radioId: string, payload: Uint8Array, rawPacket: Uint8Array) {
+    // Create a basic message structure
+    // Note: Full protobuf decoding would extract actual fields
+    // For now, we'll create a message with what we can determine
+
+    const message: Message = {
+      id: `${Date.now()}-${radioId}-${Math.random()}`,
+      timestamp: new Date(),
+      fromRadio: radioId,
+      from: 0, // Would be extracted from protobuf
+      to: 0,   // Would be extracted from protobuf
+      channel: 0, // Would be extracted from protobuf
+      portnum: 1, // TEXT_MESSAGE_APP
+      payload: {
+        raw: Array.from(payload)
+      },
+      forwarded: false,
+      duplicate: false,
+    };
+
+    // Try to extract text if it looks like a text message
+    // Text messages in protobuf often have readable strings
+    const textMatch = this.extractPossibleText(payload);
+    if (textMatch) {
+      message.payload.text = textMatch;
+      this.log('info', `Possible message text: "${textMatch}"`, radioId);
+    }
+
+    // Check for duplicate
+    const isDuplicate = this.isDuplicateMessage(message);
+    message.duplicate = isDuplicate;
+
+    if (isDuplicate) {
+      this.statistics.totalMessagesDuplicate++;
+      this.log('debug', 'Duplicate message detected', radioId);
+    } else {
+      this.messages.set(message.id, message);
+
+      // Forward if bridge is enabled
+      if (this.bridgeConfig.enabled) {
+        this.forwardMessage(radioId, message, rawPacket);
+      }
+    }
+
+    // Emit message event
+    this.emit('message-received', { radioId, message });
+  }
+
+  private extractPossibleText(data: Uint8Array): string | null {
+    // Look for printable ASCII sequences
+    let text = '';
+    let consecutivePrintable = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const byte = data[i];
+      // Printable ASCII (space through ~)
+      if (byte >= 0x20 && byte <= 0x7E) {
+        text += String.fromCharCode(byte);
+        consecutivePrintable++;
+      } else if (byte === 0x00 || byte === 0x0A || byte === 0x0D) {
+        // Null terminator or newline - might end a string
+        if (consecutivePrintable >= 3) {
+          break;
+        }
+      } else {
+        // Non-printable byte
+        if (consecutivePrintable >= 3) {
+          // We found a string, return it
+          break;
+        }
+        text = '';
+        consecutivePrintable = 0;
+      }
+    }
+
+    // Return text if we found a reasonable string
+    if (consecutivePrintable >= 3) {
+      return text.trim();
+    }
+
+    return null;
   }
 
   async disconnectRadio(radioId: string): Promise<{ success: boolean }> {
@@ -213,8 +352,6 @@ export class WebSerialRadioManager {
     }
   }
 
-  // Reserved for future use when Meshtastic protocol parsing is implemented
-  // @ts-expect-error - Function reserved for future Meshtastic protocol implementation
   private async forwardMessage(sourceRadioId: string, message: Message, rawData: Uint8Array) {
     const targetRadios = this.getTargetRadios(sourceRadioId);
 
@@ -268,8 +405,6 @@ export class WebSerialRadioManager {
     return targetRadios;
   }
 
-  // Reserved for future use when Meshtastic protocol parsing is implemented
-  // @ts-expect-error - Function reserved for future Meshtastic protocol implementation
   private isDuplicateMessage(message: Message): boolean {
     const existing = this.messages.get(message.id);
     if (!existing) return false;
