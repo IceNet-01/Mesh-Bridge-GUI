@@ -19,6 +19,7 @@ interface AppStore {
   disconnectRadio: (radioId: string) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
+  forceCloseAllPorts: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set) => {
@@ -92,6 +93,10 @@ export const useStore = create<AppStore>((set) => {
     clearLogs: () => {
       manager.clearLogs();
       set({ logs: [] });
+    },
+
+    forceCloseAllPorts: async () => {
+      await manager.forceCloseAllPorts();
     },
   };
 });

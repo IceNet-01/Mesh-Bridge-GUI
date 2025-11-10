@@ -61,6 +61,24 @@ export class WebSerialRadioManager {
 
   async scanForRadios(): Promise<SerialPort[]> {
     try {
+      // First, try to get already authorized ports and close them if open
+      const existingPorts = await navigator.serial.getPorts();
+      this.log('info', `Found ${existingPorts.length} previously authorized ports`);
+
+      for (const existingPort of existingPorts) {
+        try {
+          // Try to close any port that might be open from a previous session
+          if (existingPort.readable || existingPort.writable) {
+            this.log('warn', 'Closing previously open port...');
+            await existingPort.close();
+            this.log('info', 'Successfully closed stale port connection');
+          }
+        } catch (e) {
+          // Port wasn't open, that's fine
+          this.log('debug', 'Port was not open');
+        }
+      }
+
       // Request user to select a serial port (no filters - allow any device)
       const port = await navigator.serial.requestPort();
 
@@ -82,7 +100,7 @@ export class WebSerialRadioManager {
       const radioId = `radio-${Date.now()}`;
       const portInfo = port.getInfo();
 
-      this.log('info', `Attempting to connect to radio`);
+      this.log('info', `Attempting to connect to radio (VID:${portInfo.usbVendorId} PID:${portInfo.usbProductId})`);
 
       const radio: Radio = {
         id: radioId,
@@ -97,7 +115,19 @@ export class WebSerialRadioManager {
       this.radios.set(radioId, radio);
       this.emit('radio-status-change', Array.from(this.radios.values()));
 
-      // Open the serial port
+      // Try to close the port first if it's already open
+      try {
+        if (port.readable || port.writable) {
+          this.log('warn', 'Port appears to be open, attempting to close first...');
+          await port.close();
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait a bit
+        }
+      } catch (e) {
+        this.log('debug', 'Port was not previously open');
+      }
+
+      // Open the serial port with common Meshtastic baud rate
+      this.log('info', 'Opening serial port at 115200 baud...');
       await port.open({ baudRate: 115200 });
 
       const reader = port.readable?.getReader() || null;
@@ -129,18 +159,30 @@ export class WebSerialRadioManager {
   }
 
   private async startReading(radioId: string, reader: ReadableStreamDefaultReader<Uint8Array>) {
+    this.log('info', 'Started reading loop for radio', radioId);
+    let bytesReadTotal = 0;
+    let chunksRead = 0;
+
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
+          this.log('warn', 'Reader stream ended (done=true)', radioId);
           break;
         }
         if (value) {
+          bytesReadTotal += value.length;
+          chunksRead++;
+
+          if (chunksRead % 10 === 0) {
+            this.log('info', `Read ${chunksRead} chunks, ${bytesReadTotal} bytes total so far`, radioId);
+          }
+
           this.handleIncomingData(radioId, value);
         }
       }
     } catch (error) {
-      this.log('error', `Error reading from radio ${radioId}`, radioId, error);
+      this.log('error', `Error reading from radio ${radioId}: ${(error as Error).message}`, radioId, error);
       const radio = this.radios.get(radioId);
       if (radio) {
         radio.status = 'error';
@@ -148,6 +190,7 @@ export class WebSerialRadioManager {
         this.emit('radio-status-change', Array.from(this.radios.values()));
       }
     } finally {
+      this.log('info', `Exiting read loop. Total: ${bytesReadTotal} bytes in ${chunksRead} chunks`, radioId);
       reader.releaseLock();
     }
   }
@@ -159,12 +202,33 @@ export class WebSerialRadioManager {
     // Update last seen timestamp
     radio.lastSeen = new Date();
 
+    // Log ALL incoming data for debugging
+    const hexPreview = Array.from(data.slice(0, Math.min(64, data.length)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    this.log('debug', `RAW DATA (${data.length} bytes): ${hexPreview}${data.length > 64 ? '...' : ''}`, radioId);
+
+    // Check for any magic bytes in the data
+    let magicByteFound = false;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] === 0x94) {
+        magicByteFound = true;
+        this.log('info', `Found magic byte 0x94 at offset ${i}`, radioId);
+      }
+    }
+
+    if (!magicByteFound && data.length > 0) {
+      this.log('warn', `No magic bytes found in ${data.length} byte chunk`, radioId);
+    }
+
     // Append to buffer for this radio
     const existingBuffer = this.receiveBuffers.get(radioId) || new Uint8Array(0);
     const newBuffer = new Uint8Array(existingBuffer.length + data.length);
     newBuffer.set(existingBuffer);
     newBuffer.set(data, existingBuffer.length);
     this.receiveBuffers.set(radioId, newBuffer);
+
+    this.log('debug', `Buffer now contains ${newBuffer.length} bytes total`, radioId);
 
     // Try to parse packets from buffer
     this.parsePackets(radioId);
@@ -475,5 +539,35 @@ export class WebSerialRadioManager {
   clearLogs(): void {
     this.logs = [];
     this.log('info', 'Logs cleared');
+  }
+
+  async forceCloseAllPorts(): Promise<void> {
+    this.log('info', 'Force closing all serial ports...');
+
+    try {
+      const ports = await navigator.serial.getPorts();
+      this.log('info', `Found ${ports.length} authorized ports to close`);
+
+      for (const port of ports) {
+        try {
+          if (port.readable || port.writable) {
+            this.log('info', 'Closing port...');
+            await port.close();
+            this.log('info', 'Port closed successfully');
+          }
+        } catch (error) {
+          this.log('warn', `Failed to close port: ${(error as Error).message}`);
+        }
+      }
+
+      // Also disconnect all radios in our internal state
+      for (const radioId of this.radios.keys()) {
+        await this.disconnectRadio(radioId);
+      }
+
+      this.log('info', 'All ports closed');
+    } catch (error) {
+      this.log('error', 'Error during force close', undefined, error);
+    }
   }
 }
