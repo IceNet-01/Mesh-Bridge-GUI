@@ -21,7 +21,7 @@ interface AppStore {
   clearLogs: () => void;
 }
 
-export const useStore = create<AppStore>((set, get) => {
+export const useStore = create<AppStore>((set) => {
   const manager = new WebSerialRadioManager();
 
   // Set up event listeners
@@ -37,7 +37,7 @@ export const useStore = create<AppStore>((set, get) => {
     set(state => ({ logs: [...state.logs, log].slice(-1000) }));
   });
 
-  manager.on('message-received', ({ radioId, message }: { radioId: string; message: Message }) => {
+  manager.on('message-received', ({ message }: { radioId: string; message: Message }) => {
     set(state => ({ messages: [message, ...state.messages].slice(0, 500) }));
   });
 

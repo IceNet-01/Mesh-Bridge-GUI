@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
 import Dashboard from './components/Dashboard';
 import RadioList from './components/RadioList';
