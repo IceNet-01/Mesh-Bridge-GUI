@@ -4,6 +4,16 @@ A modern, feature-rich desktop application for managing Meshtastic radio bridge 
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
+
+## Version 2.0 - Modernized! 🚀
+
+**What's New:**
+- ✨ Updated to latest @meshtastic/js (2.6.0-0) with JSR support
+- ⚡ Electron 33 (latest) - improved performance & security
+- 📦 All dependencies updated to latest versions
+- 🔧 Proper JSR registry configuration for seamless installation
+- 🎯 No more deprecation warnings!
 
 ## Features
 
