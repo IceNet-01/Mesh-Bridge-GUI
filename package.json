@@ -12,8 +12,9 @@
     "serve": "vite preview --host"
   },
   "dependencies": {
-    "@meshtastic/js": "2.6.0-0",
+    "buffer": "^6.0.3",
     "recharts": "^2.13.3",
+    "stream-browserify": "^3.0.0",
     "zustand": "^5.0.1"
   },
   "devDependencies": {

@@ -46,4 +46,18 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  optimizeDeps: {
+    exclude: ['@meshtastic/js']
+  },
+  resolve: {
+    alias: {
+      // Polyfills for Node.js modules
+      stream: 'stream-browserify',
+      buffer: 'buffer',
+    }
+  },
+  define: {
+    'global': 'globalThis',
+    'process.env': {}
+  }
 });
