@@ -251,18 +251,24 @@ export class WebSerialRadioManager {
     // Update last seen timestamp
     radio.lastSeen = new Date();
 
-    // Check for any magic bytes in the data first
+    // ALWAYS log ALL incoming data for debugging
+    const hexPreview = Array.from(data.slice(0, Math.min(128, data.length)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    this.log('debug', `RAW SERIAL DATA (${data.length} bytes): ${hexPreview}${data.length > 128 ? '...' : ''}`, radioId);
+
+    // Check for magic byte
     let magicByteFound = false;
     for (let i = 0; i < data.length; i++) {
       if (data[i] === 0x94) {
         magicByteFound = true;
-        // Log incoming data only when we find a packet
-        const hexPreview = Array.from(data.slice(0, Math.min(64, data.length)))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(' ');
-        this.log('info', `PACKET DATA (${data.length} bytes): ${hexPreview}${data.length > 64 ? '...' : ''}`, radioId);
+        this.log('info', `✓ Found magic byte 0x94 at offset ${i} in ${data.length} byte chunk`, radioId);
         break;
       }
+    }
+
+    if (!magicByteFound && data.length > 0) {
+      this.log('warn', `✗ NO magic byte 0x94 found in ${data.length} bytes - not a valid packet frame`, radioId);
     }
 
     // Append to buffer for this radio
@@ -272,9 +278,7 @@ export class WebSerialRadioManager {
     newBuffer.set(data, existingBuffer.length);
     this.receiveBuffers.set(radioId, newBuffer);
 
-    if (magicByteFound) {
-      this.log('debug', `Buffer now contains ${newBuffer.length} bytes total`, radioId);
-    }
+    this.log('debug', `Buffer total: ${newBuffer.length} bytes (added ${data.length})`, radioId);
 
     // Try to parse packets from buffer
     this.parsePackets(radioId);
@@ -285,16 +289,25 @@ export class WebSerialRadioManager {
     if (!radio) return;
 
     let buffer = this.receiveBuffers.get(radioId);
-    if (!buffer || buffer.length === 0) return;
+    if (!buffer || buffer.length === 0) {
+      this.log('debug', 'Parse called but buffer is empty', radioId);
+      return;
+    }
+
+    this.log('debug', `Attempting to parse packets from ${buffer.length} byte buffer`, radioId);
 
     let offset = 0;
     let packetsProcessed = 0;
+    let bytesSkipped = 0;
 
     while (offset < buffer.length) {
       // Look for Meshtastic packet start (0x94 for binary mode)
       if (buffer[offset] === 0x94) {
+        this.log('debug', `Found packet start (0x94) at buffer offset ${offset}`, radioId);
+
         // Need at least 4 bytes for header (magic + msb + lsb + index)
         if (offset + 4 > buffer.length) {
+          this.log('debug', `Incomplete header: need 4 bytes, have ${buffer.length - offset}. Waiting for more data.`, radioId);
           break; // Wait for more data
         }
 
@@ -302,26 +315,37 @@ export class WebSerialRadioManager {
         const lengthMsb = buffer[offset + 1];
         const lengthLsb = buffer[offset + 2];
         const payloadLength = (lengthMsb << 8) | lengthLsb;
+        const packetIndex = buffer[offset + 3];
 
-        // Total packet size: magic (1) + length (2) + index (1) + payload + checksum (optional)
+        this.log('debug', `Packet header: index=${packetIndex}, payloadLength=${payloadLength}`, radioId);
+
+        // Sanity check payload length
+        if (payloadLength > 512) {
+          this.log('warn', `Suspicious payload length ${payloadLength} (>512). Skipping this byte.`, radioId);
+          offset++;
+          bytesSkipped++;
+          continue;
+        }
+
+        // Total packet size: magic (1) + length (2) + index (1) + payload
         const totalPacketLength = 4 + payloadLength;
 
         if (offset + totalPacketLength > buffer.length) {
+          this.log('debug', `Incomplete packet: need ${totalPacketLength} bytes, have ${buffer.length - offset}. Waiting for more data.`, radioId);
           break; // Wait for more data
         }
 
         // Extract packet
         const packet = buffer.slice(offset, offset + totalPacketLength);
-        const packetIndex = buffer[offset + 3];
         const payload = packet.slice(4);
 
-        this.log('info', `Parsed Meshtastic packet: index=${packetIndex}, length=${payloadLength}`, radioId);
+        this.log('info', `✓ Successfully parsed packet #${packetIndex}: ${payloadLength} bytes payload`, radioId);
 
-        // Log hex dump of payload
-        const hexDump = Array.from(payload.slice(0, Math.min(32, payload.length)))
+        // Log hex dump of first part of payload
+        const hexDump = Array.from(payload.slice(0, Math.min(64, payload.length)))
           .map(b => b.toString(16).padStart(2, '0'))
           .join(' ');
-        this.log('debug', `Payload: ${hexDump}${payload.length > 32 ? '...' : ''}`, radioId);
+        this.log('debug', `Payload hex: ${hexDump}${payload.length > 64 ? '...' : ''}`, radioId);
 
         // Try to parse as a mesh packet
         this.parseMeshPacket(radioId, payload, packet);
@@ -338,20 +362,27 @@ export class WebSerialRadioManager {
       } else {
         // Not a valid packet start, skip this byte
         offset++;
+        bytesSkipped++;
       }
     }
 
     // Update buffer to remove processed data
     if (offset > 0) {
       this.receiveBuffers.set(radioId, buffer.slice(offset));
+      this.log('debug', `Removed ${offset} bytes from buffer (${bytesSkipped} skipped, ${packetsProcessed} packets). ${buffer.length - offset} bytes remain.`, radioId);
     }
 
     if (packetsProcessed > 0) {
+      this.log('info', `📦 Processed ${packetsProcessed} packet(s) from buffer`, radioId);
       this.emit('radio-status-change', Array.from(this.radios.values()));
+    } else if (bytesSkipped > 0) {
+      this.log('warn', `Skipped ${bytesSkipped} non-packet bytes`, radioId);
     }
   }
 
   private parseMeshPacket(radioId: string, payload: Uint8Array, rawPacket: Uint8Array) {
+    this.log('debug', `Parsing mesh packet (${payload.length} bytes)...`, radioId);
+
     // Create a basic message structure
     // Note: Full protobuf decoding would extract actual fields
     // For now, we'll create a message with what we can determine
@@ -372,11 +403,14 @@ export class WebSerialRadioManager {
     };
 
     // Try to extract text if it looks like a text message
-    // Text messages in protobuf often have readable strings
+    this.log('debug', 'Attempting text extraction from payload...', radioId);
     const textMatch = this.extractPossibleText(payload);
+
     if (textMatch) {
       message.payload.text = textMatch;
-      this.log('info', `Possible message text: "${textMatch}"`, radioId);
+      this.log('info', `✓ EXTRACTED TEXT: "${textMatch}"`, radioId);
+    } else {
+      this.log('debug', '✗ No text found in payload', radioId);
     }
 
     // Check for duplicate
@@ -385,50 +419,85 @@ export class WebSerialRadioManager {
 
     if (isDuplicate) {
       this.statistics.totalMessagesDuplicate++;
-      this.log('debug', 'Duplicate message detected', radioId);
+      this.log('debug', 'Duplicate message detected - not processing', radioId);
     } else {
       this.messages.set(message.id, message);
+      this.log('info', `✓ New message created with ID: ${message.id}`, radioId);
 
       // Forward if bridge is enabled
       if (this.bridgeConfig.enabled) {
+        this.log('debug', 'Bridge enabled - attempting to forward message', radioId);
         this.forwardMessage(radioId, message, rawPacket);
       }
     }
 
     // Emit message event
+    this.log('debug', 'Emitting message-received event', radioId);
     this.emit('message-received', { radioId, message });
   }
 
   private extractPossibleText(data: Uint8Array): string | null {
-    // Look for printable ASCII sequences
-    let text = '';
-    let consecutivePrintable = 0;
+    // In Meshtastic protobuf, text is usually in a length-delimited field
+    // Wire type 2 (length-delimited) = tag & 0x07 === 2
+    // We'll scan for any length-delimited fields and check if they contain text
 
-    for (let i = 0; i < data.length; i++) {
+    const foundTexts: string[] = [];
+
+    for (let i = 0; i < data.length - 2; i++) {
       const byte = data[i];
-      // Printable ASCII (space through ~)
-      if (byte >= 0x20 && byte <= 0x7E) {
-        text += String.fromCharCode(byte);
-        consecutivePrintable++;
-      } else if (byte === 0x00 || byte === 0x0A || byte === 0x0D) {
-        // Null terminator or newline - might end a string
-        if (consecutivePrintable >= 3) {
-          break;
+
+      // Check if this could be a protobuf field tag
+      // Tag format: (field_number << 3) | wire_type
+      // Wire type 2 = length-delimited (strings, bytes, embedded messages)
+      if ((byte & 0x07) === 2) {
+        // This is a length-delimited field
+        // Next byte(s) are the length (varint encoded)
+        let length = 0;
+        let lengthBytes = 0;
+        let offset = i + 1;
+
+        // Decode varint length (simplified - handle up to 2 bytes)
+        if (offset < data.length) {
+          const firstByte = data[offset];
+          if (firstByte < 128) {
+            length = firstByte;
+            lengthBytes = 1;
+          } else if (offset + 1 < data.length) {
+            const secondByte = data[offset + 1];
+            length = ((firstByte & 0x7F) | ((secondByte & 0x7F) << 7));
+            lengthBytes = 2;
+          }
         }
-      } else {
-        // Non-printable byte
-        if (consecutivePrintable >= 3) {
-          // We found a string, return it
-          break;
+
+        // If length is reasonable (3-200 bytes), try to extract as text
+        if (length >= 3 && length <= 200 && offset + lengthBytes + length <= data.length) {
+          const textStart = offset + lengthBytes;
+          const textBytes = data.slice(textStart, textStart + length);
+
+          // Check if this looks like ASCII text
+          let isPrintable = true;
+          for (const b of textBytes) {
+            if (b < 0x20 || b > 0x7E) {
+              if (b !== 0x0A && b !== 0x0D && b !== 0x09) { // Allow newline, CR, tab
+                isPrintable = false;
+                break;
+              }
+            }
+          }
+
+          if (isPrintable) {
+            const text = String.fromCharCode(...textBytes).trim();
+            if (text.length >= 3) {
+              foundTexts.push(text);
+            }
+          }
         }
-        text = '';
-        consecutivePrintable = 0;
       }
     }
 
-    // Return text if we found a reasonable string
-    if (consecutivePrintable >= 3) {
-      return text.trim();
+    // Return the longest text found
+    if (foundTexts.length > 0) {
+      return foundTexts.reduce((a, b) => a.length > b.length ? a : b);
     }
 
     return null;
