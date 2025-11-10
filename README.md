@@ -1,19 +1,22 @@
-# Meshtastic Bridge GUI
+# Meshtastic Bridge PWA
 
-A modern, feature-rich desktop application for managing Meshtastic radio bridge relay stations. Built with Electron, React, and TypeScript.
+A modern, lightweight **Progressive Web App** for managing Meshtastic radio bridge relay stations. Built with React, TypeScript, and Web Serial API.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Opera-lightgrey.svg)
 ![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
+![Type](https://img.shields.io/badge/type-PWA-purple.svg)
 
-## Version 2.0 - Modernized! 🚀
+## Version 2.0 - PWA Architecture! 🚀
 
-**What's New:**
-- ✨ Updated to latest @meshtastic/js (2.6.0-0) with JSR support
-- ⚡ Electron 33 (latest) - improved performance & security
-- 📦 All dependencies updated to latest versions
-- 🔧 Proper JSR registry configuration for seamless installation
-- 🎯 No more deprecation warnings!
+**Major Redesign:**
+- 🌐 **No Installation Required** - runs directly in your browser!
+- ⚡ **Lightning Fast** - no Electron overhead (~100MB saved)
+- 🔌 **Web Serial API** - direct USB access from browser
+- 📱 **Installable PWA** - add to home screen like a native app
+- 🔄 **Offline Support** - works without internet connection
+- ✨ Latest @meshtastic/js (2.6.0-0) with JSR support
+- 🎯 Modern Zustand state management
 
 ## Features
 
@@ -55,28 +58,20 @@ A modern, feature-rich desktop application for managing Meshtastic radio bridge 
 
 ### Prerequisites
 
-- Node.js 18+ and npm
-- A Meshtastic device connected via USB
+- **Modern Browser**: Chrome 89+, Edge 89+, or Opera 75+ (Desktop)
+- **Meshtastic Device**: Connected via USB
+- **HTTPS**: Web Serial API requires secure context (localhost works for development)
 
 ### Installation
 
-#### Option 1: Download Pre-built Binary (Easiest)
+#### Option 1: Hosted Version (Easiest)
 
-1. Go to the [Releases](https://github.com/IceNet-01/Mesh-Bridge-GUI/releases) page
-2. Download the appropriate file for your platform:
-   - **Windows**: `Meshtastic-Bridge-GUI-Setup-X.X.X.exe` or portable version
-   - **macOS**: `Meshtastic-Bridge-GUI-X.X.X.dmg`
-   - **Linux**: `Meshtastic-Bridge-GUI-X.X.X.AppImage` or `.deb`
-3. Install or run the application
-4. The app will auto-update when new versions are available!
+1. Visit **https://mesh-bridge.example.com** (coming soon)
+2. Click "Connect Radio" and select your Meshtastic device
+3. Grant USB access permission
+4. That's it! Bookmark it or install as PWA
 
-#### Option 2: One-Line Installer (Linux/macOS)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/IceNet-01/Mesh-Bridge-GUI/main/install.sh | bash
-```
-
-#### Option 3: Build from Source
+#### Option 2: Run Locally
 
 ```bash
 # Clone the repository
@@ -86,12 +81,24 @@ cd Mesh-Bridge-GUI
 # Install dependencies
 npm install
 
-# Run in development mode
+# Run development server
 npm run dev
 
-# Or build for production
+# Open in browser
+# Navigate to http://localhost:5173
+```
+
+#### Option 3: Build & Deploy
+
+```bash
+# Build for production
 npm run build
-npm run package
+
+# The dist/ folder contains the static PWA
+# Deploy to any static hosting (Netlify, Vercel, GitHub Pages, etc.)
+
+# Or preview locally
+npm run preview
 ```
 
 ## Usage

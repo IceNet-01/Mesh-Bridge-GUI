@@ -1,19 +1,17 @@
-import { BrowserWindow } from 'electron';
-import { SerialPort } from 'serialport';
 import { ISerialConnection } from '@meshtastic/js';
-import { Radio, BridgeConfig, Message, Statistics, LogEntry, PortInfo, BridgeRoute } from './types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig } from '../types';
 
-export class RadioManager {
+export class WebSerialRadioManager {
   private radios: Map<string, Radio> = new Map();
-  private messages: Map<string, Message> = new Map(); // For deduplication
+  private messages: Map<string, Message> = new Map();
   private logs: LogEntry[] = [];
   private statistics: Statistics;
   private bridgeConfig: BridgeConfig;
   private startTime: Date;
   private messageTimestamps: Date[] = [];
-  private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private listeners: Map<string, Set<Function>> = new Map();
 
-  constructor(private mainWindow: BrowserWindow | null) {
+  constructor() {
     this.startTime = new Date();
     this.statistics = {
       uptime: 0,
@@ -28,7 +26,7 @@ export class RadioManager {
     this.bridgeConfig = {
       enabled: true,
       bridges: [],
-      deduplicationWindow: 60, // 60 seconds
+      deduplicationWindow: 60,
       autoReconnect: true,
       reconnectDelay: 5000,
       maxReconnectAttempts: 10,
@@ -38,38 +36,51 @@ export class RadioManager {
     setInterval(() => this.updateStatistics(), 1000);
   }
 
-  async scanForRadios(): Promise<PortInfo[]> {
-    try {
-      const ports = await SerialPort.list();
-      this.log('info', `Found ${ports.length} serial ports`);
+  // Event emitter pattern
+  on(event: string, callback: Function) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback);
+  }
 
-      // Filter for likely Meshtastic devices
-      const meshtasticPorts = ports.filter(port => {
-        const manufacturer = port.manufacturer?.toLowerCase() || '';
-        const pnpId = port.pnpId?.toLowerCase() || '';
-        return manufacturer.includes('silicon labs') ||
-               manufacturer.includes('cp210') ||
-               manufacturer.includes('ch340') ||
-               pnpId.includes('usb');
+  off(event: string, callback: Function) {
+    this.listeners.get(event)?.delete(callback);
+  }
+
+  private emit(event: string, data?: any) {
+    this.listeners.get(event)?.forEach(callback => callback(data));
+  }
+
+  async scanForRadios(): Promise<SerialPort[]> {
+    try {
+      // Request user to select a serial port
+      const port = await navigator.serial.requestPort({
+        filters: [
+          { usbVendorId: 0x10C4 }, // Silicon Labs
+          { usbVendorId: 0x1A86 }, // CH340
+        ]
       });
 
-      this.log('info', `Found ${meshtasticPorts.length} potential Meshtastic devices`);
-      return meshtasticPorts;
+      this.log('info', 'Serial port selected by user');
+      return [port];
     } catch (error) {
       this.log('error', 'Failed to scan for radios', undefined, error);
       return [];
     }
   }
 
-  async connectRadio(port: string): Promise<{ success: boolean; radioId?: string; error?: string }> {
+  async connectRadio(port: SerialPort): Promise<{ success: boolean; radioId?: string; error?: string }> {
     try {
-      this.log('info', `Attempting to connect to radio on ${port}`);
-
       const radioId = `radio-${Date.now()}`;
+      const portInfo = port.getInfo();
+
+      this.log('info', `Attempting to connect to radio`);
+
       const radio: Radio = {
         id: radioId,
-        port,
-        name: `Radio ${port}`,
+        port: `USB:${portInfo.usbVendorId}:${portInfo.usbProductId}`,
+        name: `Radio ${this.radios.size + 1}`,
         status: 'connecting',
         messagesReceived: 0,
         messagesSent: 0,
@@ -77,9 +88,9 @@ export class RadioManager {
       };
 
       this.radios.set(radioId, radio);
-      this.notifyStatusChange();
+      this.emit('radio-status-change', Array.from(this.radios.values()));
 
-      // Initialize Meshtastic connection
+      // Initialize Meshtastic connection with Web Serial
       const connection = new ISerialConnection();
 
       connection.addEventListener('fromRadio', (event: any) => {
@@ -90,8 +101,9 @@ export class RadioManager {
         this.handleDeviceStatus(radioId, event.data);
       });
 
+      // Connect using the Web Serial port
       await connection.connect({
-        port,
+        port: port as any,
         baudRate: 115200,
         concurrentLogOutput: false,
       });
@@ -100,13 +112,13 @@ export class RadioManager {
       radio.status = 'connected';
       radio.lastSeen = new Date();
 
-      this.log('info', `Successfully connected to radio on ${port}`, radioId);
+      this.log('info', `Successfully connected to radio`, radioId);
       this.statistics.radioStats[radioId] = { received: 0, sent: 0, errors: 0 };
-      this.notifyStatusChange();
+      this.emit('radio-status-change', Array.from(this.radios.values()));
 
       return { success: true, radioId };
     } catch (error) {
-      this.log('error', `Failed to connect to radio on ${port}`, undefined, error);
+      this.log('error', `Failed to connect to radio`, undefined, error);
       return { success: false, error: (error as Error).message };
     }
   }
@@ -118,13 +130,6 @@ export class RadioManager {
         return { success: false };
       }
 
-      // Clear reconnect timer if any
-      const timer = this.reconnectTimers.get(radioId);
-      if (timer) {
-        clearTimeout(timer);
-        this.reconnectTimers.delete(radioId);
-      }
-
       if (radio.connection) {
         await radio.connection.disconnect();
       }
@@ -133,7 +138,7 @@ export class RadioManager {
       delete this.statistics.radioStats[radioId];
 
       this.log('info', `Disconnected radio ${radio.name}`, radioId);
-      this.notifyStatusChange();
+      this.emit('radio-status-change', Array.from(this.radios.values()));
 
       return { success: true };
     } catch (error) {
@@ -151,7 +156,6 @@ export class RadioManager {
     this.statistics.totalMessagesReceived++;
     this.statistics.radioStats[radioId].received++;
 
-    // Track message rate
     this.messageTimestamps.push(new Date());
 
     const message: Message = {
@@ -167,7 +171,6 @@ export class RadioManager {
       duplicate: false,
     };
 
-    // Check for duplicates
     const isDuplicate = this.isDuplicateMessage(message);
     message.duplicate = isDuplicate;
 
@@ -175,24 +178,20 @@ export class RadioManager {
       this.statistics.totalMessagesDuplicate++;
       this.log('debug', `Duplicate message detected from ${message.from}`, radioId);
     } else {
-      // Store for deduplication
       this.messages.set(message.id, message);
 
-      // Forward message if bridging is enabled
       if (this.bridgeConfig.enabled) {
         this.forwardMessage(radioId, message, messageData);
       }
     }
 
-    // Notify renderer
-    this.send('message-received', { radioId, message });
+    this.emit('message-received', { radioId, message });
   }
 
   private handleDeviceStatus(radioId: string, statusData: any) {
     const radio = this.radios.get(radioId);
     if (!radio) return;
 
-    // Update radio info
     if (statusData.batteryLevel !== undefined) {
       radio.batteryLevel = statusData.batteryLevel;
     }
@@ -206,7 +205,7 @@ export class RadioManager {
       radio.airUtilTx = statusData.airUtilTx;
     }
 
-    this.notifyStatusChange();
+    this.emit('radio-status-change', Array.from(this.radios.values()));
   }
 
   private forwardMessage(sourceRadioId: string, message: Message, rawData: any) {
@@ -218,7 +217,6 @@ export class RadioManager {
       }
 
       try {
-        // Forward the message
         targetRadio.connection.sendPacket(rawData);
 
         targetRadio.messagesSent++;
@@ -229,17 +227,12 @@ export class RadioManager {
         message.toRadio = targetRadio.id;
 
         this.log('debug', `Forwarded message from ${sourceRadioId} to ${targetRadio.id}`);
-        this.send('message-forwarded', { sourceRadioId, targetRadioId: targetRadio.id, message });
+        this.emit('message-forwarded', { sourceRadioId, targetRadioId: targetRadio.id, message });
       } catch (error) {
         targetRadio.errors++;
         this.statistics.radioStats[targetRadio.id].errors++;
         this.statistics.totalErrors++;
         this.log('error', `Failed to forward message to ${targetRadio.id}`, targetRadio.id, error);
-
-        // Auto-reconnect if enabled
-        if (this.bridgeConfig.autoReconnect) {
-          this.scheduleReconnect(targetRadio.id);
-        }
       }
     }
   }
@@ -271,39 +264,13 @@ export class RadioManager {
     return timeDiff < this.bridgeConfig.deduplicationWindow * 1000;
   }
 
-  private scheduleReconnect(radioId: string, attempt: number = 1) {
-    if (attempt > this.bridgeConfig.maxReconnectAttempts) {
-      this.log('error', `Max reconnection attempts reached for ${radioId}`, radioId);
-      return;
-    }
-
-    const radio = this.radios.get(radioId);
-    if (!radio) return;
-
-    const delay = this.bridgeConfig.reconnectDelay * Math.pow(2, attempt - 1);
-    this.log('info', `Scheduling reconnect for ${radioId} in ${delay}ms (attempt ${attempt})`, radioId);
-
-    const timer = setTimeout(async () => {
-      this.log('info', `Reconnecting ${radioId}...`, radioId);
-      const result = await this.connectRadio(radio.port);
-
-      if (!result.success) {
-        this.scheduleReconnect(radioId, attempt + 1);
-      }
-    }, delay);
-
-    this.reconnectTimers.set(radioId, timer);
-  }
-
   private updateStatistics() {
     this.statistics.uptime = Math.floor((Date.now() - this.startTime.getTime()) / 1000);
 
-    // Calculate message rate (messages per minute)
     const oneMinuteAgo = new Date(Date.now() - 60000);
     this.messageTimestamps = this.messageTimestamps.filter(t => t > oneMinuteAgo);
     this.statistics.messageRatePerMinute = this.messageTimestamps.length;
 
-    // Clean old messages for deduplication
     const cutoff = Date.now() - this.bridgeConfig.deduplicationWindow * 1000;
     for (const [id, msg] of this.messages.entries()) {
       if (msg.timestamp.getTime() < cutoff) {
@@ -311,7 +278,7 @@ export class RadioManager {
       }
     }
 
-    this.send('statistics-update', this.statistics);
+    this.emit('statistics-update', this.statistics);
   }
 
   private log(level: LogEntry['level'], message: string, radioId?: string, data?: any) {
@@ -325,30 +292,19 @@ export class RadioManager {
 
     this.logs.push(entry);
 
-    // Keep only last 1000 logs
     if (this.logs.length > 1000) {
       this.logs = this.logs.slice(-1000);
     }
 
     console[level === 'error' ? 'error' : 'log'](`[${level.toUpperCase()}] ${message}`, data);
-    this.send('log-message', entry);
+    this.emit('log-message', entry);
   }
 
-  private notifyStatusChange() {
-    this.send('radio-status-change', this.getRadios());
-  }
-
-  private send(channel: string, data: any) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
-    }
-  }
-
-  // Public API methods
+  // Public API
   getRadios(): Radio[] {
     return Array.from(this.radios.values()).map(radio => ({
       ...radio,
-      connection: undefined, // Don't send connection object to renderer
+      connection: undefined,
     }));
   }
 

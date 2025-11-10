@@ -1,27 +1,20 @@
 {
   "name": "meshtastic-bridge-gui",
   "version": "2.0.0",
-  "description": "Modern desktop GUI for Meshtastic radio bridge relay station",
-  "main": "dist/main/main.js",
+  "description": "Modern PWA for managing Meshtastic radio bridge relay stations",
+  "type": "module",
   "author": "IceNet-01",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
-    "dev:renderer": "vite",
-    "dev:main": "tsc -p tsconfig.main.json && electron .",
-    "build:renderer": "vite build",
-    "build:main": "tsc -p tsconfig.main.json",
-    "build": "npm run build:renderer && npm run build:main",
-    "start": "electron .",
-    "package": "npm run build && electron-builder",
-    "postinstall": "electron-builder install-app-deps"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "serve": "vite preview --host"
   },
   "dependencies": {
     "@meshtastic/js": "2.6.0-0",
-    "electron-store": "^10.0.0",
-    "electron-updater": "^6.3.9",
     "recharts": "^2.13.3",
-    "serialport": "^12.0.0"
+    "zustand": "^5.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -29,42 +22,13 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
-  },
-  "build": {
-    "appId": "com.icenet.meshtastic-bridge",
-    "productName": "Meshtastic Bridge GUI",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "package.json",
-      ".npmrc"
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "IceNet-01",
-      "repo": "Mesh-Bridge-GUI"
-    },
-    "linux": {
-      "target": ["AppImage", "deb"],
-      "category": "Network"
-    },
-    "win": {
-      "target": ["nsis", "portable"]
-    },
-    "mac": {
-      "target": ["dmg", "zip"],
-      "category": "public.app-category.utilities"
-    }
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.20.5",
+    "workbox-window": "^7.3.0"
   }
 }
