@@ -32,7 +32,13 @@ function App() {
       await scanAndConnectRadio();
     } catch (error) {
       console.error('Failed to connect radio:', error);
-      alert('Failed to connect radio. Make sure you have a Meshtastic device connected and your browser supports Web Serial API.');
+      const errorMessage = (error as Error).message || 'Unknown error';
+
+      if (errorMessage.includes('cancel') || errorMessage.includes('NotFoundError')) {
+        console.log('User canceled serial port selection');
+      } else {
+        alert(`Failed to connect radio: ${errorMessage}\n\nMake sure:\n- Your Meshtastic device is connected via USB\n- You granted permission to access the serial port\n- No other application is using the device`);
+      }
     }
   };
 

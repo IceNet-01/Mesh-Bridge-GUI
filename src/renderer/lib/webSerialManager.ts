@@ -60,18 +60,18 @@ export class WebSerialRadioManager {
 
   async scanForRadios(): Promise<SerialPort[]> {
     try {
-      // Request user to select a serial port
-      const port = await navigator.serial.requestPort({
-        filters: [
-          { usbVendorId: 0x10C4 }, // Silicon Labs
-          { usbVendorId: 0x1A86 }, // CH340
-        ]
-      });
+      // Request user to select a serial port (no filters - allow any device)
+      const port = await navigator.serial.requestPort();
 
       this.log('info', 'Serial port selected by user');
       return [port];
     } catch (error) {
-      this.log('error', 'Failed to scan for radios', undefined, error);
+      // User likely canceled the dialog or no permission
+      if ((error as Error).name === 'NotFoundError') {
+        this.log('warn', 'No serial port selected - user canceled');
+      } else {
+        this.log('error', 'Failed to scan for radios', undefined, error);
+      }
       return [];
     }
   }

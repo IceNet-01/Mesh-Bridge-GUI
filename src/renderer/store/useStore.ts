@@ -65,13 +65,18 @@ export const useStore = create<AppStore>((set) => {
     },
 
     scanAndConnectRadio: async () => {
-      try {
-        const ports = await manager.scanForRadios();
-        if (ports.length > 0) {
-          await manager.connectRadio(ports[0]);
-        }
-      } catch (error) {
-        console.error('Failed to connect radio:', error);
+      const ports = await manager.scanForRadios();
+      console.log('Scanned ports:', ports);
+
+      if (ports.length === 0) {
+        throw new Error('No serial port selected. Please select a device when prompted.');
+      }
+
+      const result = await manager.connectRadio(ports[0]);
+      console.log('Connection result:', result);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to connect to radio');
       }
     },
 
