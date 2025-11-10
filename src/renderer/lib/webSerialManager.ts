@@ -410,30 +410,30 @@ export class WebSerialRadioManager {
       message.payload.text = textMatch;
       this.log('info', `✓ EXTRACTED TEXT: "${textMatch}"`, radioId);
     } else {
-      this.log('debug', '✗ No text found in payload', radioId);
+      this.log('warn', `✗ No text found in payload - showing first 32 bytes as hex`, radioId);
+      // Add hex representation so we can see what we got
+      const hexPreview = Array.from(payload.slice(0, 32))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join(' ');
+      message.payload.text = `[HEX: ${hexPreview}${payload.length > 32 ? '...' : ''}]`;
     }
 
-    // Check for duplicate
-    const isDuplicate = this.isDuplicateMessage(message);
-    message.duplicate = isDuplicate;
+    // DISABLE duplicate detection for now - show ALL packets
+    this.messages.set(message.id, message);
+    this.log('info', `✓ CREATED MESSAGE with ID: ${message.id}`, radioId);
 
-    if (isDuplicate) {
-      this.statistics.totalMessagesDuplicate++;
-      this.log('debug', 'Duplicate message detected - not processing', radioId);
-    } else {
-      this.messages.set(message.id, message);
-      this.log('info', `✓ New message created with ID: ${message.id}`, radioId);
-
-      // Forward if bridge is enabled
-      if (this.bridgeConfig.enabled) {
-        this.log('debug', 'Bridge enabled - attempting to forward message', radioId);
-        this.forwardMessage(radioId, message, rawPacket);
-      }
+    // Forward if bridge is enabled
+    if (this.bridgeConfig.enabled) {
+      this.log('debug', 'Bridge enabled - attempting to forward message', radioId);
+      this.forwardMessage(radioId, message, rawPacket);
     }
 
-    // Emit message event
-    this.log('debug', 'Emitting message-received event', radioId);
+    // ALWAYS emit message event
+    this.log('info', `📨 EMITTING message-received event for message ID: ${message.id}`, radioId);
     this.emit('message-received', { radioId, message });
+
+    // Extra verification
+    this.log('info', `📊 Total messages in store: ${this.messages.size}`, radioId);
   }
 
   private extractPossibleText(data: Uint8Array): string | null {
@@ -584,13 +584,14 @@ export class WebSerialRadioManager {
     return targetRadios;
   }
 
-  private isDuplicateMessage(message: Message): boolean {
-    const existing = this.messages.get(message.id);
-    if (!existing) return false;
-
-    const timeDiff = message.timestamp.getTime() - existing.timestamp.getTime();
-    return timeDiff < this.bridgeConfig.deduplicationWindow * 1000;
-  }
+  // Temporarily disabled for debugging - re-enable once message visibility is confirmed
+  // private isDuplicateMessage(message: Message): boolean {
+  //   const existing = this.messages.get(message.id);
+  //   if (!existing) return false;
+  //
+  //   const timeDiff = message.timestamp.getTime() - existing.timestamp.getTime();
+  //   return timeDiff < this.bridgeConfig.deduplicationWindow * 1000;
+  // }
 
   private updateStatistics() {
     this.statistics.uptime = Math.floor((Date.now() - this.startTime.getTime()) / 1000);
