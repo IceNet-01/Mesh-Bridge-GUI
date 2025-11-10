@@ -88,6 +88,7 @@ function MessageMonitor({ messages, radios }: MessageMonitorProps) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">From Radio</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Sender</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Recipient</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Message</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Channel</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Port</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
@@ -96,7 +97,7 @@ function MessageMonitor({ messages, radios }: MessageMonitorProps) {
             <tbody className="divide-y divide-slate-700/50">
               {filteredMessages.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                     No messages to display
                   </td>
                 </tr>
@@ -111,6 +112,9 @@ function MessageMonitor({ messages, radios }: MessageMonitorProps) {
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-300 font-mono">{msg.from}</td>
                     <td className="px-4 py-3 text-sm text-slate-300 font-mono">{msg.to}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300 max-w-xs truncate">
+                      {msg.payload?.text || JSON.stringify(msg.payload) || '-'}
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-300">{msg.channel}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{msg.portnum}</td>
                     <td className="px-4 py-3">

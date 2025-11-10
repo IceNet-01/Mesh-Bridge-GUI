@@ -116,16 +116,9 @@ export class WebSerialRadioManager {
       this.statistics.radioStats[radioId] = { received: 0, sent: 0, errors: 0 };
       this.emit('radio-status-change', Array.from(this.radios.values()));
 
-      // Simulate receiving node info after connection
-      setTimeout(() => {
-        radio.nodeInfo = {
-          nodeId: `!${Math.random().toString(36).substring(2, 10)}`,
-          longName: `Meshtastic ${Math.floor(Math.random() * 9999)}`,
-          shortName: `M${Math.floor(Math.random() * 99)}`,
-          hwModel: 'UNKNOWN'
-        };
-        this.emit('radio-status-change', Array.from(this.radios.values()));
-      }, 1000);
+      // TODO: Request node info from the device via serial commands
+      // For Meshtastic, we would send a request for device info here
+      // and populate radio.nodeInfo when we receive the response
 
       return { success: true, radioId };
     } catch (error) {
@@ -162,43 +155,34 @@ export class WebSerialRadioManager {
     const radio = this.radios.get(radioId);
     if (!radio) return;
 
-    // NOTE: Full Meshtastic protocol parsing would go here
-    // For now, we'll simulate message reception
-
-    radio.messagesReceived++;
+    // Update last seen timestamp
     radio.lastSeen = new Date();
-    this.statistics.totalMessagesReceived++;
-    this.statistics.radioStats[radioId].received++;
-    this.messageTimestamps.push(new Date());
 
-    // Simulate a parsed message
-    const message: Message = {
-      id: `${Date.now()}-${Math.random()}`,
-      timestamp: new Date(),
-      fromRadio: radioId,
-      from: Math.floor(Math.random() * 1000000000),
-      to: Math.floor(Math.random() * 1000000000),
-      channel: 0,
-      portnum: 1,
-      payload: { text: 'Message from Meshtastic device' },
-      forwarded: false,
-      duplicate: false,
-    };
+    // Log raw data for debugging (first 32 bytes)
+    const preview = Array.from(data.slice(0, 32))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    this.log('debug', `Received ${data.length} bytes: ${preview}${data.length > 32 ? '...' : ''}`, radioId);
 
-    const isDuplicate = this.isDuplicateMessage(message);
-    message.duplicate = isDuplicate;
+    // TODO: Implement Meshtastic protocol parsing here
+    // The Meshtastic protocol uses protobuf messages with a specific framing:
+    // 1. Magic byte (0x94 or 0x95)
+    // 2. Packet length (2 bytes)
+    // 3. Protobuf encoded message
+    //
+    // For now, we just acknowledge the data without creating fake messages.
+    // Real implementation would:
+    // - Parse the frame header
+    // - Decode the protobuf message
+    // - Extract sender, recipient, channel, payload
+    // - Create Message objects only for actual mesh messages
+    // - Forward to other radios based on bridge configuration
 
-    if (isDuplicate) {
-      this.statistics.totalMessagesDuplicate++;
-    } else {
-      this.messages.set(message.id, message);
-
-      if (this.bridgeConfig.enabled) {
-        this.forwardMessage(radioId, message, data);
-      }
+    // Example: Check for potential Meshtastic packet
+    if (data.length > 0 && (data[0] === 0x94 || data[0] === 0x95)) {
+      this.log('debug', 'Potential Meshtastic packet detected (magic byte present)', radioId);
+      // In a real implementation, we would parse this packet here
     }
-
-    this.emit('message-received', { radioId, message });
   }
 
   async disconnectRadio(radioId: string): Promise<{ success: boolean }> {
@@ -229,6 +213,8 @@ export class WebSerialRadioManager {
     }
   }
 
+  // Reserved for future use when Meshtastic protocol parsing is implemented
+  // @ts-expect-error - Function reserved for future Meshtastic protocol implementation
   private async forwardMessage(sourceRadioId: string, message: Message, rawData: Uint8Array) {
     const targetRadios = this.getTargetRadios(sourceRadioId);
 
@@ -282,6 +268,8 @@ export class WebSerialRadioManager {
     return targetRadios;
   }
 
+  // Reserved for future use when Meshtastic protocol parsing is implemented
+  // @ts-expect-error - Function reserved for future Meshtastic protocol implementation
   private isDuplicateMessage(message: Message): boolean {
     const existing = this.messages.get(message.id);
     if (!existing) return false;
