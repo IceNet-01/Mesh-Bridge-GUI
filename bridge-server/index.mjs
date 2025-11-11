@@ -186,8 +186,9 @@ class MeshtasticBridgeServer {
 
       // Create Meshtastic device
       const device = new MeshDevice(transport);
+      console.log(`📻 MeshDevice created for ${radioId}, configuring...`);
 
-      // Subscribe to connection status events
+      // Subscribe to connection status events BEFORE configuring
       device.events.onDeviceStatus.subscribe((status) => {
         console.log(`📊 Radio ${radioId} status:`, status);
 
@@ -219,6 +220,15 @@ class MeshtasticBridgeServer {
       device.events.onNodeInfoPacket.subscribe((node) => {
         console.log(`ℹ️  Radio ${radioId} node info:`, node);
       });
+
+      // Configure the device (required for message flow)
+      console.log(`⚙️  Configuring radio ${radioId}...`);
+      await device.configure();
+      console.log(`✅ Radio ${radioId} configured successfully`);
+
+      // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
+      device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
+      console.log(`💓 Heartbeat enabled for radio ${radioId}`);
 
       // Store radio reference
       this.radios.set(radioId, {
