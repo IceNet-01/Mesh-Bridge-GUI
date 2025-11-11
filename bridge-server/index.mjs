@@ -26,6 +26,8 @@ class MeshtasticBridgeServer {
     this.clients = new Set(); // WebSocket clients
     this.messageHistory = [];
     this.maxHistorySize = 500;
+    this.seenMessageIds = new Set(); // Track message IDs for deduplication
+    this.maxSeenMessages = 1000; // Limit size of seen messages set
   }
 
   /**
@@ -320,6 +322,21 @@ class MeshtasticBridgeServer {
       const text = packet.data;
 
       if (text && typeof text === 'string' && text.length > 0) {
+        // Check for duplicate message (both radios may receive the same broadcast)
+        if (this.seenMessageIds.has(packet.id)) {
+          console.log(`🔁 Duplicate message ${packet.id} ignored (already processed)`);
+          return;
+        }
+
+        // Mark message as seen
+        this.seenMessageIds.add(packet.id);
+
+        // Limit size of seen messages set to prevent memory leak
+        if (this.seenMessageIds.size > this.maxSeenMessages) {
+          const firstId = this.seenMessageIds.values().next().value;
+          this.seenMessageIds.delete(firstId);
+        }
+
         const message = {
           id: packet.id || `msg-${Date.now()}`,
           timestamp: packet.rxTime instanceof Date ? packet.rxTime : new Date(),
@@ -329,7 +346,8 @@ class MeshtasticBridgeServer {
           text: text,
           radioId: radioId,
           portPath: portPath,
-          type: packet.type
+          type: packet.type,
+          forwarded: false
         };
 
         console.log(`💬 Text message from ${packet.from}: "${text}"`);
@@ -345,11 +363,50 @@ class MeshtasticBridgeServer {
           type: 'message',
           message: message
         });
+
+        // BRIDGE: Forward to all OTHER radios (not the source radio)
+        this.forwardToOtherRadios(radioId, text, packet.channel);
       } else {
         console.log(`📦 Non-text packet or empty data:`, packet.data);
       }
     } catch (error) {
       console.error('❌ Error handling message packet:', error, packet);
+    }
+  }
+
+  /**
+   * Forward a message to all radios except the source
+   */
+  async forwardToOtherRadios(sourceRadioId, text, channel) {
+    try {
+      const otherRadios = Array.from(this.radios.entries()).filter(
+        ([radioId]) => radioId !== sourceRadioId
+      );
+
+      if (otherRadios.length === 0) {
+        console.log(`⚠️  No other radios to forward to`);
+        return;
+      }
+
+      console.log(`🔀 Forwarding message to ${otherRadios.length} other radio(s)...`);
+
+      // Forward to each radio
+      const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
+        try {
+          await radio.device.sendText(text, channel);
+          console.log(`✅ Forwarded to ${targetRadioId} on channel ${channel}`);
+          return { radioId: targetRadioId, success: true };
+        } catch (error) {
+          console.error(`❌ Failed to forward to ${targetRadioId}:`, error.message);
+          return { radioId: targetRadioId, success: false, error: error.message };
+        }
+      });
+
+      const results = await Promise.allSettled(forwardPromises);
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      console.log(`📊 Forwarding complete: ${successCount}/${otherRadios.length} successful`);
+    } catch (error) {
+      console.error('❌ Error in forwardToOtherRadios:', error);
     }
   }
 
