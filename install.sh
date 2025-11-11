@@ -58,12 +58,60 @@ npm run build
 echo "✓ Application built successfully"
 echo ""
 
+# Add to PATH
+echo "Adding mesh-bridge command to PATH..."
+
+# Get the absolute path to the project directory
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Create ~/.local/bin if it doesn't exist
+mkdir -p "$HOME/.local/bin"
+
+# Create wrapper script that points to the project
+cat > "$HOME/.local/bin/mesh-bridge" << LAUNCHER
+#!/bin/bash
+cd "$PROJECT_DIR"
+npm run dev
+LAUNCHER
+
+chmod +x "$HOME/.local/bin/mesh-bridge"
+echo "✓ Created mesh-bridge command in ~/.local/bin/"
+
+# Check if ~/.local/bin is in PATH
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo ""
+    echo "⚠️  Note: ~/.local/bin is not in your PATH"
+    echo ""
+    echo "Add this line to your ~/.bashrc or ~/.zshrc:"
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo ""
+    echo "Then reload your shell:"
+    echo "  source ~/.bashrc  # or source ~/.zshrc"
+    echo ""
+    PATH_ADDED="partial"
+else
+    echo "✓ ~/.local/bin is already in PATH"
+    PATH_ADDED="yes"
+fi
+
+echo ""
 echo "=================================="
 echo "✓ Installation Complete!"
 echo "=================================="
 echo ""
-echo "To start the application:"
-echo "  npm run dev"
+if [ "$PATH_ADDED" = "yes" ]; then
+    echo "To start the application from anywhere:"
+    echo "  mesh-bridge"
+    echo ""
+    echo "Or from this directory:"
+    echo "  npm run dev"
+else
+    echo "To start the application:"
+    echo "  npm run dev"
+    echo ""
+    echo "Or after adding ~/.local/bin to PATH:"
+    echo "  mesh-bridge"
+fi
 echo ""
 echo "Then open your browser to:"
 echo "  http://localhost:5173"

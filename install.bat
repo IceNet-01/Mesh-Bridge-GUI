@@ -75,12 +75,77 @@ if %ERRORLEVEL% NEQ 0 (
 echo [OK] Application built successfully
 echo.
 
+REM Add to PATH
+echo Adding mesh-bridge command to PATH...
+
+REM Get the current directory
+set PROJECT_DIR=%CD%
+
+REM Create a batch file in the project's bin directory
+if not exist "bin" mkdir bin
+
+REM Create the launcher batch file
+echo @echo off > bin\mesh-bridge.bat
+echo cd /d "%PROJECT_DIR%" >> bin\mesh-bridge.bat
+echo call npm run dev >> bin\mesh-bridge.bat
+
+REM Check if bin directory is in PATH
+echo %PATH% | findstr /C:"%PROJECT_DIR%\bin" >nul
+if %ERRORLEVEL% EQU 0 (
+    echo [OK] bin directory already in PATH
+    set PATH_ADDED=yes
+) else (
+    REM Add to user PATH
+    echo Adding %PROJECT_DIR%\bin to user PATH...
+    
+    REM Get current user PATH
+    for /f "usebackq tokens=2,*" %%A in (`reg query HKCU\Environment /v PATH 2^>nul`) do set CURRENT_PATH=%%B
+    
+    REM Add to PATH if not empty, otherwise create new
+    if defined CURRENT_PATH (
+        setx PATH "%CURRENT_PATH%;%PROJECT_DIR%\bin" >nul
+    ) else (
+        setx PATH "%PROJECT_DIR%\bin" >nul
+    )
+    
+    if %ERRORLEVEL% EQU 0 (
+        echo [OK] Added bin directory to user PATH
+        set PATH_ADDED=yes
+    ) else (
+        echo [WARN] Could not automatically add to PATH
+        set PATH_ADDED=partial
+    )
+)
+
+echo.
 echo ==================================
 echo [OK] Installation Complete!
 echo ==================================
 echo.
-echo To start the application:
-echo   npm run dev
+
+if "%PATH_ADDED%"=="yes" (
+    echo To start the application from anywhere:
+    echo   mesh-bridge
+    echo.
+    echo Note: You may need to restart your command prompt for PATH changes to take effect
+    echo.
+    echo Or from this directory:
+    echo   npm run dev
+) else if "%PATH_ADDED%"=="partial" (
+    echo To start the application:
+    echo   npm run dev
+    echo.
+    echo To add mesh-bridge to PATH manually:
+    echo   1. Open System Properties ^(Windows Key + Pause^)
+    echo   2. Click "Advanced system settings"
+    echo   3. Click "Environment Variables"
+    echo   4. Under "User variables", select "Path" and click "Edit"
+    echo   5. Add: %PROJECT_DIR%\bin
+) else (
+    echo To start the application:
+    echo   npm run dev
+)
+
 echo.
 echo Then open your browser to:
 echo   http://localhost:5173

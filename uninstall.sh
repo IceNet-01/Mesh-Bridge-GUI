@@ -135,6 +135,20 @@ pkill -f "vite" 2>/dev/null || true
 pkill -f "node.*5173" 2>/dev/null || true
 echo "✓ Stopped any running dev servers"
 
+# Remove mesh-bridge command from PATH
+if [ -f "$HOME/.local/bin/mesh-bridge" ]; then
+    echo "Removing mesh-bridge command from PATH..."
+    rm -f "$HOME/.local/bin/mesh-bridge"
+    echo "✓ mesh-bridge command removed from ~/.local/bin/"
+fi
+
+# Remove bin directory
+if [ -d "bin" ]; then
+    echo "Removing bin directory..."
+    rm -rf bin
+    echo "✓ bin directory removed"
+fi
+
 echo ""
 echo "====================================="
 echo "✓ Application Removed Successfully"

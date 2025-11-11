@@ -130,6 +130,38 @@ echo Checking for running dev servers...
 taskkill /f /im node.exe /fi "WINDOWTITLE eq npm*" 2>nul
 echo [OK] Stopped any running dev servers
 
+REM Remove from PATH
+echo Removing mesh-bridge from PATH...
+set PROJECT_DIR=%CD%
+
+REM Get current user PATH
+for /f "usebackq tokens=2,*" %%A in (`reg query HKCU\Environment /v PATH 2^>nul`) do set CURRENT_PATH=%%B
+
+REM Remove the bin directory from PATH
+if defined CURRENT_PATH (
+    setlocal enabledelayedexpansion
+    set "NEW_PATH=!CURRENT_PATH:%PROJECT_DIR%\bin;=!"
+    set "NEW_PATH=!NEW_PATH:;%PROJECT_DIR%\bin=!"
+    set "NEW_PATH=!NEW_PATH:%PROJECT_DIR%\bin=!"
+    endlocal & set "NEW_PATH=%NEW_PATH%"
+
+    if not "!NEW_PATH!"=="!CURRENT_PATH!" (
+        setx PATH "!NEW_PATH!" >nul 2>&1
+        echo [OK] Removed bin directory from PATH
+    ) else (
+        echo [OK] bin directory was not in PATH
+    )
+) else (
+    echo [OK] PATH variable not found
+)
+
+REM Remove bin directory
+if exist "bin" (
+    echo Removing bin directory...
+    rmdir /s /q bin 2>nul
+    echo [OK] bin directory removed
+)
+
 echo.
 echo =====================================
 echo [OK] Application Removed Successfully

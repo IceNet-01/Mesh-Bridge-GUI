@@ -5,26 +5,32 @@
 ### Linux/macOS
 
 ```bash
-# Install
+# Install (includes adding to PATH)
 ./install.sh
 
-# Run
+# Run from anywhere (after PATH is set up)
+mesh-bridge
+
+# Or run from project directory
 npm run dev
 
-# Uninstall (removes ALL traces)
+# Uninstall (removes ALL traces including PATH entries)
 ./uninstall.sh
 ```
 
 ### Windows
 
 ```batch
-# Install
+# Install (includes adding to PATH)
 install.bat
 
-# Run
+# Run from anywhere (restart command prompt first)
+mesh-bridge
+
+# Or run from project directory
 npm run dev
 
-# Uninstall (removes ALL traces)
+# Uninstall (removes ALL traces including PATH entries)
 uninstall.bat
 ```
 
@@ -37,6 +43,9 @@ The installer script will:
 3. ✓ Clean npm cache
 4. ✓ Install all dependencies
 5. ✓ Build the production application
+6. ✓ Add `mesh-bridge` command to your PATH
+   - **Linux/macOS**: Creates launcher in `~/.local/bin/mesh-bridge`
+   - **Windows**: Adds `bin` directory to user PATH and creates `mesh-bridge.bat`
 
 ## What the Uninstaller Does
 
@@ -61,6 +70,9 @@ The uninstaller script will **completely remove** ALL traces:
 - ✓ Cleans npm cache
 - ✓ Kills any running dev servers (port 5173)
 - ✓ Closes any stuck serial port connections
+- ✓ Removes `mesh-bridge` command from PATH
+  - **Linux/macOS**: Deletes `~/.local/bin/mesh-bridge`
+  - **Windows**: Removes `bin` directory from user PATH and deletes folder
 
 ### Browser Data (Manual Cleanup Required)
 
