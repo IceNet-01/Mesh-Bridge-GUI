@@ -18,7 +18,7 @@
     "@meshtastic/transport-node-serial": "^0.0.2",
     "buffer": "^6.0.3",
     "recharts": "^2.13.3",
-    "serialport": "^12.0.0",
+    "serialport": "^13.0.0",
     "stream-browserify": "^3.0.0",
     "ws": "^8.18.0",
     "zustand": "^5.0.1"
