@@ -198,7 +198,21 @@ class MeshtasticBridgeServer {
         }
       });
 
+      // Subscribe to ALL mesh packets to see what's coming through
+      device.events.onMeshPacket.subscribe((packet) => {
+        console.log(`📦 [DEBUG] Raw MeshPacket from ${radioId}:`, {
+          from: packet.from,
+          to: packet.to,
+          channel: packet.channel,
+          decoded: packet.decoded ? {
+            portnum: packet.decoded.portnum,
+            payloadVariant: packet.decoded.payloadVariant
+          } : null
+        });
+      });
+
       device.events.onMessagePacket.subscribe((packet) => {
+        console.log(`💬 [DEBUG] onMessagePacket fired for ${radioId}!`);
         this.handleMessagePacket(radioId, portPath, packet);
       });
 
