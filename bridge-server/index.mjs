@@ -269,48 +269,35 @@ class MeshtasticBridgeServer {
 
   /**
    * Handle message packets from radio (using official library)
+   * PacketMetadata<string> structure: { id, rxTime, type, from, to, channel, data }
    */
   handleMessagePacket(radioId, portPath, packet) {
     try {
       console.log(`📨 Message packet from ${radioId}:`, {
+        id: packet.id,
         from: packet.from,
         to: packet.to,
         channel: packet.channel,
-        portnum: packet.portnum,
-        payloadLength: packet.payload?.length || 0
+        type: packet.type,
+        dataType: typeof packet.data,
+        data: packet.data
       });
 
-      // Extract text from payload if it's a text message
-      let text = null;
+      // The @meshtastic/core library already decodes text messages
+      // packet.data contains the decoded string for text messages
+      const text = packet.data;
 
-      if (packet.payload && packet.payload.length > 0) {
-        try {
-          // Try to decode as UTF-8 text
-          text = new TextDecoder().decode(packet.payload);
-
-          // Check if it's actually printable text
-          if (!/^[\x20-\x7E\n\r\t]+$/.test(text)) {
-            text = null; // Not printable text
-          }
-        } catch (e) {
-          text = null;
-        }
-      }
-
-      if (text) {
+      if (text && typeof text === 'string' && text.length > 0) {
         const message = {
           id: packet.id || `msg-${Date.now()}`,
-          timestamp: new Date(packet.rxTime ? packet.rxTime * 1000 : Date.now()),
+          timestamp: packet.rxTime instanceof Date ? packet.rxTime : new Date(),
           from: packet.from,
           to: packet.to,
           channel: packet.channel || 0,
-          portnum: packet.portnum,
           text: text,
           radioId: radioId,
           portPath: portPath,
-          rssi: packet.rxRssi,
-          snr: packet.rxSnr,
-          hopLimit: packet.hopLimit
+          type: packet.type
         };
 
         console.log(`💬 Text message from ${packet.from}: "${text}"`);
@@ -327,10 +314,10 @@ class MeshtasticBridgeServer {
           message: message
         });
       } else {
-        console.log(`📦 Non-text packet (portnum: ${packet.portnum})`);
+        console.log(`📦 Non-text packet or empty data:`, packet.data);
       }
     } catch (error) {
-      console.error('❌ Error handling message packet:', error);
+      console.error('❌ Error handling message packet:', error, packet);
     }
   }
 
