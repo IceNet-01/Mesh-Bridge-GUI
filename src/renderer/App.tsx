@@ -17,7 +17,9 @@ function App() {
   const logs = useStore(state => state.logs);
   const messages = useStore(state => state.messages);
   const bridgeConfig = useStore(state => state.bridgeConfig);
+  const bridgeConnected = useStore(state => state.bridgeConnected);
   const initialize = useStore(state => state.initialize);
+  const connectToBridge = useStore(state => state.connectToBridge);
   const scanAndConnectRadio = useStore(state => state.scanAndConnectRadio);
   const disconnectRadio = useStore(state => state.disconnectRadio);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
@@ -25,7 +27,15 @@ function App() {
 
   useEffect(() => {
     initialize();
-  }, [initialize]);
+
+    // Auto-connect to bridge server
+    connectToBridge().then(result => {
+      if (!result.success) {
+        console.error('Failed to connect to bridge:', result.error);
+        alert(`Failed to connect to bridge server: ${result.error}\n\nMake sure the bridge server is running:\n  npm run start`);
+      }
+    });
+  }, [initialize, connectToBridge]);
 
   const handleConnectRadio = async () => {
     try {
@@ -126,10 +136,23 @@ function App() {
           />
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-800 space-y-3">
+          {/* Bridge Connection Status */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50">
+            <div className={`w-2 h-2 rounded-full ${bridgeConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <span className="text-xs text-slate-400">
+              {bridgeConnected ? 'Bridge Connected' : 'Bridge Disconnected'}
+            </span>
+          </div>
+
+          {/* Connect Radio Button */}
           <button
             onClick={handleConnectRadio}
-            className="w-full btn-primary flex items-center justify-center gap-2"
+            disabled={!bridgeConnected}
+            className={`w-full btn-primary flex items-center justify-center gap-2 ${
+              !bridgeConnected ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={!bridgeConnected ? 'Bridge server must be connected first' : 'Connect a Meshtastic radio'}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
