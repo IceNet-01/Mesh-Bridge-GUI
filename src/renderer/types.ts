@@ -48,6 +48,9 @@ export interface Message {
   payload: any;
   forwarded: boolean;
   duplicate: boolean;
+  rssi?: number;
+  snr?: number;
+  hopLimit?: number;
 }
 
 export interface Statistics {
@@ -67,11 +70,14 @@ export interface Statistics {
 }
 
 export interface LogEntry {
+  id?: string;
   timestamp: Date;
   level: 'info' | 'warn' | 'error' | 'debug';
   message: string;
+  context?: string;
   radioId?: string;
   data?: any;
+  error?: string;
 }
 
 // Web Serial API Type Extensions

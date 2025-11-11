@@ -9,12 +9,18 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "serve": "vite preview --host"
+    "serve": "vite preview --host",
+    "bridge": "node bridge-server/index.mjs",
+    "start": "npm run bridge & npm run dev"
   },
   "dependencies": {
+    "@meshtastic/core": "^2.6.7",
+    "@meshtastic/transport-node-serial": "^0.0.2",
     "buffer": "^6.0.3",
     "recharts": "^2.13.3",
+    "serialport": "^12.0.0",
     "stream-browserify": "^3.0.0",
+    "ws": "^8.18.0",
     "zustand": "^5.0.1"
   },
   "devDependencies": {

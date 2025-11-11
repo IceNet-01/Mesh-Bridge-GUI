@@ -1,5 +1,4 @@
 import { Radio } from '../types';
-import { useStore } from '../store/useStore';
 
 interface RadioListProps {
   radios: Radio[];
@@ -7,32 +6,11 @@ interface RadioListProps {
 }
 
 function RadioList({ radios, onDisconnect }: RadioListProps) {
-  const forceCloseAllPorts = useStore(state => state.forceCloseAllPorts);
-
-  const handleForceClose = async () => {
-    if (confirm('This will close all serial port connections. Continue?')) {
-      await forceCloseAllPorts();
-      alert('All ports have been closed. You can now reconnect.');
-    }
-  };
-
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-2">Radio Management</h2>
-          <p className="text-slate-400">Monitor and manage connected Meshtastic radios</p>
-        </div>
-        <button
-          onClick={handleForceClose}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-          title="Close all serial port connections (use if ports are locked)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-          Force Close All Ports
-        </button>
+      <div>
+        <h2 className="text-3xl font-bold text-white mb-2">Radio Management</h2>
+        <p className="text-slate-400">Monitor and manage connected Meshtastic radios via bridge server</p>
       </div>
 
       {radios.length === 0 ? (

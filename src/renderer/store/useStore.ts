@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { WebSerialRadioManager } from '../lib/webSerialManager';
+import { WebSocketRadioManager } from '../lib/webSocketManager';
 import type { Radio, Statistics, LogEntry, BridgeConfig, Message } from '../types';
 
 interface AppStore {
   // Manager instance
-  manager: WebSerialRadioManager;
+  manager: WebSocketRadioManager;
 
   // State
+  bridgeConnected: boolean;
   radios: Radio[];
   statistics: Statistics | null;
   logs: LogEntry[];
@@ -15,15 +16,15 @@ interface AppStore {
 
   // Actions
   initialize: () => void;
+  connectToBridge: () => Promise<{ success: boolean; error?: string }>;
   scanAndConnectRadio: () => Promise<void>;
   disconnectRadio: (radioId: string) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
-  forceCloseAllPorts: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set) => {
-  const manager = new WebSerialRadioManager();
+  const manager = new WebSocketRadioManager();
 
   // Set up event listeners
   manager.on('radio-status-change', (radios: Radio[]) => {
@@ -50,8 +51,17 @@ export const useStore = create<AppStore>((set) => {
     }));
   });
 
+  manager.on('logs-update', (logs: LogEntry[]) => {
+    set({ logs });
+  });
+
+  manager.on('bridge-disconnected', () => {
+    set({ bridgeConnected: false });
+  });
+
   return {
     manager,
+    bridgeConnected: false,
     radios: [],
     statistics: null,
     logs: [],
@@ -65,15 +75,25 @@ export const useStore = create<AppStore>((set) => {
       set({ statistics, bridgeConfig, logs });
     },
 
+    connectToBridge: async () => {
+      const result = await manager.connectToBridge();
+      if (result.success) {
+        set({ bridgeConnected: true });
+      }
+      return result;
+    },
+
     scanAndConnectRadio: async () => {
       const ports = await manager.scanForRadios();
       console.log('Scanned ports:', ports);
 
       if (ports.length === 0) {
-        throw new Error('No serial port selected. Please select a device when prompted.');
+        throw new Error('No serial ports found. Make sure your Meshtastic radio is connected via USB and the bridge server is running.');
       }
 
-      const result = await manager.connectRadio(ports[0]);
+      // For now, connect to the first port
+      // TODO: Show UI to let user select which port
+      const result = await manager.connectRadio(ports[0].path);
       console.log('Connection result:', result);
 
       if (!result.success) {
@@ -86,17 +106,13 @@ export const useStore = create<AppStore>((set) => {
     },
 
     updateBridgeConfig: (config: Partial<BridgeConfig>) => {
-      const updated = manager.updateBridgeConfig(config);
-      set({ bridgeConfig: updated });
+      manager.updateBridgeConfig(config);
+      const bridgeConfig = manager.getBridgeConfig();
+      set({ bridgeConfig });
     },
 
     clearLogs: () => {
-      manager.clearLogs();
       set({ logs: [] });
-    },
-
-    forceCloseAllPorts: async () => {
-      await manager.forceCloseAllPorts();
     },
   };
 });
