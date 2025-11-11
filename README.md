@@ -54,26 +54,80 @@ A modern, lightweight **Progressive Web App** for managing Meshtastic radio brid
 - Auto-update functionality
 - Comprehensive logging system
 
+## 🚀 One-Line Installation
+
+### Linux/macOS
+```bash
+git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git && cd Mesh-Bridge-GUI && ./install.sh
+```
+
+### Windows (PowerShell/CMD)
+```batch
+git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git && cd Mesh-Bridge-GUI && install.bat
+```
+
+**That's it!** The installer automatically:
+- ✅ Installs Node.js 20 LTS if needed (asks first)
+- ✅ Installs all dependencies
+- ✅ Builds the application
+- ✅ Adds `mesh-bridge` command to your PATH
+
+Then run from anywhere:
+```bash
+mesh-bridge
+```
+
+Open browser to: **http://localhost:5173**
+
+---
+
 ## Quick Start
 
 ### Prerequisites
 
-- **Modern Browser**: Chrome 89+, Edge 89+, or Opera 75+ (Desktop)
+- **Modern Browser**: Chrome 89+, Edge 89+, or Brave 89+ (Desktop)
 - **Meshtastic Device**: Connected via USB
-- **HTTPS**: Web Serial API requires secure context (localhost works for development)
+- **Git**: For cloning the repository
+- **Node.js 18+**: Auto-installed by installer if missing
 
-### Installation
+### Installation Options
 
-#### Option 1: Hosted Version (Easiest)
+#### Option 1: Automated Install (Recommended)
 
-1. Visit **https://mesh-bridge.example.com** (coming soon)
-2. Click "Connect Radio" and select your Meshtastic device
-3. Grant USB access permission
-4. That's it! Bookmark it or install as PWA
+**Linux/macOS:**
+```bash
+git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
+cd Mesh-Bridge-GUI
+./install.sh
+```
 
-#### Option 2: Run Locally
+**Windows:**
+```batch
+git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
+cd Mesh-Bridge-GUI
+install.bat
+```
+
+The installer will:
+- Check for Node.js and offer to install it automatically if missing
+- Install all npm dependencies
+- Build the production application
+- Add `mesh-bridge` command to your PATH
+
+**Run from anywhere:**
+```bash
+mesh-bridge
+```
+
+**Or from project directory:**
+```bash
+npm run dev
+```
+
+#### Option 2: Manual Installation
 
 ```bash
+# Prerequisites: Node.js 18+ and npm
 # Clone the repository
 git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
 cd Mesh-Bridge-GUI
@@ -207,6 +261,30 @@ npm run package         # Create distributable packages
 - **Build Tool**: Vite
 - **Package Builder**: electron-builder
 
+## Uninstallation
+
+To completely remove the application and all traces:
+
+**Linux/macOS:**
+```bash
+cd Mesh-Bridge-GUI
+./uninstall.sh
+```
+
+**Windows:**
+```batch
+cd Mesh-Bridge-GUI
+uninstall.bat
+```
+
+The uninstaller removes:
+- ✅ All node modules and dependencies
+- ✅ All build artifacts and caches
+- ✅ `mesh-bridge` command from PATH
+- ✅ All temporary files
+
+For complete removal including browser data, see [INSTALL.md](INSTALL.md) for instructions.
+
 ## Troubleshooting
 
 ### Radio Won't Connect
@@ -214,7 +292,8 @@ npm run package         # Create distributable packages
 1. Check USB connection
 2. Ensure no other application is using the serial port
 3. Try unplugging and reconnecting the device
-4. Check logs for detailed error messages
+4. Use "Force Close All Ports" button in the Radios tab
+5. Check logs for detailed error messages
 
 ### Messages Not Forwarding
 
@@ -222,13 +301,25 @@ npm run package         # Create distributable packages
 2. Check that bridge routes are configured correctly
 3. Ensure both source and target radios are connected
 4. Check individual route enable/disable status
+5. Look for duplicate message filtering in logs
 
 ### Application Won't Start
 
 1. Check system requirements (Node.js 18+)
-2. Try running `npm install` again
-3. Delete `node_modules` and reinstall
-4. Check logs in the application data directory
+2. Run the uninstaller, then reinstaller:
+   ```bash
+   ./uninstall.sh && ./install.sh
+   ```
+3. Check logs in the Logs tab for detailed error messages
+
+### Installation Issues
+
+If installation fails:
+1. Ensure you have git installed
+2. Check internet connection (needed to download Node.js and dependencies)
+3. On Linux/macOS, make sure installer is executable: `chmod +x install.sh`
+4. Try manual installation (see Option 2 above)
+5. Check [INSTALL.md](INSTALL.md) for detailed troubleshooting
 
 ## Auto-Updates
 

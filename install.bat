@@ -10,15 +10,46 @@ echo.
 REM Check for Node.js
 where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Node.js is not installed!
-    echo Please install Node.js 18+ from https://nodejs.org/
-    pause
-    exit /b 1
+    echo [WARN] Node.js is not installed!
+    echo.
+    set /p INSTALL_NODE="Would you like to download Node.js installer? (yes/no): "
+    
+    if /i "%INSTALL_NODE%"=="yes" (
+        echo.
+        echo Opening Node.js download page in your browser...
+        echo Please download and install Node.js 18+ LTS, then run this installer again.
+        echo.
+        start https://nodejs.org/
+        echo.
+        echo Press any key after Node.js installation is complete...
+        pause >nul
+        
+        REM Check again after installation
+        where node >nul 2>nul
+        if %ERRORLEVEL% NEQ 0 (
+            echo [ERROR] Node.js still not found. Please restart your command prompt and run installer again.
+            pause
+            exit /b 1
+        )
+    ) else (
+        echo [ERROR] Node.js is required. Please install from https://nodejs.org/
+        pause
+        exit /b 1
+    )
 )
 
 REM Get Node version
 for /f "tokens=1" %%i in ('node -v') do set NODE_VERSION=%%i
 echo [OK] Node.js %NODE_VERSION% detected
+
+REM Check Node version is 18+
+for /f "tokens=2 delims=v." %%a in ('node -v') do set NODE_MAJOR=%%a
+if %NODE_MAJOR% LSS 18 (
+    echo [ERROR] Node.js version must be 18 or higher (current: %NODE_VERSION%)
+    echo Please upgrade from https://nodejs.org/
+    pause
+    exit /b 1
+)
 
 REM Check for npm
 where npm >nul 2>nul
