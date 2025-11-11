@@ -187,9 +187,15 @@ class MeshtasticBridgeServer {
       // Create Meshtastic device
       const device = new MeshDevice(transport);
 
-      // Subscribe to events
+      // Subscribe to connection status events
       device.events.onDeviceStatus.subscribe((status) => {
         console.log(`📊 Radio ${radioId} status:`, status);
+
+        // Handle disconnection
+        if (status === 2) { // DeviceDisconnected
+          console.log(`📻 Radio ${radioId} disconnected, cleaning up...`);
+          this.handleRadioDisconnect(radioId);
+        }
       });
 
       device.events.onMessagePacket.subscribe((packet) => {
@@ -233,6 +239,31 @@ class MeshtasticBridgeServer {
         type: 'error',
         error: `Connection failed: ${error.message}`
       }));
+    }
+  }
+
+  /**
+   * Handle radio disconnection (graceful cleanup)
+   */
+  handleRadioDisconnect(radioId) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (radio) {
+        console.log(`🔌 Cleaning up radio ${radioId}...`);
+
+        // Remove from map
+        this.radios.delete(radioId);
+
+        // Notify all clients
+        this.broadcast({
+          type: 'radio-disconnected',
+          radioId: radioId
+        });
+
+        console.log(`✅ Radio ${radioId} cleaned up successfully`);
+      }
+    } catch (error) {
+      console.error(`❌ Error cleaning up radio ${radioId}:`, error);
     }
   }
 
@@ -430,6 +461,17 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
   await server.shutdown();
+});
+
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught exception:', error);
+  // Don't exit - keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled rejection at:', promise, 'reason:', reason);
+  // Don't exit - keep server running
 });
 
 export default MeshtasticBridgeServer;

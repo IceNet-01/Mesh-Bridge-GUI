@@ -91,13 +91,25 @@ export const useStore = create<AppStore>((set) => {
         throw new Error('No serial ports found. Make sure your Meshtastic radio is connected via USB and the bridge server is running.');
       }
 
-      // For now, connect to the first port
-      // TODO: Show UI to let user select which port
-      const result = await manager.connectRadio(ports[0].path);
-      console.log('Connection result:', result);
+      // Connect to ALL available ports
+      console.log(`Connecting to ${ports.length} radio(s)...`);
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to connect to radio');
+      const results = await Promise.allSettled(
+        ports.map(port => manager.connectRadio(port.path))
+      );
+
+      // Check if at least one succeeded
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      const failCount = results.length - successCount;
+
+      if (successCount === 0) {
+        throw new Error('Failed to connect to any radios. Check logs for details.');
+      }
+
+      console.log(`✅ Connected ${successCount} radio(s), ${failCount} failed`);
+
+      if (failCount > 0) {
+        console.warn(`⚠️ ${failCount} radio(s) failed to connect`);
       }
     },
 
