@@ -180,11 +180,9 @@ class MeshtasticBridgeServer {
 
       const radioId = `radio-${Date.now()}`;
 
-      // Create serial transport
-      const transport = new TransportNodeSerial({
-        portPath: portPath,
-        baudRate: 115200
-      });
+      // Create serial transport using the static create method
+      const transport = await TransportNodeSerial.create(portPath, 115200);
+      console.log(`✅ Transport connected for ${radioId}`);
 
       // Create Meshtastic device
       const device = new MeshDevice(transport);
@@ -201,10 +199,6 @@ class MeshtasticBridgeServer {
       device.events.onNodeInfoPacket.subscribe((node) => {
         console.log(`ℹ️  Radio ${radioId} node info:`, node);
       });
-
-      // Connect to the radio
-      await transport.connect();
-      console.log(`✅ Transport connected for ${radioId}`);
 
       // Store radio reference
       this.radios.set(radioId, {
