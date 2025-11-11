@@ -1,73 +1,96 @@
 @echo off
-REM Meshtastic Bridge GUI - Windows Installer
+REM Meshtastic Bridge GUI - Complete Installer for Windows
+REM This script installs all dependencies and sets up the application
 
-echo =========================================
-echo   Meshtastic Bridge GUI - Installer
-echo =========================================
+echo ==================================
+echo Meshtastic Bridge GUI - Installer
+echo ==================================
 echo.
 
-REM Check if Node.js is installed
-where node >nul 2>&1
+REM Check for Node.js
+where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo X Node.js is not installed.
+    echo [ERROR] Node.js is not installed!
     echo Please install Node.js 18+ from https://nodejs.org/
     pause
     exit /b 1
 )
 
-echo + Node.js found
-node -v
-echo.
+REM Get Node version
+for /f "tokens=1" %%i in ('node -v') do set NODE_VERSION=%%i
+echo [OK] Node.js %NODE_VERSION% detected
 
-REM Check if Git is installed
-where git >nul 2>&1
+REM Check for npm
+where npm >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo X Git is not installed.
-    echo Please install Git from https://git-scm.com/
+    echo [ERROR] npm is not installed!
     pause
     exit /b 1
 )
 
-echo + Git found
+REM Get npm version
+for /f "tokens=1" %%i in ('npm -v') do set NPM_VERSION=%%i
+echo [OK] npm %NPM_VERSION% detected
 echo.
 
-REM Installation directory
-set INSTALL_DIR=%USERPROFILE%\meshtastic-bridge-gui
-
-REM Clone or update repository
-if exist "%INSTALL_DIR%" (
-    echo Updating existing installation...
-    cd /d "%INSTALL_DIR%"
-    git pull
-) else (
-    echo Cloning repository...
-    git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git "%INSTALL_DIR%"
-    cd /d "%INSTALL_DIR%"
-)
-
+REM Clean any previous installation
+echo Cleaning previous installation...
+if exist "node_modules" rmdir /s /q node_modules
+if exist "package-lock.json" del /f /q package-lock.json
+if exist "dist" rmdir /s /q dist
+if exist ".vite" rmdir /s /q .vite
+if exist ".cache" rmdir /s /q .cache
+if exist "coverage" rmdir /s /q coverage
+if exist ".nyc_output" rmdir /s /q .nyc_output
+if exist "tmp" rmdir /s /q tmp
+if exist "temp" rmdir /s /q temp
+echo [OK] Cleaned previous installation
 echo.
+
+REM Clean npm cache
+echo Cleaning npm cache...
+call npm cache clean --force
+echo [OK] npm cache cleaned
+echo.
+
+REM Install dependencies
 echo Installing dependencies...
 call npm install
-
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Failed to install dependencies
+    pause
+    exit /b 1
+)
+echo [OK] Dependencies installed
 echo.
+
+REM Build the application
 echo Building application...
 call npm run build
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Failed to build application
+    pause
+    exit /b 1
+)
+echo [OK] Application built successfully
+echo.
 
+echo ==================================
+echo [OK] Installation Complete!
+echo ==================================
 echo.
-echo Creating distributable package...
-call npm run package
-
+echo To start the application:
+echo   npm run dev
 echo.
-echo =========================================
-echo   Installation Complete!
-echo =========================================
+echo Then open your browser to:
+echo   http://localhost:5173
 echo.
-echo Application built in: %INSTALL_DIR%\release
+echo Requirements:
+echo   - Chrome, Edge, or Brave browser (Web Serial API support)
+echo   - Meshtastic radio connected via USB
 echo.
-echo To run the application, look for:
-echo   - Installer: Meshtastic-Bridge-GUI-Setup-*.exe
-echo   - Portable: Meshtastic-Bridge-GUI-*.exe
+echo To uninstall and remove all traces:
+echo   uninstall.bat
 echo.
-echo Double-click the installer to install, or run the portable version directly.
-echo.
-pause
+echo Press any key to exit...
+pause >nul
