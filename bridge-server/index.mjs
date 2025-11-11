@@ -227,6 +227,16 @@ class MeshtasticBridgeServer {
         this.handleMessagePacket(radioId, portPath, packet);
       });
 
+      device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
+        console.log(`🆔 Radio ${radioId} my node info:`, myNodeInfo);
+        // Store our own node number to prevent forwarding loops
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          radio.nodeNum = myNodeInfo.myNodeNum;
+          console.log(`✅ Radio ${radioId} node number set to ${myNodeInfo.myNodeNum}`);
+        }
+      });
+
       device.events.onNodeInfoPacket.subscribe((node) => {
         console.log(`ℹ️  Radio ${radioId} node info:`, node);
       });
@@ -245,6 +255,7 @@ class MeshtasticBridgeServer {
         device,
         transport,
         port: portPath,
+        nodeNum: null, // Will be set when we receive myNodeInfo
         info: {
           port: portPath,
           connectedAt: new Date()
@@ -322,6 +333,16 @@ class MeshtasticBridgeServer {
       const text = packet.data;
 
       if (text && typeof text === 'string' && text.length > 0) {
+        // Check if this message is FROM one of our bridge radios (forwarding loop prevention)
+        const isFromOurBridgeRadio = Array.from(this.radios.values()).some(
+          radio => radio.nodeNum === packet.from
+        );
+
+        if (isFromOurBridgeRadio) {
+          console.log(`🔁 Message from our own bridge radio ${packet.from}, skipping forward to prevent loop`);
+          // Still show in GUI but don't forward
+        }
+
         // Check for duplicate message (both radios may receive the same broadcast)
         if (this.seenMessageIds.has(packet.id)) {
           console.log(`🔁 Duplicate message ${packet.id} ignored (already processed)`);
@@ -347,7 +368,7 @@ class MeshtasticBridgeServer {
           radioId: radioId,
           portPath: portPath,
           type: packet.type,
-          forwarded: false
+          forwarded: isFromOurBridgeRadio // Mark if this was forwarded by us
         };
 
         console.log(`💬 Text message from ${packet.from}: "${text}"`);
@@ -364,8 +385,10 @@ class MeshtasticBridgeServer {
           message: message
         });
 
-        // BRIDGE: Forward to all OTHER radios (not the source radio)
-        this.forwardToOtherRadios(radioId, text, packet.channel);
+        // BRIDGE: Forward to all OTHER radios ONLY if message is NOT from our bridge
+        if (!isFromOurBridgeRadio) {
+          this.forwardToOtherRadios(radioId, text, packet.channel);
+        }
       } else {
         console.log(`📦 Non-text packet or empty data:`, packet.data);
       }
