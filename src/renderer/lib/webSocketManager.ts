@@ -291,14 +291,11 @@ export class WebSocketRadioManager {
     }
 
     this.log('info', `Requesting radio connection to ${portPath}...`);
-    this.ws.send(JSON.stringify({
-      type: 'connect',
-      port: portPath
-    }));
 
-    // Wait for connection confirmation
+    // Set up listener BEFORE sending request to avoid race condition
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
+        this.off('radio-status-change', handler);
         resolve({ success: false, error: 'Connection timeout' });
       }, 30000);
 
@@ -312,6 +309,12 @@ export class WebSocketRadioManager {
       };
 
       this.on('radio-status-change', handler);
+
+      // Send request AFTER listener is set up
+      this.ws!.send(JSON.stringify({
+        type: 'connect',
+        port: portPath
+      }));
     });
   }
 
