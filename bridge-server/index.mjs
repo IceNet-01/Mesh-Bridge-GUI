@@ -139,18 +139,26 @@ class MeshtasticBridgeServer {
     try {
       const ports = await SerialPort.list();
 
-      // Filter for likely Meshtastic devices
-      const filteredPorts = ports.filter(port =>
-        port.path.includes('USB') ||
-        port.path.includes('ACM') ||
-        port.path.includes('tty') ||
-        port.manufacturer?.toLowerCase().includes('silicon') ||
-        port.manufacturer?.toLowerCase().includes('uart') ||
-        port.manufacturer?.toLowerCase().includes('ch340') ||
-        port.manufacturer?.toLowerCase().includes('cp210')
-      );
+      // Filter for actual USB/ACM devices (not virtual ttyS* ports)
+      const filteredPorts = ports.filter(port => {
+        // Exclude virtual serial ports (ttyS*)
+        if (port.path.match(/\/dev\/ttyS\d+$/)) {
+          return false;
+        }
 
-      console.log(`📋 Found ${filteredPorts.length} potential serial ports`);
+        // Include USB and ACM devices
+        return (
+          port.path.includes('USB') ||
+          port.path.includes('ACM') ||
+          port.manufacturer?.toLowerCase().includes('silicon') ||
+          port.manufacturer?.toLowerCase().includes('uart') ||
+          port.manufacturer?.toLowerCase().includes('ch340') ||
+          port.manufacturer?.toLowerCase().includes('cp210') ||
+          port.manufacturer?.toLowerCase().includes('ftdi')
+        );
+      });
+
+      console.log(`📋 Found ${filteredPorts.length} USB/ACM serial ports (filtered ${ports.length - filteredPorts.length} virtual ports)`);
 
       ws.send(JSON.stringify({
         type: 'ports-list',
