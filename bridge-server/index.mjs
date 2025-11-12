@@ -287,6 +287,20 @@ class MeshtasticBridgeServer {
 
       console.log(`✅ Successfully connected to radio ${radioId} on ${portPath}`);
 
+      // Log all configured channels after configuration completes
+      const radio = this.radios.get(radioId);
+      console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
+      if (radio && radio.channels && radio.channels.size > 0) {
+        radio.channels.forEach((ch, idx) => {
+          const roleName = ch.role === 1 ? 'PRIMARY' : ch.role === 0 ? 'SECONDARY' : 'DISABLED';
+          const pskDisplay = ch.psk ? `${ch.psk.substring(0, 8)}...` : '(none)';
+          console.log(`   [${idx}] "${ch.name || '(unnamed)'}" [${roleName}] PSK: ${pskDisplay}`);
+        });
+      } else {
+        console.log(`   ⚠️  No channels configured yet (this is unusual)`);
+      }
+      console.log(`============================================================\n`);
+
       // Notify all clients AFTER configuration is complete
       this.broadcast({
         type: 'radio-connected',
