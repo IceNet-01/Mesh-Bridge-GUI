@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -209,6 +209,7 @@ export class WebSocketRadioManager {
           id: data.message.id,
           timestamp: new Date(data.message.timestamp),
           fromRadio: data.message.radioId,
+          protocol: data.message.protocol || 'meshtastic',
           from: data.message.from,
           to: data.message.to,
           channel: data.message.channel,

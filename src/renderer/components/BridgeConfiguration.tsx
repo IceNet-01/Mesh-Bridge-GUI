@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { BridgeConfig, BridgeRoute, Radio } from '../types';
+import { BridgeConfig, Radio } from '../types';
 
 interface BridgeConfigurationProps {
   config: BridgeConfig;
@@ -7,52 +6,10 @@ interface BridgeConfigurationProps {
   onUpdate: (config: Partial<BridgeConfig>) => void;
 }
 
-function BridgeConfiguration({ config, radios, onUpdate }: BridgeConfigurationProps) {
-  const [editingRoute, setEditingRoute] = useState<BridgeRoute | null>(null);
-
+function BridgeConfiguration({ config, onUpdate }: BridgeConfigurationProps) {
   const handleToggleBridge = () => {
     onUpdate({ enabled: !config.enabled });
   };
-
-  const handleAddRoute = () => {
-    const newRoute: BridgeRoute = {
-      id: `route-${Date.now()}`,
-      sourceRadios: [],
-      targetRadios: [],
-      enabled: true,
-    };
-    setEditingRoute(newRoute);
-  };
-
-  const handleSaveRoute = () => {
-    if (!editingRoute) return;
-
-    const existingIndex = config.bridges.findIndex((r) => r.id === editingRoute.id);
-    let newBridges: BridgeRoute[];
-
-    if (existingIndex >= 0) {
-      newBridges = [...config.bridges];
-      newBridges[existingIndex] = editingRoute;
-    } else {
-      newBridges = [...config.bridges, editingRoute];
-    }
-
-    onUpdate({ bridges: newBridges });
-    setEditingRoute(null);
-  };
-
-  const handleDeleteRoute = (routeId: string) => {
-    onUpdate({ bridges: config.bridges.filter((r) => r.id !== routeId) });
-  };
-
-  const handleToggleRoute = (routeId: string) => {
-    const newBridges = config.bridges.map((r) =>
-      r.id === routeId ? { ...r, enabled: !r.enabled } : r
-    );
-    onUpdate({ bridges: newBridges });
-  };
-
-  const connectedRadios = radios.filter((r) => r.status === 'connected');
 
   return (
     <div className="space-y-6">

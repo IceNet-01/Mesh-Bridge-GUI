@@ -111,7 +111,7 @@ export const useStore = create<AppStore>((set) => {
     set({ aiPullProgress: progress });
   });
 
-  manager.on('ai-pull-complete', ({ model }: { model: string }) => {
+  manager.on('ai-pull-complete', () => {
     set({ aiPullProgress: null });
   });
 
