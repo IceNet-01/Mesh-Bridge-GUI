@@ -75,17 +75,44 @@ The application will start:
 
 Open your browser to **http://localhost:5173**
 
-### Production Build
+### Run as System Service (Linux)
+
+Install as a permanent service that starts on boot:
+
+```bash
+# Install and enable the service (requires sudo)
+sudo npm run service:install
+
+# Start the service
+npm run service:start
+
+# Access at http://localhost:8080
+```
+
+**Service Management:**
+```bash
+npm run service:start      # Start service
+npm run service:stop       # Stop service
+npm run service:restart    # Restart service
+npm run service:status     # Check status
+npm run service:logs       # View logs
+```
+
+Benefits:
+- ✅ Starts automatically on system boot
+- ✅ Auto-restarts if it crashes
+- ✅ Radio connections persist even when browser is closed
+- ✅ Single port (8080) for both WebSocket and web UI
+- ✅ Automatic port cleanup on startup
+
+### Production Build (Manual)
 
 ```bash
 # Build the frontend
 npm run build
 
-# Start bridge server
-npm run bridge
-
-# Serve the built frontend
-npm run preview
+# Run in production mode (serves both on port 8080)
+npm run production
 ```
 
 ## How It Works

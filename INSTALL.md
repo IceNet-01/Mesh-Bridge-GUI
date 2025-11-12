@@ -273,7 +273,66 @@ If you installed the PWA (Progressive Web App) to your browser/desktop:
 
 ## Production Deployment
 
-To deploy the application to a server:
+### Service Installation (Recommended for Linux)
+
+Install the bridge as a systemd service that starts automatically on boot:
+
+```bash
+# Install the service (requires sudo)
+sudo npm run service:install
+```
+
+This will:
+- Build the frontend if not already built
+- Create a systemd service file
+- Add your user to the `dialout` group for serial port access
+- Enable the service to start on boot
+- Set up automatic port cleanup on startup
+
+#### Service Management Commands
+
+```bash
+# Using npm scripts (easier)
+npm run service:start      # Start the service
+npm run service:stop       # Stop the service
+npm run service:restart    # Restart the service
+npm run service:status     # Check service status
+npm run service:logs       # View live logs
+npm run service:enable     # Enable auto-start on boot
+npm run service:disable    # Disable auto-start
+
+# Using systemctl directly
+sudo systemctl start meshtastic-bridge
+sudo systemctl stop meshtastic-bridge
+sudo systemctl restart meshtastic-bridge
+sudo systemctl status meshtastic-bridge
+sudo journalctl -u meshtastic-bridge -f  # Follow logs
+```
+
+#### Port Cleanup Utility
+
+If you have stale processes using port 8080:
+
+```bash
+npm run cleanup-ports      # Kill processes on port 8080
+```
+
+#### Uninstall Service
+
+```bash
+sudo npm run service:uninstall
+```
+
+This removes the systemd service but keeps your application files.
+
+#### Service Features
+
+- ✅ **Automatic startup** - Starts on system boot
+- ✅ **Auto-restart** - Automatically restarts if it crashes
+- ✅ **Port cleanup** - Cleans up stale ports before starting
+- ✅ **Persistent connections** - Radio connections remain active even when web UI is closed
+- ✅ **Logging** - All logs available via `journalctl`
+- ✅ **Security hardening** - Runs with limited privileges
 
 ### Option 1: Simple Deployment
 
@@ -281,15 +340,8 @@ To deploy the application to a server:
 # Build the frontend
 npm run build
 
-# Copy these to your server:
-# - bridge-server/
-# - dist/
-# - package.json
-# - node_modules/
-
-# On the server:
-npm run bridge        # Run bridge in background/systemd
-npm run preview       # Serve frontend
+# Run in production mode (serves both bridge and frontend on port 8080)
+npm run production
 ```
 
 ### Option 2: Static + Separate Bridge
@@ -313,8 +365,8 @@ COPY package*.json ./
 RUN npm ci --only=production
 COPY . .
 RUN npm run build
-EXPOSE 8080 5173
-CMD ["npm", "run", "start"]
+EXPOSE 8080
+CMD ["npm", "run", "production"]
 ```
 
 ## System Requirements

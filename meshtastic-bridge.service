@@ -1,0 +1,29 @@
+[Unit]
+Description=Meshtastic Bridge GUI Service
+Documentation=https://github.com/IceNet-01/Mesh-Bridge-GUI
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%INSTALL_DIR%
+Environment="NODE_ENV=production"
+Environment="BRIDGE_PORT=8080"
+ExecStartPre=/bin/bash %INSTALL_DIR%/scripts/cleanup-ports.sh 8080
+ExecStart=/usr/bin/node %INSTALL_DIR%/bridge-server/index.mjs
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%INSTALL_DIR%/logs
+
+# Allow serial port access for radios
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target

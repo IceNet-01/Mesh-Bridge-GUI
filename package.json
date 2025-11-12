@@ -11,7 +11,18 @@
     "preview": "vite preview",
     "serve": "vite preview --host",
     "bridge": "node bridge-server/index.mjs",
-    "start": "npm run bridge & npm run dev"
+    "start": "npm run bridge & npm run dev",
+    "production": "npm run build && node bridge-server/index.mjs",
+    "cleanup-ports": "bash scripts/cleanup-ports.sh 8080",
+    "service:install": "bash scripts/install-service.sh",
+    "service:uninstall": "bash scripts/uninstall-service.sh",
+    "service:start": "systemctl start meshtastic-bridge",
+    "service:stop": "systemctl stop meshtastic-bridge",
+    "service:restart": "systemctl restart meshtastic-bridge",
+    "service:status": "systemctl status meshtastic-bridge",
+    "service:logs": "journalctl -u meshtastic-bridge -f",
+    "service:enable": "systemctl enable meshtastic-bridge",
+    "service:disable": "systemctl disable meshtastic-bridge"
   },
   "dependencies": {
     "@meshtastic/core": "^2.6.7",

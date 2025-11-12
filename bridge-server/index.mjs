@@ -11,12 +11,21 @@
  * - Uses @meshtastic/core for protocol handling
  * - Handles all Meshtastic protocol details (protobuf, framing, etc.)
  * - Exposes simple WebSocket API for PWA to consume
+ * - Serves static frontend files from dist/ directory in production
  */
 
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
 import { SerialPort } from 'serialport';
+import { createServer } from 'http';
+import { readFileSync, existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const distPath = join(__dirname, '..', 'dist');
 
 class MeshtasticBridgeServer {
   constructor(port = 8080) {
@@ -54,14 +63,24 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Start the WebSocket server
+   * Start the HTTP and WebSocket server
    */
   async start() {
     console.log('🚀 Meshtastic Bridge Server starting...');
     console.log('📦 Using latest @meshtastic packages from Meshtastic Web monorepo');
 
-    // Create WebSocket server
-    this.wss = new WebSocketServer({ port: this.wsPort });
+    // Create HTTP server for static files
+    const httpServer = createServer((req, res) => {
+      // Serve static files from dist/
+      const staticFileServed = this.serveStaticFile(req, res);
+      if (!staticFileServed) {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+
+    // Create WebSocket server attached to HTTP server
+    this.wss = new WebSocketServer({ server: httpServer });
 
     this.wss.on('connection', (ws) => {
       console.log('📱 PWA client connected');
@@ -110,10 +129,85 @@ class MeshtasticBridgeServer {
       });
     });
 
-    console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
-    console.log('📻 Ready to connect radios...');
-    console.log('');
-    console.log('💡 Connect your PWA to: ws://localhost:8080');
+    // Start HTTP server
+    httpServer.listen(this.wsPort, () => {
+      console.log(`✅ HTTP server listening on http://localhost:${this.wsPort}`);
+      console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
+
+      if (existsSync(distPath)) {
+        console.log(`📂 Serving static files from: ${distPath}`);
+        console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+      } else {
+        console.log(`⚠️  No dist/ folder found - run 'npm run build' first for production mode`);
+        console.log(`💡 For development, run 'npm run dev' in a separate terminal`);
+      }
+
+      console.log('📻 Ready to connect radios...');
+      console.log('');
+    });
+  }
+
+  /**
+   * Serve static files from dist/ directory
+   */
+  serveStaticFile(req, res) {
+    if (!existsSync(distPath)) {
+      return false;
+    }
+
+    // Map URL to file path
+    let filePath = req.url === '/' ? '/index.html' : req.url;
+
+    // Remove query string
+    const queryIndex = filePath.indexOf('?');
+    if (queryIndex !== -1) {
+      filePath = filePath.substring(0, queryIndex);
+    }
+
+    const fullPath = join(distPath, filePath);
+
+    // Security: ensure file is within dist directory
+    if (!fullPath.startsWith(distPath)) {
+      return false;
+    }
+
+    if (!existsSync(fullPath)) {
+      // For SPA routing, serve index.html for non-API routes
+      if (!filePath.includes('.')) {
+        const indexPath = join(distPath, 'index.html');
+        if (existsSync(indexPath)) {
+          const content = readFileSync(indexPath);
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(content);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    try {
+      const content = readFileSync(fullPath);
+      const ext = filePath.split('.').pop();
+      const contentType = {
+        'html': 'text/html',
+        'js': 'application/javascript',
+        'css': 'text/css',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'svg': 'image/svg+xml',
+        'ico': 'image/x-icon',
+        'woff': 'font/woff',
+        'woff2': 'font/woff2'
+      }[ext] || 'application/octet-stream';
+
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error serving ${filePath}:`, error);
+      return false;
+    }
   }
 
   /**
