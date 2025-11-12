@@ -40,7 +40,14 @@ export const useStore = create<AppStore>((set) => {
   });
 
   manager.on('message-received', ({ message }: { radioId: string; message: Message }) => {
-    set(state => ({ messages: [message, ...state.messages].slice(0, 500) }));
+    set(state => {
+      // Check if message already exists (prevent duplicates)
+      const exists = state.messages.some(m => m.id === message.id);
+      if (exists) {
+        return state; // Don't add duplicate
+      }
+      return { messages: [message, ...state.messages].slice(0, 500) };
+    });
   });
 
   manager.on('message-forwarded', ({ message }: { message: Message }) => {

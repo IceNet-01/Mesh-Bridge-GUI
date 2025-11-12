@@ -180,10 +180,17 @@ export class WebSocketRadioManager {
         this.emit('radio-status-change', Array.from(this.radios.values()));
         break;
 
-      case 'radio-connected':
-        // New radio connected
+      case 'radio-connecting':
+        // Radio is connecting (before configuration completes)
         this.radios.set(data.radio.id, data.radio);
         this.statistics.radioStats[data.radio.id] = { received: 0, sent: 0, errors: 0 };
+        this.emit('radio-status-change', Array.from(this.radios.values()));
+        this.log('info', `Radio connecting: ${data.radio.id} on ${data.radio.port}...`);
+        break;
+
+      case 'radio-connected':
+        // Radio fully connected (after configuration completes)
+        this.radios.set(data.radio.id, data.radio);
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
         break;

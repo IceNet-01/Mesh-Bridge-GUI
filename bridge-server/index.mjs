@@ -299,6 +299,24 @@ class MeshtasticBridgeServer {
         }
       });
 
+      // Notify clients IMMEDIATELY that radio is connecting
+      this.broadcast({
+        type: 'radio-connecting',
+        radio: {
+          id: radioId,
+          name: `Radio ${radioId.substring(0, 8)}`,
+          port: portPath,
+          status: 'connecting',
+          messagesReceived: 0,
+          messagesSent: 0,
+          errors: 0,
+          info: {
+            port: portPath,
+            connectedAt: new Date()
+          }
+        }
+      });
+
       // Configure the device (required for message flow)
       console.log(`⚙️  Configuring radio ${radioId}...`);
       await device.configure();
@@ -329,8 +347,12 @@ class MeshtasticBridgeServer {
         type: 'radio-connected',
         radio: {
           id: radioId,
+          name: `Radio ${radioId.substring(0, 8)}`,
           port: portPath,
           status: 'connected',
+          messagesReceived: 0,
+          messagesSent: 0,
+          errors: 0,
           info: {
             port: portPath,
             connectedAt: new Date()
