@@ -241,6 +241,18 @@ class MeshtasticBridgeServer {
         console.log(`ℹ️  Radio ${radioId} node info:`, node);
       });
 
+      // Store radio reference BEFORE configure() so onMyNodeInfo can find it
+      this.radios.set(radioId, {
+        device,
+        transport,
+        port: portPath,
+        nodeNum: null, // Will be set when we receive myNodeInfo (during configure)
+        info: {
+          port: portPath,
+          connectedAt: new Date()
+        }
+      });
+
       // Configure the device (required for message flow)
       console.log(`⚙️  Configuring radio ${radioId}...`);
       await device.configure();
@@ -250,21 +262,9 @@ class MeshtasticBridgeServer {
       device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
       console.log(`💓 Heartbeat enabled for radio ${radioId}`);
 
-      // Store radio reference
-      this.radios.set(radioId, {
-        device,
-        transport,
-        port: portPath,
-        nodeNum: null, // Will be set when we receive myNodeInfo
-        info: {
-          port: portPath,
-          connectedAt: new Date()
-        }
-      });
-
       console.log(`✅ Successfully connected to radio ${radioId} on ${portPath}`);
 
-      // Notify all clients
+      // Notify all clients AFTER configuration is complete
       this.broadcast({
         type: 'radio-connected',
         radio: {
