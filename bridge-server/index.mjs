@@ -485,7 +485,10 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`🔀 Checking other radios for matching channel ${channel} ("${sourceChannel.name}")...`);
+      console.log(`🔀 Forwarding from source channel ${channel}:`);
+      console.log(`   Name: "${sourceChannel.name}"`);
+      console.log(`   PSK: ${sourceChannel.psk.substring(0, 16)}...`);
+      console.log(`   Looking for matching channel on other radios...`);
 
       const otherRadios = Array.from(this.radios.entries()).filter(
         ([radioId]) => radioId !== sourceRadioId
@@ -505,8 +508,14 @@ class MeshtasticBridgeServer {
           let matchingChannel = null;
 
           if (radio.channels) {
+            console.log(`  🔍 Searching ${radio.channels.size} channels on ${targetRadioId} for match...`);
             for (const [idx, ch] of radio.channels.entries()) {
+              const pskMatch = sourceChannel.psk === ch.psk;
+              const nameMatch = sourceChannel.name === ch.name;
+              console.log(`    Channel ${idx}: "${ch.name}" PSK:${ch.psk.substring(0,8)}... | PSK match: ${pskMatch}, Name match: ${nameMatch}`);
+
               if (this.channelsMatch(sourceChannel, ch)) {
+                console.log(`    ✅ MATCH FOUND on channel ${idx}`);
                 matchingChannelIndex = idx;
                 matchingChannel = ch;
                 break;
