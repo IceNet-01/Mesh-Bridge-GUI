@@ -1,0 +1,192 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This file contains notices and information for third-party software components
+included with or used by Meshtastic Bridge GUI.
+
+================================================================================
+
+The Meshtastic Bridge GUI software includes or depends upon the following
+third-party software components, each subject to its own license terms.
+
+================================================================================
+MESHTASTIC LIBRARIES
+================================================================================
+
+@meshtastic/core (v2.6.7)
+@meshtastic/transport-node-serial (v0.0.2)
+
+License: GPL-3.0
+Copyright: Meshtastic LLC
+Repository: https://github.com/meshtastic
+License URL: https://github.com/meshtastic/meshtastic/blob/master/LICENSE
+
+The Meshtastic project is licensed under the GNU General Public License v3.0.
+Users of this software must comply with the terms of GPL-3.0 when using or
+distributing software that includes Meshtastic components.
+
+Note: Meshtastic® is a registered trademark of Meshtastic LLC.
+
+================================================================================
+REACT LIBRARIES
+================================================================================
+
+React (v18.3.1)
+React DOM (v18.3.1)
+
+License: MIT
+Copyright (c) Meta Platforms, Inc. and affiliates.
+Repository: https://github.com/facebook/react
+License URL: https://github.com/facebook/react/blob/main/LICENSE
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+================================================================================
+BUILD TOOLS AND BUNDLERS
+================================================================================
+
+Vite (v5.4.11)
+License: MIT
+Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
+Repository: https://github.com/vitejs/vite
+
+TypeScript (v5.6.3)
+License: Apache-2.0
+Copyright: Microsoft Corporation
+Repository: https://github.com/microsoft/TypeScript
+
+================================================================================
+UI AND STYLING LIBRARIES
+================================================================================
+
+Tailwind CSS (v3.4.15)
+License: MIT
+Copyright (c) Tailwind Labs, Inc.
+Repository: https://github.com/tailwindlabs/tailwindcss
+
+Recharts (v2.13.3)
+License: MIT
+Repository: https://github.com/recharts/recharts
+
+================================================================================
+STATE MANAGEMENT
+================================================================================
+
+Zustand (v5.0.1)
+License: MIT
+Copyright (c) 2019 Paul Henschel
+Repository: https://github.com/pmndrs/zustand
+
+================================================================================
+NODE.JS LIBRARIES
+================================================================================
+
+SerialPort (v13.0.0)
+License: MIT
+Repository: https://github.com/serialport/node-serialport
+
+ws - WebSocket library (v8.18.0)
+License: MIT
+Copyright (c) 2011 Einar Otto Stangvik
+Repository: https://github.com/websockets/ws
+
+Buffer (v6.0.3)
+License: MIT
+Repository: https://github.com/feross/buffer
+
+stream-browserify (v3.0.0)
+License: MIT
+Repository: https://github.com/browserify/stream-browserify
+
+================================================================================
+PWA SUPPORT
+================================================================================
+
+vite-plugin-pwa (v0.20.5)
+License: MIT
+Repository: https://github.com/vite-pwa/vite-plugin-pwa
+
+workbox-window (v7.3.0)
+License: MIT
+Copyright: Google LLC
+Repository: https://github.com/GoogleChrome/workbox
+
+================================================================================
+COMPLETE DEPENDENCY LIST
+================================================================================
+
+For a complete and up-to-date list of all dependencies and their versions,
+please refer to the package.json file in the project root.
+
+To generate a detailed license report, run:
+  npm list --all
+  npx license-checker --summary
+
+================================================================================
+GENERAL NOTICES
+================================================================================
+
+1. All third-party software components are the property of their respective
+   copyright holders and are subject to their own license terms.
+
+2. The inclusion of third-party software in this project does not imply any
+   endorsement by the copyright holders of those components.
+
+3. Users of this software must comply with all applicable third-party licenses.
+
+4. The license terms for the Meshtastic Bridge GUI software (see LICENSE file)
+   apply only to the original code created by Northern Plains IT, LLC and
+   OnyxVZ, LLC, not to third-party components.
+
+5. Some dependencies may have their own dependencies (transitive dependencies)
+   which are also subject to their respective licenses.
+
+================================================================================
+MIT LICENSE TEXT (for reference)
+================================================================================
+
+The MIT License is used by many of the dependencies listed above. The standard
+MIT License text is:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+APACHE 2.0 LICENSE REFERENCE
+================================================================================
+
+Some components (such as TypeScript) use the Apache License 2.0.
+Full text available at: https://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+GPL-3.0 LICENSE REFERENCE
+================================================================================
+
+The Meshtastic components use GPL-3.0.
+Full text available at: https://www.gnu.org/licenses/gpl-3.0.en.html
+
+================================================================================
+
+Last Updated: 2025-11-12
