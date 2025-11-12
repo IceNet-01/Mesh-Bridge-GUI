@@ -14,6 +14,7 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.transport = null;
     this.device = null;
     this.channelMap = new Map();
+    this.loraConfig = null;
   }
 
   getProtocolName() {
@@ -142,6 +143,34 @@ export class MeshtasticProtocol extends BaseProtocol {
         this.handleError(error);
       }
     });
+
+    // Subscribe to LoRa config packets
+    this.device.events.onLoraConfigPacket.subscribe((loraConfig) => {
+      try {
+        this.loraConfig = {
+          region: loraConfig.region,
+          modemPreset: loraConfig.modemPreset,
+          hopLimit: loraConfig.hopLimit,
+          txEnabled: loraConfig.txEnabled,
+          txPower: loraConfig.txPower,
+          channelNum: loraConfig.channelNum,
+          overrideDutyCycle: loraConfig.overrideDutyCycle,
+          sx126xRxBoostedGain: loraConfig.sx126xRxBoostedGain,
+          overrideFrequency: loraConfig.overrideFrequency,
+          ignoreMqtt: loraConfig.ignoreMqtt
+        };
+
+        console.log(`[Meshtastic] LoRa config:`, {
+          region: this.loraConfig.region,
+          modemPreset: this.loraConfig.modemPreset,
+          txPower: this.loraConfig.txPower,
+          hopLimit: this.loraConfig.hopLimit
+        });
+      } catch (error) {
+        console.error('[Meshtastic] Error handling LoRa config:', error);
+        this.handleError(error);
+      }
+    });
   }
 
   async disconnect() {
@@ -220,7 +249,51 @@ export class MeshtasticProtocol extends BaseProtocol {
   getProtocolMetadata() {
     return {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
-      hardware: this.nodeInfo?.hwModel || 'unknown'
+      hardware: this.nodeInfo?.hwModel || 'unknown',
+      loraConfig: this.loraConfig ? {
+        region: this.getRegionName(this.loraConfig.region),
+        modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),
+        hopLimit: this.loraConfig.hopLimit,
+        txEnabled: this.loraConfig.txEnabled,
+        txPower: this.loraConfig.txPower,
+        channelNum: this.loraConfig.channelNum
+      } : null
     };
+  }
+
+  getRegionName(region) {
+    const regions = {
+      0: 'Unset',
+      1: 'US',
+      2: 'EU_433',
+      3: 'EU_868',
+      4: 'CN',
+      5: 'JP',
+      6: 'ANZ',
+      7: 'KR',
+      8: 'TW',
+      9: 'RU',
+      10: 'IN',
+      11: 'NZ_865',
+      12: 'TH',
+      13: 'LORA_24',
+      14: 'UA_433',
+      15: 'UA_868'
+    };
+    return regions[region] || `Unknown (${region})`;
+  }
+
+  getModemPresetName(preset) {
+    const presets = {
+      0: 'Long Fast',
+      1: 'Long Slow',
+      2: 'Very Long Slow',
+      3: 'Medium Slow',
+      4: 'Medium Fast',
+      5: 'Short Slow',
+      6: 'Short Fast',
+      7: 'Long Moderate'
+    };
+    return presets[preset] || `Unknown (${preset})`;
   }
 }

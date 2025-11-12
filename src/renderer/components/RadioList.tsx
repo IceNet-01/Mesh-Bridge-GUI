@@ -126,6 +126,38 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
         </div>
       )}
 
+      {/* Meshtastic-specific LoRa Configuration */}
+      {radio.protocol === 'meshtastic' && radio.protocolMetadata?.loraConfig && (
+        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <p className="text-blue-300 text-xs font-semibold mb-2 uppercase">LoRa Configuration</p>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <p className="text-slate-400">Region</p>
+              <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.region}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Modem Preset</p>
+              <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.modemPreset}</p>
+            </div>
+            {radio.protocolMetadata.loraConfig.txPower !== undefined && (
+              <div>
+                <p className="text-slate-400">TX Power</p>
+                <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.txPower} dBm</p>
+              </div>
+            )}
+            {radio.protocolMetadata.loraConfig.hopLimit !== undefined && (
+              <div>
+                <p className="text-slate-400">Hop Limit</p>
+                <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.hopLimit}</p>
+              </div>
+            )}
+          </div>
+          {radio.protocolMetadata.firmware && (
+            <p className="text-xs text-slate-500 mt-2">Firmware: {radio.protocolMetadata.firmware}</p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <MetricItem label="Received" value={radio.messagesReceived} color="green" />
         <MetricItem label="Sent" value={radio.messagesSent} color="blue" />

@@ -24,6 +24,17 @@ export interface Radio {
   errors: number;
   // Protocol-specific metadata
   protocolMetadata?: {
+    // Meshtastic-specific
+    firmware?: string;
+    hardware?: string;
+    loraConfig?: {
+      region?: string;
+      modemPreset?: string;
+      hopLimit?: number;
+      txEnabled?: boolean;
+      txPower?: number;
+      channelNum?: number;
+    };
     // Reticulum-specific
     destinationHash?: string;
     identityHash?: string;
