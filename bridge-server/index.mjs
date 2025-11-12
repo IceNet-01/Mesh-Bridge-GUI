@@ -56,9 +56,31 @@ class MeshtasticBridgeServer {
     this.enableSmartMatching = true;  // Recommended: true for correct cross-index forwarding
     this.channelMap = null;           // Only used when enableSmartMatching = false
 
+    // ===== COMMAND SYSTEM CONFIGURATION =====
+    // Interactive bridge commands triggered by prefix (default: #)
+    // Users can send commands like "#weather Seattle" or "#ping"
+    // Bridge responds instead of forwarding the message
+    //
+    this.commandsEnabled = true;         // Enable/disable command system
+    this.commandPrefix = '#';            // Command prefix (e.g., # for #ping, ! for !ping)
+    this.commandRateLimit = 10;          // Max commands per minute per user
+    this.commandUsage = new Map();       // Track command usage for rate limiting
+    this.bridgeStartTime = Date.now();   // Track uptime
+
+    // Enabled commands list - remove any you don't want
+    this.enabledCommands = [
+      'ping', 'help', 'status', 'time', 'uptime', 'version',
+      'weather', 'radios', 'channels', 'stats', 'nodes'
+    ];
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
+    console.log(`   Command system: ${this.commandsEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.commandsEnabled) {
+      console.log(`   Command prefix: ${this.commandPrefix}`);
+      console.log(`   Available commands: ${this.enabledCommands.length} commands`);
+    }
     console.log('');
   }
 
@@ -509,6 +531,14 @@ class MeshtasticBridgeServer {
       const text = packet.data;
 
       if (text && typeof text === 'string' && text.length > 0) {
+        // ===== COMMAND DETECTION =====
+        // Check if this is a command (starts with command prefix)
+        if (this.commandsEnabled && text.trim().startsWith(this.commandPrefix)) {
+          console.log(`🤖 Command detected: ${text}`);
+          this.handleCommand(radioId, packet.channel, packet.from, text.trim());
+          return; // Don't forward commands - consume them
+        }
+
         // Check if this message is FROM one of our bridge radios (forwarding loop prevention)
         const isFromOurBridgeRadio = Array.from(this.radios.values()).some(
           radio => radio.nodeNum === packet.from
@@ -571,6 +601,371 @@ class MeshtasticBridgeServer {
     } catch (error) {
       console.error('❌ Error handling message packet:', error, packet);
     }
+  }
+
+  /**
+   * Handle command messages (messages starting with command prefix)
+   */
+  async handleCommand(radioId, channel, fromNode, commandText) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        console.error(`❌ Radio ${radioId} not found for command`);
+        return;
+      }
+
+      // Check rate limiting
+      if (this.isRateLimited(fromNode)) {
+        console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
+        await radio.device.sendText(
+          `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
+          'broadcast',
+          false,
+          channel
+        );
+        return;
+      }
+
+      // Parse command
+      const command = commandText.substring(this.commandPrefix.length).trim().toLowerCase();
+      const args = command.split(/\s+/);
+      const cmd = args[0];
+      const cmdArgs = args.slice(1);
+
+      console.log(`🤖 Processing command: ${cmd} with args:`, cmdArgs);
+
+      // Check if command is enabled
+      if (!this.enabledCommands.includes(cmd)) {
+        console.log(`⚠️  Command not enabled: ${cmd}`);
+        await radio.device.sendText(
+          `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
+          'broadcast',
+          false,
+          channel
+        );
+        return;
+      }
+
+      // Route to appropriate command handler
+      let response = '';
+      switch (cmd) {
+        case 'ping':
+          response = await this.cmdPing();
+          break;
+        case 'help':
+          response = await this.cmdHelp();
+          break;
+        case 'status':
+          response = await this.cmdStatus();
+          break;
+        case 'time':
+          response = await this.cmdTime();
+          break;
+        case 'uptime':
+          response = await this.cmdUptime();
+          break;
+        case 'version':
+          response = await this.cmdVersion();
+          break;
+        case 'weather':
+          response = await this.cmdWeather(cmdArgs);
+          break;
+        case 'radios':
+          response = await this.cmdRadios();
+          break;
+        case 'channels':
+          response = await this.cmdChannels(radioId);
+          break;
+        case 'stats':
+          response = await this.cmdStats();
+          break;
+        case 'nodes':
+          response = await this.cmdNodes();
+          break;
+        default:
+          response = `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help`;
+      }
+
+      if (response) {
+        console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
+        await radio.device.sendText(response, 'broadcast', false, channel);
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling command:', error);
+    }
+  }
+
+  /**
+   * Check if user is rate limited (returns true if exceeded limit)
+   */
+  isRateLimited(nodeId) {
+    const now = Date.now();
+    const usage = this.commandUsage.get(nodeId) || [];
+
+    // Filter to only recent usage (last minute)
+    const recentUsage = usage.filter(timestamp => now - timestamp < 60000);
+
+    // Check if limit exceeded
+    if (recentUsage.length >= this.commandRateLimit) {
+      return true;
+    }
+
+    // Add current usage
+    recentUsage.push(now);
+    this.commandUsage.set(nodeId, recentUsage);
+
+    // Clean up old entries periodically
+    if (this.commandUsage.size > 100) {
+      for (const [key, timestamps] of this.commandUsage.entries()) {
+        const recent = timestamps.filter(t => now - t < 60000);
+        if (recent.length === 0) {
+          this.commandUsage.delete(key);
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Command: #ping - Check if bridge is alive
+   */
+  async cmdPing() {
+    return '🏓 Pong! Bridge is alive and running.';
+  }
+
+  /**
+   * Command: #help - List available commands
+   */
+  async cmdHelp() {
+    const commands = [
+      `${this.commandPrefix}ping - Check if bridge is alive`,
+      `${this.commandPrefix}help - Show this help message`,
+      `${this.commandPrefix}status - Bridge status & info`,
+      `${this.commandPrefix}time - Current date/time`,
+      `${this.commandPrefix}uptime - Bridge uptime`,
+      `${this.commandPrefix}version - Software version`,
+      `${this.commandPrefix}weather [city] - Get weather`,
+      `${this.commandPrefix}radios - List connected radios`,
+      `${this.commandPrefix}channels - List bridge channels`,
+      `${this.commandPrefix}stats - Message statistics`,
+      `${this.commandPrefix}nodes - List known nodes`
+    ];
+
+    return `📖 Bridge Commands:\n${commands.join('\n')}`;
+  }
+
+  /**
+   * Command: #status - Bridge status and info
+   */
+  async cmdStatus() {
+    const uptimeStr = this.getUptimeString();
+    const radioCount = this.radios.size;
+    const messageCount = this.messageHistory.length;
+
+    return `📊 Bridge Status:\n` +
+           `Radios: ${radioCount} connected\n` +
+           `Messages: ${messageCount} in history\n` +
+           `Uptime: ${uptimeStr}\n` +
+           `Version: 2.0.0-alpha`;
+  }
+
+  /**
+   * Command: #time - Current date and time
+   */
+  async cmdTime() {
+    const now = new Date();
+    return `🕐 ${now.toLocaleString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })}`;
+  }
+
+  /**
+   * Command: #uptime - Bridge uptime
+   */
+  async cmdUptime() {
+    return `⏱️ Bridge uptime: ${this.getUptimeString()}`;
+  }
+
+  /**
+   * Command: #version - Software version
+   */
+  async cmdVersion() {
+    return `🔖 Meshtastic Bridge GUI v2.0.0-alpha\n` +
+           `Node.js ${process.version}\n` +
+           `Platform: ${process.platform}`;
+  }
+
+  /**
+   * Command: #weather [location] - Get weather report
+   */
+  async cmdWeather(args) {
+    const location = args.length > 0 ? args.join(' ') : 'Seattle';
+
+    try {
+      // Using wttr.in - free weather service, no API key needed
+      const url = `https://wttr.in/${encodeURIComponent(location)}?format=%l:+%C+%t+💧%h+💨%w`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        return `❌ Weather service unavailable`;
+      }
+
+      const weather = await response.text();
+      return `🌤️ ${weather.trim()}`;
+
+    } catch (error) {
+      console.error('Weather fetch error:', error);
+      return `❌ Couldn't fetch weather for ${location}`;
+    }
+  }
+
+  /**
+   * Command: #radios - List connected radios
+   */
+  async cmdRadios() {
+    if (this.radios.size === 0) {
+      return '📻 No radios connected';
+    }
+
+    const radioList = Array.from(this.radios.entries()).map(([id, radio]) => {
+      const shortId = id.substring(0, 8);
+      const nodeNum = radio.nodeNum ? `!${radio.nodeNum.toString(16)}` : 'unknown';
+      return `📻 ${shortId} (${nodeNum}) on ${radio.port}`;
+    });
+
+    return `Connected Radios (${this.radios.size}):\n${radioList.join('\n')}`;
+  }
+
+  /**
+   * Command: #channels - List configured channels on this bridge
+   */
+  async cmdChannels(radioId) {
+    const radio = this.radios.get(radioId);
+    if (!radio || !radio.channels || radio.channels.size === 0) {
+      return '⚠️ No channel info available';
+    }
+
+    const channelList = Array.from(radio.channels.entries()).map(([idx, ch]) => {
+      const name = ch.name || '(unnamed)';
+      const role = ch.role === 1 ? 'PRI' : ch.role === 0 ? 'SEC' : 'DIS';
+      return `[${idx}] ${name} (${role})`;
+    });
+
+    return `🔐 Bridge Channels:\n${channelList.join('\n')}`;
+  }
+
+  /**
+   * Command: #stats - Message statistics
+   */
+  async cmdStats() {
+    const totalMessages = this.messageHistory.length;
+    const uniqueNodes = new Set(this.messageHistory.map(m => m.from)).size;
+
+    // Calculate messages per radio
+    const radioStats = new Map();
+    for (const msg of this.messageHistory) {
+      const count = radioStats.get(msg.radioId) || 0;
+      radioStats.set(msg.radioId, count + 1);
+    }
+
+    let statsText = `📊 Message Statistics:\n` +
+                   `Total: ${totalMessages} messages\n` +
+                   `Unique nodes: ${uniqueNodes}\n`;
+
+    if (radioStats.size > 0) {
+      statsText += `Per Radio:\n`;
+      for (const [radioId, count] of radioStats.entries()) {
+        const shortId = radioId.substring(0, 8);
+        statsText += `  ${shortId}: ${count} msgs\n`;
+      }
+    }
+
+    return statsText.trim();
+  }
+
+  /**
+   * Command: #nodes - List known nodes
+   */
+  async cmdNodes() {
+    // Get unique nodes from message history
+    const nodes = new Map();
+
+    for (const msg of this.messageHistory) {
+      if (!nodes.has(msg.from)) {
+        nodes.set(msg.from, {
+          nodeNum: msg.from,
+          lastSeen: msg.timestamp,
+          messageCount: 1
+        });
+      } else {
+        const node = nodes.get(msg.from);
+        node.messageCount++;
+        if (msg.timestamp > node.lastSeen) {
+          node.lastSeen = msg.timestamp;
+        }
+      }
+    }
+
+    if (nodes.size === 0) {
+      return '👥 No nodes seen yet';
+    }
+
+    const nodeList = Array.from(nodes.entries())
+      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+      .slice(0, 10) // Top 10 most recent
+      .map(([nodeNum, info]) => {
+        const hexId = `!${nodeNum.toString(16)}`;
+        const timeAgo = this.getTimeAgo(info.lastSeen);
+        return `${hexId} (${info.messageCount} msgs, ${timeAgo})`;
+      });
+
+    return `👥 Known Nodes (${nodes.size} total, showing 10):\n${nodeList.join('\n')}`;
+  }
+
+  /**
+   * Get uptime as human-readable string
+   */
+  getUptimeString() {
+    const uptimeMs = Date.now() - this.bridgeStartTime;
+    const hours = Math.floor(uptimeMs / 3600000);
+    const minutes = Math.floor((uptimeMs % 3600000) / 60000);
+    const seconds = Math.floor((uptimeMs % 60000) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
+
+  /**
+   * Get time ago as human-readable string
+   */
+  getTimeAgo(timestamp) {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now - then;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   }
 
   /**

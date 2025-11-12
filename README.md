@@ -41,6 +41,13 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 - **Multi-mesh bridging** - can bridge between different encrypted meshes
 - **Automatic PSK matching** - finds matching channels by encryption key and name
 
+🤖 **Interactive Command System**
+- **Bridge commands** - send commands like `#weather Seattle` or `#ping` from your radio
+- **11 built-in commands** - weather, status, uptime, radios, channels, stats, and more
+- **Rate limiting** - prevents command spam (max 10/min per user)
+- **No phone needed** - get info directly on radio screen
+- **Fully configurable** - enable/disable commands, change prefix, customize
+
 🎨 **Modern UI**
 - Clean, dark-themed interface
 - Responsive design with Tailwind CSS
@@ -174,6 +181,59 @@ npm run production
 - Radio 2: Channel 3 = "LongFast" (AQ==), Channel 0 = "Private" (256-bit)
 - Message on Radio 1 ch0 → Auto-forwards to Radio 2 ch3 ✅
 - Message on Radio 1 ch3 → Auto-forwards to Radio 2 ch0 ✅
+
+### Bridge Commands
+
+The bridge includes an **interactive command system** that responds to messages with a special prefix (default: `#`). Instead of forwarding command messages, the bridge processes them and sends back a response.
+
+**Available Commands:**
+- `#ping` - Check if bridge is alive (responds with "Pong!")
+- `#help` - List all available commands
+- `#status` - Show bridge status (connected radios, uptime, message count)
+- `#time` - Get current date and time
+- `#uptime` - Show how long the bridge has been running
+- `#version` - Show bridge software version and platform info
+- `#weather [city]` - Get weather report for a location (default: Seattle)
+- `#radios` - List all connected radios with node IDs
+- `#channels` - List configured channels on the bridge
+- `#stats` - View message statistics (total messages, nodes, per-radio counts)
+- `#nodes` - List recently seen nodes on the mesh
+
+**Example Usage:**
+```
+You send:  #weather Portland
+Bridge responds: 🌤️ Portland: Partly cloudy, 58°F, 💧75%, 💨10mph
+
+You send: #status
+Bridge responds: 📊 Bridge Status:
+                 Radios: 2 connected
+                 Messages: 342 in history
+                 Uptime: 5h 23m
+                 Version: 2.0.0-alpha
+
+You send: #ping
+Bridge responds: 🏓 Pong! Bridge is alive and running.
+```
+
+**Features:**
+- ✅ Commands are NOT forwarded (consumed by bridge)
+- ✅ Rate limiting (max 10 commands/minute per user)
+- ✅ Works on any channel
+- ✅ No internet connection required (except for weather)
+- ✅ Responses visible on radio screen without phone
+
+**Configuration:**
+Commands can be enabled/disabled in `bridge-server/index.mjs`:
+```javascript
+this.commandsEnabled = true;         // Enable/disable all commands
+this.commandPrefix = '#';            // Change prefix (e.g., '!' for !ping)
+this.commandRateLimit = 10;          // Max commands per minute
+this.enabledCommands = [             // Remove unwanted commands
+  'ping', 'help', 'status', 'time',
+  'uptime', 'version', 'weather',
+  'radios', 'channels', 'stats', 'nodes'
+];
+```
 
 ## Usage
 
