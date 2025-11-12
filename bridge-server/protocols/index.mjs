@@ -4,11 +4,14 @@
  * Central export point for all radio protocol handlers
  */
 
-export { BaseProtocol } from './BaseProtocol.mjs';
-export { MeshtasticProtocol } from './MeshtasticProtocol.mjs';
-export { ReticulumProtocol } from './ReticulumProtocol.mjs';
-export { RNodeProtocol } from './RNodeProtocol.mjs';
-export { MeshCoreProtocol } from './MeshCoreProtocol.mjs';
+import { BaseProtocol } from './BaseProtocol.mjs';
+import { MeshtasticProtocol } from './MeshtasticProtocol.mjs';
+import { ReticulumProtocol } from './ReticulumProtocol.mjs';
+import { RNodeProtocol } from './RNodeProtocol.mjs';
+import { MeshCoreProtocol } from './MeshCoreProtocol.mjs';
+
+// Re-export for convenience
+export { BaseProtocol, MeshtasticProtocol, ReticulumProtocol, RNodeProtocol, MeshCoreProtocol };
 
 /**
  * Factory function to create protocol handler
