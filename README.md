@@ -1,133 +1,63 @@
-# Meshtastic Bridge PWA
+# Meshtastic Bridge GUI
 
-A modern, lightweight **Progressive Web App** for managing Meshtastic radio bridge relay stations. Built with React, TypeScript, and Web Serial API.
+A modern **web-based** interface for managing Meshtastic radio bridge relay stations. Built with React, TypeScript, and Node.js with official Meshtastic libraries.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Opera-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-2.0.0-green.svg)
-![Type](https://img.shields.io/badge/type-PWA-purple.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
+![Version](https://img.shields.io/badge/version-2.0.0--alpha-orange.svg)
+![Type](https://img.shields.io/badge/type-Web%20App-blue.svg)
 
-## Version 2.0 - PWA Architecture! 🚀
+## Version 2.0 - Alpha Release! 🚀
 
-**Major Redesign:**
-- 🌐 **No Installation Required** - runs directly in your browser!
-- ⚡ **Lightning Fast** - no Electron overhead (~100MB saved)
-- 🔌 **Web Serial API** - direct USB access from browser
-- 📱 **Installable PWA** - add to home screen like a native app
-- 🔄 **Offline Support** - works without internet connection
-- ✨ Latest @meshtastic/js (2.6.0-0) with JSR support
-- 🎯 Modern Zustand state management
+**NEW Architecture:**
+- 🌐 **Web-Based GUI** - accessible from any modern browser
+- ⚡ **Node.js Bridge Server** - using official @meshtastic/core library
+- 🔌 **WebSocket Communication** - real-time updates between frontend and bridge
+- 📱 **PWA Support** - installable as a progressive web app
+- 🔄 **Auto Message Forwarding** - intelligent channel-aware bridging
+- ✨ **Smart Channel Matching** - handles different channel configurations across radios
 
 ## Features
 
 🎯 **Core Functionality**
-- 📡 Support for 2+ Meshtastic radios with flexible bridging
-- 🔄 Real-time bidirectional message forwarding
+- 📡 Support for 2+ Meshtastic radios with automatic bridging
+- 🔄 **Automatic bidirectional message forwarding** (no manual route configuration needed)
+- 🔐 **Smart channel matching** - forwards messages based on PSK+name, not just index
 - 🛡️ Message deduplication and loop prevention
 - 🔌 Auto-detect USB-connected devices
-- ⚡ Auto-reconnect on connection loss
+- ⚡ Real-time message forwarding
 
 📊 **Monitoring & Analytics**
 - Real-time dashboard with live statistics
-- Message traffic monitoring and filtering
-- Per-radio metrics (received, sent, errors)
-- Health status indicators (battery, signal, channel utilization)
-- Message rate tracking
+- Message traffic monitoring
+- Per-radio message counters (received, forwarded)
+- Connection status indicators
+- Message history with filtering
 
-⚙️ **Configuration**
-- Visual bridge route configuration
-- Support for multiple bridge routes
-- Configurable deduplication window
-- Adjustable reconnect parameters
-- Enable/disable individual routes
+⚙️ **Advanced Channel Handling**
+- **Cross-index forwarding** - handles radios with channels on different indices
+- **Private channel support** - forwards encrypted channels if configured on both bridge radios
+- **Multi-mesh bridging** - can bridge between different encrypted meshes
+- **Automatic PSK matching** - finds matching channels by encryption key and name
 
 🎨 **Modern UI**
-- Beautiful dark-themed interface
+- Clean, dark-themed interface
 - Responsive design with Tailwind CSS
-- Real-time updates
-- Interactive charts and graphs
+- Real-time updates via WebSocket
 - Intuitive navigation
 
-🔧 **Developer Features**
-- Built with TypeScript for type safety
-- Cross-platform (Windows, macOS, Linux)
-- Auto-update functionality
-- Comprehensive logging system
-
-## 🚀 One-Line Installation
-
-### Linux/macOS
-```bash
-git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git && cd Mesh-Bridge-GUI && ./install.sh
-```
-
-### Windows (PowerShell/CMD)
-```batch
-git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git && cd Mesh-Bridge-GUI && install.bat
-```
-
-**That's it!** The installer automatically:
-- ✅ Installs Node.js 20 LTS if needed (asks first)
-- ✅ Installs all dependencies
-- ✅ Builds the application
-- ✅ Adds `mesh-bridge` command to your PATH
-
-Then run from anywhere:
-```bash
-mesh-bridge
-```
-
-Open browser to: **http://localhost:5173**
-
----
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Modern Browser**: Chrome 89+, Edge 89+, or Brave 89+ (Desktop)
-- **Meshtastic Device**: Connected via USB
+- **Node.js 18+** (required for bridge server)
+- **Modern Browser**: Chrome, Firefox, Edge, Safari
+- **Meshtastic Devices**: 2+ radios connected via USB
 - **Git**: For cloning the repository
-- **Node.js 18+**: Auto-installed by installer if missing
 
-### Installation Options
-
-#### Option 1: Automated Install (Recommended)
-
-**Linux/macOS:**
-```bash
-git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
-cd Mesh-Bridge-GUI
-./install.sh
-```
-
-**Windows:**
-```batch
-git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
-cd Mesh-Bridge-GUI
-install.bat
-```
-
-The installer will:
-- Check for Node.js and offer to install it automatically if missing
-- Install all npm dependencies
-- Build the production application
-- Add `mesh-bridge` command to your PATH
-
-**Run from anywhere:**
-```bash
-mesh-bridge
-```
-
-**Or from project directory:**
-```bash
-npm run dev
-```
-
-#### Option 2: Manual Installation
+### Installation
 
 ```bash
-# Prerequisites: Node.js 18+ and npm
 # Clone the repository
 git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
 cd Mesh-Bridge-GUI
@@ -135,81 +65,141 @@ cd Mesh-Bridge-GUI
 # Install dependencies
 npm install
 
-# Run development server
-npm run dev
-
-# Open in browser
-# Navigate to http://localhost:5173
+# Start the application (both bridge server and web UI)
+npm run start
 ```
 
-#### Option 3: Build & Deploy
+The application will start:
+- **Bridge Server**: http://localhost:8080 (WebSocket)
+- **Web UI**: http://localhost:5173
+
+Open your browser to **http://localhost:5173**
+
+### Production Build
 
 ```bash
-# Build for production
+# Build the frontend
 npm run build
 
-# The dist/ folder contains the static PWA
-# Deploy to any static hosting (Netlify, Vercel, GitHub Pages, etc.)
+# Start bridge server
+npm run bridge
 
-# Or preview locally
+# Serve the built frontend
 npm run preview
 ```
 
+## How It Works
+
+### Architecture
+
+```
+┌─────────────────┐
+│   Web Browser   │ ← You interact here
+│  (localhost:5173)│
+└────────┬────────┘
+         │ WebSocket
+         │
+┌────────▼────────┐
+│  Bridge Server  │ ← Node.js server
+│ (localhost:8080)│
+└────────┬────────┘
+         │ Serial (USB)
+    ┌────┴────┐
+    │         │
+┌───▼──┐  ┌──▼───┐
+│Radio1│  │Radio2│ ← Meshtastic devices
+└──────┘  └──────┘
+```
+
+### Message Forwarding
+
+**Automatic Forwarding** (default behavior):
+1. Message received on Radio 1, channel X
+2. Bridge decrypts using channel X's PSK
+3. Bridge searches Radio 2 for matching channel (same name + PSK)
+4. If found, forwards to that channel (even if different index!)
+5. Radio 2 re-encrypts and transmits
+
+**Example Scenario:**
+- Radio 1: Channel 0 = "LongFast" (AQ==), Channel 3 = "Private" (256-bit)
+- Radio 2: Channel 3 = "LongFast" (AQ==), Channel 0 = "Private" (256-bit)
+- Message on Radio 1 ch0 → Auto-forwards to Radio 2 ch3 ✅
+- Message on Radio 1 ch3 → Auto-forwards to Radio 2 ch0 ✅
+
 ## Usage
 
-### Connecting Your First Radio
+### 1. Connect Your Radios
 
-1. **Launch the Application**
-   - Open Meshtastic Bridge GUI
+1. Launch the application (`npm run start`)
+2. Open browser to http://localhost:5173
+3. Click **"Scan for Radios"** or **"Connect Radio"**
+4. Select each Meshtastic device from the list
+5. Radios will appear in the sidebar automatically
 
-2. **Connect a Radio**
-   - Click the "Connect Radio" button in the sidebar
-   - The app will scan for available USB serial ports
-   - Select your Meshtastic device from the list
-   - Click "Connect"
+### 2. Message Forwarding
 
-3. **Repeat for Additional Radios**
-   - Connect as many radios as you need (2+ recommended for bridging)
+**Messages are automatically forwarded!** No manual configuration needed.
 
-### Setting Up Bridge Routes
+The bridge:
+- ✅ Receives messages on any connected radio
+- ✅ Searches other radios for matching channels (PSK + name)
+- ✅ Forwards to all radios with matching channel configuration
+- ✅ Prevents loops (won't forward messages it sent)
+- ✅ Deduplicates messages (both radios often receive same broadcast)
 
-1. **Navigate to Configuration**
-   - Click "Configuration" in the sidebar
+### 3. Forwarding Private Channels
 
-2. **Create a Bridge Route**
-   - Click "Add Route"
-   - Select source radios (messages will be received from these)
-   - Select target radios (messages will be forwarded to these)
-   - Click "Save Route"
+To bridge/repeat encrypted private channels:
 
-3. **Enable the Bridge**
-   - Make sure the "Enable Bridge" toggle is ON
-   - Your bridge is now active!
+1. **Configure the private channel on BOTH bridge radios**
+   - Both must have same channel name
+   - Both must have same PSK (encryption key)
+   - Channel index can be different!
 
-### Monitoring
+2. **Example Setup:**
+   ```
+   Bridge Radio A:
+   - Channel 0: "skynet" (256-bit PSK xyz...)
 
-- **Dashboard**: Overview of all radios, message stats, and recent activity
+   Bridge Radio B:
+   - Channel 3: "skynet" (256-bit PSK xyz...)
+   ```
+
+3. **Result:** Messages on "skynet" channel will be forwarded between both radios, maintaining encryption!
+
+### 4. Monitoring
+
+- **Dashboard**: Overview of connected radios and recent messages
+- **Messages**: Live feed of all messages passing through the bridge
 - **Radios**: Detailed status of each connected radio
-- **Messages**: Live feed of all messages with filtering
 - **Logs**: System logs for troubleshooting
 
-## Configuration Options
+## Configuration
 
-### Global Settings
+### Bridge Server Settings
 
-- **Enable Bridge**: Master switch for all forwarding
-- **Deduplication Window**: Time window (seconds) to detect duplicate messages
-- **Auto-Reconnect**: Automatically reconnect lost radios
-- **Reconnect Delay**: Initial delay before reconnection attempt
-- **Max Reconnect Attempts**: Maximum number of reconnection tries
+Edit `bridge-server/index.mjs` (lines 47-48):
 
-### Bridge Routes
+```javascript
+// Smart channel matching (recommended)
+this.enableSmartMatching = true;  // Auto-find matching channels by PSK+name
 
-Each route can have:
-- Multiple source radios
-- Multiple target radios
-- Individual enable/disable toggle
-- Forwarding happens from any source to all targets
+// Manual channel mapping (for testing)
+this.channelMap = null;  // e.g., {0: 3} to force ch0→ch3 forwarding
+```
+
+**Recommended:** Keep `enableSmartMatching = true` for proper channel handling.
+
+## Known Issues (Alpha)
+
+⚠️ **This is an ALPHA release** - expect bugs!
+
+- ⏱️ Radio connection can be slow (radios appear after configuration completes)
+- 📊 Radio metrics page may not display correctly
+- 🔁 Messages may appear twice in the message stream (deduplication working but UI shows duplicates)
+- ⚙️ "Build Routes" configuration page is currently redundant (routing happens automatically)
+
+These will be fixed in future releases. See [Issues](https://github.com/IceNet-01/Mesh-Bridge-GUI/issues) for status.
 
 ## Development
 
@@ -217,20 +207,16 @@ Each route can have:
 
 ```
 Mesh-Bridge-GUI/
+├── bridge-server/
+│   └── index.mjs          # Node.js bridge server (WebSocket + Serial)
 ├── src/
-│   ├── main/              # Electron main process
-│   │   ├── main.ts        # Application entry
-│   │   ├── radioManager.ts # Radio connection logic
-│   │   ├── updater.ts     # Auto-update functionality
-│   │   ├── preload.ts     # IPC bridge
-│   │   └── types.ts       # TypeScript types
-│   └── renderer/          # React frontend
-│       ├── components/    # UI components
+│   └── renderer/
+│       ├── components/    # React UI components
+│       ├── lib/           # WebSocket manager, utilities
+│       ├── store/         # Zustand state management
 │       ├── App.tsx        # Main app component
-│       ├── index.css      # Styles
-│       └── types.ts       # Frontend types
+│       └── types.ts       # TypeScript types
 ├── package.json
-├── tsconfig.json
 └── vite.config.ts
 ```
 
@@ -238,106 +224,83 @@ Mesh-Bridge-GUI/
 
 ```bash
 # Development
-npm run dev              # Run in development mode
-npm run dev:renderer     # Run only renderer (React)
-npm run dev:main         # Build only main process
+npm run start           # Start bridge server AND web UI (recommended)
+npm run dev             # Run web UI only
+npm run bridge          # Run bridge server only
 
 # Building
-npm run build           # Build both main and renderer
-npm run build:renderer  # Build renderer only
-npm run build:main      # Build main process only
-
-# Packaging
-npm run package         # Create distributable packages
+npm run build           # Build production frontend
+npm run preview         # Preview production build
 ```
 
 ### Tech Stack
 
-- **Framework**: Electron 28+
+- **Backend**: Node.js with @meshtastic/core + @meshtastic/transport-node-serial
 - **Frontend**: React 18 + TypeScript
 - **Styling**: Tailwind CSS
 - **Charts**: Recharts
-- **Radio Communication**: @meshtastic/js
+- **State Management**: Zustand
 - **Build Tool**: Vite
-- **Package Builder**: electron-builder
-
-## Uninstallation
-
-To completely remove the application and all traces:
-
-**Linux/macOS:**
-```bash
-cd Mesh-Bridge-GUI
-./uninstall.sh
-```
-
-**Windows:**
-```batch
-cd Mesh-Bridge-GUI
-uninstall.bat
-```
-
-The uninstaller removes:
-- ✅ All node modules and dependencies
-- ✅ All build artifacts and caches
-- ✅ `mesh-bridge` command from PATH
-- ✅ All temporary files
-
-For complete removal including browser data, see [INSTALL.md](INSTALL.md) for instructions.
+- **Communication**: WebSocket (ws library)
 
 ## Troubleshooting
 
-### Radio Won't Connect
+### Radios Won't Connect
 
 1. Check USB connection
-2. Ensure no other application is using the serial port
-3. Try unplugging and reconnecting the device
-4. Use "Force Close All Ports" button in the Radios tab
-5. Check logs for detailed error messages
+2. Ensure no other application is using the serial port (close Meshtastic app, other bridges)
+3. Try unplugging and reconnecting the devices
+4. Check bridge server logs in terminal for errors
+5. Restart the bridge server: `npm run start`
 
 ### Messages Not Forwarding
 
-1. Verify bridge is enabled (Configuration → Enable Bridge)
-2. Check that bridge routes are configured correctly
-3. Ensure both source and target radios are connected
-4. Check individual route enable/disable status
-5. Look for duplicate message filtering in logs
+1. **Check channel configurations**:
+   - Run `npm run start` and look for channel configuration logs
+   - Both radios must have the channel configured with matching PSK+name
 
-### Application Won't Start
+2. **Check logs for**:
+   - "No matching channel" warnings
+   - PSK mismatch errors
+   - "Message from our own bridge radio" (expected - prevents loops)
 
-1. Check system requirements (Node.js 18+)
-2. Run the uninstaller, then reinstaller:
-   ```bash
-   ./uninstall.sh && ./install.sh
-   ```
-3. Check logs in the Logs tab for detailed error messages
+3. **Enable verbose logging**:
+   - Check bridge server console output
+   - Look for `🔀 [SMART MATCH]` forwarding logs
 
-### Installation Issues
+### Radio Connection Delay
 
-If installation fails:
-1. Ensure you have git installed
-2. Check internet connection (needed to download Node.js and dependencies)
-3. On Linux/macOS, make sure installer is executable: `chmod +x install.sh`
-4. Try manual installation (see Option 2 above)
-5. Check [INSTALL.md](INSTALL.md) for detailed troubleshooting
+This is a known issue in alpha. Radios may take 10-30 seconds to appear in UI while they configure. Watch the bridge server console for configuration progress.
 
-## Auto-Updates
+### Double Messages
 
-The application automatically checks for updates:
-- On startup (after 3 seconds)
-- Every hour while running
+Known issue - deduplication is working on the bridge side, but UI may show duplicates. Will be fixed in next release.
 
-When an update is available:
-1. You'll receive a notification
-2. Choose to download now or later
-3. When downloaded, restart to install
-4. Updates install automatically on quit
+## Comparison with Headless Version
 
-You can also manually check: Help → Check for Updates (in production builds)
+| Feature | GUI Version (2.0 Alpha) | Headless Version |
+|---------|-------------------------|------------------|
+| Visual Interface | ✅ Modern web UI | ❌ Command-line only |
+| Multiple Radios | ✅ 2+ radios | ✅ 2 radios |
+| Auto Forwarding | ✅ Automatic | ✅ Automatic |
+| Smart Channel Matching | ✅ Yes (PSK+name) | ❌ Index-based only |
+| Private Channel Support | ✅ Yes | ⚠️ Limited |
+| Real-time Monitoring | ✅ Dashboard | ⚠️ Logs only |
+| Configuration | ✅ Visual + code | ⚠️ Code only |
+| Cross-platform | ✅ Win/Mac/Linux | ✅ Linux (primary) |
+| Resource Usage | ~150-250 MB RAM | ~50-100 MB RAM |
+| Boot Persistence | ❌ Run manually | ✅ Systemd service |
+| Maturity | ⚠️ Alpha | ✅ Stable |
+| Use Case | Desktop/Testing | Production/Server |
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! This is an alpha release and needs help with:
+
+- 🐛 Bug fixes (especially UI issues)
+- ✨ Feature improvements
+- 📝 Documentation
+- 🧪 Testing on different platforms
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
@@ -351,9 +314,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- Built on top of the [meshtastic-bridge-headless](https://github.com/IceNet-01/meshtastic-bridge-headless) project
-- Uses [@meshtastic/js](https://github.com/meshtastic/js) for radio communication
-- Inspired by the amazing Meshtastic community
+- Built with [@meshtastic/core](https://github.com/meshtastic/web) official libraries
+- Inspired by [meshtastic-bridge-headless](https://github.com/IceNet-01/meshtastic-bridge-headless)
+- Thanks to the amazing Meshtastic community
 
 ## Support
 
@@ -361,20 +324,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 💡 [Request Feature](https://github.com/IceNet-01/Mesh-Bridge-GUI/issues)
 - 💬 [Discussions](https://github.com/IceNet-01/Mesh-Bridge-GUI/discussions)
 
-## Comparison with Headless Version
-
-| Feature | GUI Version | Headless Version |
-|---------|------------|------------------|
-| Visual Interface | ✅ Modern UI | ❌ Command-line only |
-| Multiple Radios | ✅ 2+ radios | ✅ 2 radios |
-| Real-time Monitoring | ✅ Dashboard, charts | ⚠️ Logs only |
-| Configuration | ✅ Visual editor | ⚠️ Manual editing |
-| Auto-updates | ✅ Built-in | ❌ Manual |
-| Cross-platform | ✅ Win/Mac/Linux | ✅ Linux (primary) |
-| Resource Usage | ~100-200 MB RAM | ~50-100 MB RAM |
-| Boot Persistence | ❌ Run manually | ✅ Systemd service |
-| Use Case | Desktop/Laptop | Server/Raspberry Pi |
-
 ---
+
+**⚠️ ALPHA SOFTWARE** - Use at your own risk. Not recommended for production use yet.
 
 Made with ❤️ for the Meshtastic community
