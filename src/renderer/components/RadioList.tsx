@@ -10,7 +10,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold text-white mb-2">Radio Management</h2>
-        <p className="text-slate-400">Monitor and manage connected Meshtastic radios via bridge server</p>
+        <p className="text-slate-400">Monitor and manage connected radios (auto-detects protocol)</p>
       </div>
 
       {radios.length === 0 ? (
@@ -21,7 +21,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
             </svg>
           </div>
           <h3 className="text-xl font-bold text-white mb-2">No Radios Connected</h3>
-          <p className="text-slate-400">Click "Connect Radio" to add your first Meshtastic device</p>
+          <p className="text-slate-400">Click "Connect Radio" to add your first radio device</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -54,13 +54,34 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
     error: 'Error',
   };
 
+  const protocolColors = {
+    meshtastic: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    reticulum: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    rnode: 'bg-green-500/20 text-green-300 border-green-500/30',
+    meshcore: 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+  };
+
+  const protocolLabels = {
+    meshtastic: 'Meshtastic',
+    reticulum: 'Reticulum',
+    rnode: 'RNode',
+    meshcore: 'Mesh Core'
+  };
+
   return (
     <div className={`card p-6 ${statusColors[radio.status]}`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`status-dot status-${radio.status}`} />
           <div>
-            <h3 className="text-lg font-bold text-white">{radio.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white">{radio.name}</h3>
+              {radio.protocol && (
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${protocolColors[radio.protocol]}`}>
+                  {protocolLabels[radio.protocol]}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-400">{radio.port}</p>
           </div>
         </div>

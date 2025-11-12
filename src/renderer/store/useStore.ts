@@ -154,14 +154,14 @@ export const useStore = create<AppStore>((set) => {
       console.log('Scanned ports:', ports);
 
       if (ports.length === 0) {
-        throw new Error('No serial ports found. Make sure your Meshtastic radio is connected via USB and the bridge server is running.');
+        throw new Error('No serial ports found. Make sure your radio is connected via USB and the bridge server is running.');
       }
 
-      // Connect to ALL available ports
-      console.log(`Connecting to ${ports.length} radio(s)...`);
+      // Connect to ALL available ports using meshcore for auto-detection
+      console.log(`Connecting to ${ports.length} radio(s) with auto-detection...`);
 
       const results = await Promise.allSettled(
-        ports.map(port => manager.connectRadio(port.path))
+        ports.map(port => manager.connectRadio(port.path, 'meshcore'))
       );
 
       // Check if at least one succeeded

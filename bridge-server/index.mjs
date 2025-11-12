@@ -1796,16 +1796,18 @@ class MeshtasticBridgeServer {
 
       ws.send(JSON.stringify({
         type: 'ai-status',
-        running: running,
-        version: version,
-        endpoint: this.aiEndpoint
+        status: {
+          available: running,
+          version: version
+        }
       }));
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'ai-status',
-        running: false,
-        error: error.message,
-        endpoint: this.aiEndpoint
+        status: {
+          available: false,
+          error: error.message
+        }
       }));
     }
   }

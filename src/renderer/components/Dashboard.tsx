@@ -32,7 +32,7 @@ function Dashboard({ radios, statistics, messages }: DashboardProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold text-white mb-2">Dashboard</h2>
-        <p className="text-slate-400">Real-time monitoring of your Meshtastic bridge relay station</p>
+        <p className="text-slate-400">Real-time monitoring of your Mesh Bridge relay station</p>
       </div>
 
       {/* Stats Grid */}

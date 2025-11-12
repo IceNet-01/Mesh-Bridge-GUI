@@ -21,13 +21,13 @@ function CommunicationSettings() {
     password: '',
     from: '',
     to: '',
-    subjectPrefix: '[Meshtastic]'
+    subjectPrefix: '[Mesh Bridge]'
   });
 
   const [discordForm, setDiscordForm] = useState<DiscordConfig>({
     enabled: false,
     webhook: '',
-    username: 'Meshtastic Bridge',
+    username: 'Mesh Bridge',
     avatarUrl: ''
   });
 

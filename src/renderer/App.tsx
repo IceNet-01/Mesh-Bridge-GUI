@@ -49,7 +49,7 @@ function App() {
       if (errorMessage.includes('cancel') || errorMessage.includes('NotFoundError')) {
         console.log('User canceled serial port selection');
       } else {
-        alert(`Failed to connect radio: ${errorMessage}\n\nMake sure:\n- Your Meshtastic device is connected via USB\n- You granted permission to access the serial port\n- No other application is using the device`);
+        alert(`Failed to connect radio: ${errorMessage}\n\nMake sure:\n- Your radio device is connected via USB\n- You granted permission to access the serial port\n- No other application is using the device`);
       }
     }
   };
@@ -76,7 +76,7 @@ function App() {
             <li>✅ Opera 75+ (Desktop)</li>
           </ul>
           <p className="text-slate-400 text-sm">
-            Please use a supported browser to access USB Meshtastic devices.
+            Please use a supported browser to access USB radio devices.
           </p>
         </div>
       </div>
@@ -95,8 +95,8 @@ function App() {
               </svg>
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">Meshtastic</h1>
-              <p className="text-xs text-slate-400">Bridge PWA</p>
+              <h1 className="text-lg font-bold text-white">Mesh Bridge</h1>
+              <p className="text-xs text-slate-400">Multi-Protocol</p>
             </div>
           </div>
         </div>
@@ -166,7 +166,7 @@ function App() {
             className={`w-full btn-primary flex items-center justify-center gap-2 ${
               !bridgeConnected ? 'opacity-50 cursor-not-allowed' : ''
             }`}
-            title={!bridgeConnected ? 'Bridge server must be connected first' : 'Connect a Meshtastic radio'}
+            title={!bridgeConnected ? 'Bridge server must be connected first' : 'Connect a radio'}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />

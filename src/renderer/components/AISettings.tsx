@@ -126,7 +126,7 @@ function AISettings() {
             <p className="text-white font-medium">Local AI powered by Ollama</p>
             <p className="text-sm text-purple-200 mt-1">
               Users can send <span className="font-mono bg-purple-500/20 px-1 rounded">#ai [question]</span> or <span className="font-mono bg-purple-500/20 px-1 rounded">#ask [question]</span> via
-              Meshtastic messages. Responses are automatically shortened to fit mesh network constraints (~200 chars).
+              mesh network messages. Responses are automatically shortened to fit mesh network constraints (~200 chars).
               Requires <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-purple-300 hover:text-purple-100 underline">Ollama</a> installed
               locally (works on Raspberry Pi 4+).
             </p>
