@@ -558,7 +558,7 @@ class MeshtasticBridgeServer {
       id: radioId,
       name: radio.nodeInfo?.longName || `Radio ${radioId.substring(0, 8)}`,
       port: radio.port,
-      protocol: radio.protocolType,
+      protocol: radio.protocol?.getProtocolName() || radio.protocolType,
       status: 'connected',
       nodeInfo: radio.nodeInfo,
       messagesReceived: radio.messagesReceived,

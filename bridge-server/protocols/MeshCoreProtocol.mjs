@@ -24,7 +24,9 @@ export class MeshCoreProtocol extends BaseProtocol {
   }
 
   getProtocolName() {
-    return 'meshcore';
+    // Return the actual detected protocol, not 'meshcore'
+    // MeshCore is just the auto-detection layer
+    return this.protocolType || 'meshcore';
   }
 
   async connect() {
@@ -38,13 +40,15 @@ export class MeshCoreProtocol extends BaseProtocol {
       if (this.config && this.config.protocol) {
         console.log(`[MeshCore] Using configured protocol: ${this.config.protocol}`);
         this.protocolType = this.config.protocol;
+        // Create and connect underlying protocol handler
+        await this.connectUnderlyingProtocol();
       } else {
         console.log(`[MeshCore] Auto-detecting protocol...`);
         this.protocolType = await this.detectProtocol();
+        // detectProtocol() already connected and set this.underlyingProtocol
+        // Just set up event forwarding
+        this.setupEventForwarding();
       }
-
-      // Create and connect underlying protocol handler
-      await this.connectUnderlyingProtocol();
 
       this.connected = true;
       console.log(`[MeshCore] Connected successfully using ${this.protocolType} protocol`);
@@ -96,12 +100,14 @@ export class MeshCoreProtocol extends BaseProtocol {
       try {
         const testProtocol = this.createProtocolHandler(protocol);
         await testProtocol.connect();
-        await testProtocol.disconnect();
 
+        // Success! Keep this connection and use it
         console.log(`[MeshCore] Detected ${protocol} protocol`);
+        this.underlyingProtocol = testProtocol;
         return protocol;
       } catch (error) {
         console.log(`[MeshCore] ${protocol} detection failed:`, error.message);
+        // Continue to next protocol
       }
     }
 
@@ -126,9 +132,7 @@ export class MeshCoreProtocol extends BaseProtocol {
     }
   }
 
-  async connectUnderlyingProtocol() {
-    this.underlyingProtocol = this.createProtocolHandler(this.protocolType);
-
+  setupEventForwarding() {
     // Forward all events from underlying protocol
     this.underlyingProtocol.on('message', (packet) => {
       this.stats.messagesReceived++;
@@ -136,11 +140,7 @@ export class MeshCoreProtocol extends BaseProtocol {
     });
 
     this.underlyingProtocol.on('nodeInfo', (info) => {
-      this.nodeInfo = {
-        ...info,
-        longName: `MeshCore (${this.protocolType}) ${info.longName}`,
-        hwModel: `MeshCore/${this.protocolType}`
-      };
+      this.nodeInfo = info;
       this.emit('nodeInfo', this.nodeInfo);
     });
 
@@ -156,7 +156,11 @@ export class MeshCoreProtocol extends BaseProtocol {
     this.underlyingProtocol.on('error', (error) => {
       this.handleError(error);
     });
+  }
 
+  async connectUnderlyingProtocol() {
+    this.underlyingProtocol = this.createProtocolHandler(this.protocolType);
+    this.setupEventForwarding();
     // Connect the underlying protocol
     await this.underlyingProtocol.connect();
   }

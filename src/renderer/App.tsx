@@ -7,8 +7,9 @@ import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
 import AISettings from './components/AISettings';
 import CommunicationSettings from './components/CommunicationSettings';
+import ReticulumSettings from './components/ReticulumSettings';
 
-type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'ai' | 'communication' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'reticulum' | 'ai' | 'communication' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -129,6 +130,12 @@ function App() {
             onClick={() => setActiveTab('configuration')}
           />
           <NavButton
+            icon="reticulum"
+            label="Reticulum"
+            active={activeTab === 'reticulum'}
+            onClick={() => setActiveTab('reticulum')}
+          />
+          <NavButton
             icon="ai"
             label="AI Assistant"
             active={activeTab === 'ai'}
@@ -196,6 +203,9 @@ function App() {
                 onUpdate={updateBridgeConfig}
               />
             )}
+            {activeTab === 'reticulum' && (
+              <ReticulumSettings />
+            )}
             {activeTab === 'ai' && (
               <AISettings />
             )}
@@ -234,6 +244,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     config: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    ),
+    reticulum: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
     ),
     ai: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
