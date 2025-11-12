@@ -23,6 +23,7 @@ import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import nodemailer from 'nodemailer';
+import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -286,7 +287,7 @@ class MeshtasticBridgeServer {
           break;
 
         case 'connect':
-          await this.connectRadio(ws, message.port);
+          await this.connectRadio(ws, message.port, message.protocol || 'meshtastic');
           break;
 
         case 'disconnect':
@@ -412,105 +413,109 @@ class MeshtasticBridgeServer {
   /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
    */
-  async connectRadio(ws, portPath) {
+  async connectRadio(ws, portPath, protocol = 'meshtastic') {
     try {
-      console.log(`📻 Connecting to radio on ${portPath}...`);
+      console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
       const radioId = `radio-${Date.now()}`;
 
-      // Create serial transport using the static create method
-      const transport = await TransportNodeSerial.create(portPath, 115200);
-      console.log(`✅ Transport connected for ${radioId}`);
+      // Create protocol handler
+      const protocolHandler = createProtocol(protocol, radioId, portPath);
 
-      // Create Meshtastic device
-      const device = new MeshDevice(transport);
-      console.log(`📻 MeshDevice created for ${radioId}, configuring...`);
-
-      // Subscribe to connection status events BEFORE configuring
-      device.events.onDeviceStatus.subscribe((status) => {
-        console.log(`📊 Radio ${radioId} status:`, status);
-
-        // Handle disconnection
-        if (status === 2) { // DeviceDisconnected
-          console.log(`📻 Radio ${radioId} disconnected, cleaning up...`);
-          this.handleRadioDisconnect(radioId);
-        }
+      // Subscribe to protocol events
+      protocolHandler.on('message', (packet) => {
+        this.handleMessagePacket(radioId, portPath, packet, protocol);
       });
 
-      // Subscribe to ALL mesh packets to see what's coming through
-      device.events.onMeshPacket.subscribe((packet) => {
-        console.log(`📦 [DEBUG] Raw MeshPacket from ${radioId}:`, {
-          from: packet.from,
-          to: packet.to,
-          channel: packet.channel,
-          decoded: packet.decoded ? {
-            portnum: packet.decoded.portnum,
-            payloadVariant: packet.decoded.payloadVariant
-          } : null
-        });
-      });
-
-      device.events.onMessagePacket.subscribe((packet) => {
-        console.log(`💬 [DEBUG] onMessagePacket fired for ${radioId}!`);
-        this.handleMessagePacket(radioId, portPath, packet);
-      });
-
-      device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
-        console.log(`🆔 Radio ${radioId} my node info:`, myNodeInfo);
-        // Store our own node number to prevent forwarding loops
+      protocolHandler.on('nodeInfo', (nodeInfo) => {
+        console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
         const radio = this.radios.get(radioId);
         if (radio) {
-          radio.nodeNum = myNodeInfo.myNodeNum;
-          console.log(`✅ Radio ${radioId} node number set to ${myNodeInfo.myNodeNum}`);
-        }
-      });
+          radio.nodeInfo = nodeInfo;
+          radio.nodeNum = parseInt(nodeInfo.nodeId);
+          console.log(`✅ Radio ${radioId} node info updated`);
 
-      device.events.onNodeInfoPacket.subscribe((node) => {
-        console.log(`ℹ️  Radio ${radioId} node info:`, node);
-      });
-
-      // Subscribe to channel configuration packets to track which channels are configured
-      device.events.onChannelPacket.subscribe((channelPacket) => {
-        const radio = this.radios.get(radioId);
-        if (radio) {
-          if (!radio.channels) {
-            radio.channels = new Map();
-          }
-          const channelInfo = {
-            index: channelPacket.index,
-            role: channelPacket.role,
-            name: channelPacket.settings?.name || '',
-            psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
-          };
-          radio.channels.set(channelPacket.index, channelInfo);
-          console.log(`🔐 Radio ${radioId} channel ${channelPacket.index}:`, {
-            name: channelInfo.name || '(unnamed)',
-            role: channelInfo.role === 1 ? 'PRIMARY' : 'SECONDARY',
-            pskLength: channelInfo.psk.length
+          // Broadcast updated radio info to clients
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
           });
         }
       });
 
-      // Store radio reference BEFORE configure() so onMyNodeInfo can find it
+      protocolHandler.on('channels', (channels) => {
+        console.log(`🔐 Radio ${radioId} channels updated: ${channels.length} channels`);
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          // Convert array to Map for compatibility
+          radio.channels = new Map();
+          channels.forEach(ch => {
+            radio.channels.set(ch.index, ch);
+          });
+
+          // Log channel configuration
+          console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
+          channels.forEach(ch => {
+            console.log(`   [${ch.index}] "${ch.name || '(unnamed)'}" PSK: ${ch.psk ? ch.psk.substring(0, 8) + '...' : '(none)'}`);
+          });
+          console.log(`============================================================\n`);
+
+          // Broadcast updated radio info to clients
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
+        }
+      });
+
+      protocolHandler.on('telemetry', (telemetry) => {
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          radio.telemetry = telemetry;
+
+          // Broadcast telemetry to clients
+          this.broadcast({
+            type: 'radio-telemetry',
+            radioId: radioId,
+            telemetry: telemetry
+          });
+        }
+      });
+
+      protocolHandler.on('error', (error) => {
+        console.error(`❌ Radio ${radioId} error:`, error);
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          radio.errors = (radio.errors || 0) + 1;
+        }
+      });
+
+      // Store radio reference
       this.radios.set(radioId, {
-        device,
-        transport,
+        protocol: protocolHandler,
+        protocolType: protocol,
         port: portPath,
-        nodeNum: null, // Will be set when we receive myNodeInfo (during configure)
-        channels: new Map(), // Will be populated when channel packets arrive during configure()
+        nodeNum: null,
+        nodeInfo: null,
+        channels: new Map(),
+        telemetry: {},
+        messagesReceived: 0,
+        messagesSent: 0,
+        errors: 0,
         info: {
           port: portPath,
           connectedAt: new Date()
         }
       });
 
-      // Notify clients IMMEDIATELY that radio is connecting
+      // Notify clients that radio is connecting
       this.broadcast({
         type: 'radio-connecting',
         radio: {
           id: radioId,
           name: `Radio ${radioId.substring(0, 8)}`,
           port: portPath,
+          protocol: protocol,
           status: 'connecting',
           messagesReceived: 0,
           messagesSent: 0,
@@ -522,47 +527,15 @@ class MeshtasticBridgeServer {
         }
       });
 
-      // Configure the device (required for message flow)
-      console.log(`⚙️  Configuring radio ${radioId}...`);
-      await device.configure();
-      console.log(`✅ Radio ${radioId} configured successfully`);
+      // Connect the protocol handler
+      console.log(`⚙️  Connecting radio ${radioId}...`);
+      await protocolHandler.connect();
+      console.log(`✅ Radio ${radioId} connected successfully`);
 
-      // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
-      device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
-      console.log(`💓 Heartbeat enabled for radio ${radioId}`);
-
-      console.log(`✅ Successfully connected to radio ${radioId} on ${portPath}`);
-
-      // Log all configured channels after configuration completes
-      const radio = this.radios.get(radioId);
-      console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
-      if (radio && radio.channels && radio.channels.size > 0) {
-        radio.channels.forEach((ch, idx) => {
-          const roleName = ch.role === 1 ? 'PRIMARY' : ch.role === 0 ? 'SECONDARY' : 'DISABLED';
-          const pskDisplay = ch.psk ? `${ch.psk.substring(0, 8)}...` : '(none)';
-          console.log(`   [${idx}] "${ch.name || '(unnamed)'}" [${roleName}] PSK: ${pskDisplay}`);
-        });
-      } else {
-        console.log(`   ⚠️  No channels configured yet (this is unusual)`);
-      }
-      console.log(`============================================================\n`);
-
-      // Notify all clients AFTER configuration is complete
+      // Notify all clients that connection is complete
       this.broadcast({
         type: 'radio-connected',
-        radio: {
-          id: radioId,
-          name: `Radio ${radioId.substring(0, 8)}`,
-          port: portPath,
-          status: 'connected',
-          messagesReceived: 0,
-          messagesSent: 0,
-          errors: 0,
-          info: {
-            port: portPath,
-            connectedAt: new Date()
-          }
-        }
+        radio: this.getRadioInfo(radioId)
       });
 
     } catch (error) {
@@ -572,6 +545,29 @@ class MeshtasticBridgeServer {
         error: `Connection failed: ${error.message}`
       }));
     }
+  }
+
+  /**
+   * Get radio information for broadcasting to clients
+   */
+  getRadioInfo(radioId) {
+    const radio = this.radios.get(radioId);
+    if (!radio) return null;
+
+    return {
+      id: radioId,
+      name: radio.nodeInfo?.longName || `Radio ${radioId.substring(0, 8)}`,
+      port: radio.port,
+      protocol: radio.protocolType,
+      status: 'connected',
+      nodeInfo: radio.nodeInfo,
+      messagesReceived: radio.messagesReceived,
+      messagesSent: radio.messagesSent,
+      errors: radio.errors,
+      ...(radio.telemetry || {}),
+      protocolMetadata: radio.protocol?.getProtocolMetadata(),
+      info: radio.info
+    };
   }
 
   /**
@@ -600,24 +596,21 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Handle message packets from radio (using official library)
-   * PacketMetadata<string> structure: { id, rxTime, type, from, to, channel, data }
+   * Handle message packets from radio (protocol-agnostic)
+   * Packet is normalized by protocol handler
    */
-  handleMessagePacket(radioId, portPath, packet) {
+  handleMessagePacket(radioId, portPath, packet, protocol) {
     try {
-      console.log(`📨 Message packet from ${radioId}:`, {
+      console.log(`📨 Message packet from ${radioId} (${protocol}):`, {
         id: packet.id,
         from: packet.from,
         to: packet.to,
         channel: packet.channel,
-        type: packet.type,
-        dataType: typeof packet.data,
-        data: packet.data
+        text: packet.text
       });
 
-      // The @meshtastic/core library already decodes text messages
-      // packet.data contains the decoded string for text messages
-      const text = packet.data;
+      // Extract text from normalized packet
+      const text = packet.text;
 
       if (text && typeof text === 'string' && text.length > 0) {
         // ===== COMMAND DETECTION =====
@@ -655,13 +648,14 @@ class MeshtasticBridgeServer {
 
         const message = {
           id: packet.id || `msg-${Date.now()}`,
-          timestamp: packet.rxTime instanceof Date ? packet.rxTime : new Date(),
+          timestamp: packet.timestamp instanceof Date ? packet.timestamp : new Date(),
           from: packet.from,
           to: packet.to,
           channel: packet.channel || 0,
           text: text,
           radioId: radioId,
           portPath: portPath,
+          protocol: protocol,
           type: packet.type,
           forwarded: isFromOurBridgeRadio // Mark if this was forwarded by us
         };
@@ -706,11 +700,10 @@ class MeshtasticBridgeServer {
       // Check rate limiting
       if (this.isRateLimited(fromNode)) {
         console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
-        await radio.device.sendText(
+        await radio.protocol.sendMessage(
           `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
-          'broadcast',
-          false,
-          channel
+          channel,
+          { wantAck: false }
         );
         return;
       }
@@ -726,11 +719,10 @@ class MeshtasticBridgeServer {
       // Check if command is enabled
       if (!this.enabledCommands.includes(cmd)) {
         console.log(`⚠️  Command not enabled: ${cmd}`);
-        await radio.device.sendText(
+        await radio.protocol.sendMessage(
           `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
-          'broadcast',
-          false,
-          channel
+          channel,
+          { wantAck: false }
         );
         return;
       }
@@ -790,7 +782,7 @@ class MeshtasticBridgeServer {
 
       if (response) {
         console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
-        await radio.device.sendText(response, 'broadcast', false, channel);
+        await radio.protocol.sendMessage(response, channel, { wantAck: false });
       }
 
     } catch (error) {
@@ -1432,7 +1424,7 @@ class MeshtasticBridgeServer {
 
         const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
           try {
-            await radio.device.sendText(text, "broadcast", false, targetChannel);
+            await radio.protocol.sendMessage(text, targetChannel, { wantAck: false });
             console.log(`✅ Forwarded to ${targetRadioId} on channel ${targetChannel}`);
             return { radioId: targetRadioId, success: true };
           } catch (error) {
@@ -1499,7 +1491,7 @@ class MeshtasticBridgeServer {
             console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
-          await radio.device.sendText(text, "broadcast", false, matchingChannelIndex);
+          await radio.protocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
           console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
@@ -1524,7 +1516,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Send text message via a radio
+   * Send text message via a radio (protocol-agnostic)
    */
   async sendText(ws, radioId, text, channel = 0) {
     try {
@@ -1537,14 +1529,15 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📤 Sending text via ${radioId}: "${text}" on channel ${channel}`);
+      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
 
-      // Send using the device
-      // sendText(text, destination, wantAck, channel)
-      // Use "broadcast" as destination to broadcast on the specified channel
-      await radio.device.sendText(text, "broadcast", false, channel);
+      // Send using the protocol handler
+      await radio.protocol.sendMessage(text, channel, { wantAck: false });
 
-      console.log(`✅ Text broadcast successfully on channel ${channel}`);
+      // Increment sent message counter
+      radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+      console.log(`✅ Text sent successfully on channel ${channel}`);
 
       ws.send(JSON.stringify({
         type: 'send-success',
@@ -1561,7 +1554,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Disconnect a radio
+   * Disconnect a radio (protocol-agnostic)
    */
   async disconnectRadio(ws, radioId) {
     try {
@@ -1574,8 +1567,13 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📻 Disconnecting radio ${radioId}...`);
-      await radio.transport.disconnect();
+      console.log(`📻 Disconnecting radio ${radioId} (${radio.protocolType})...`);
+
+      // Disconnect using protocol handler
+      if (radio.protocol) {
+        await radio.protocol.disconnect();
+      }
+
       this.radios.delete(radioId);
 
       console.log(`✅ Disconnected radio ${radioId}`);

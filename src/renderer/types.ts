@@ -1,7 +1,11 @@
+// Radio protocol types
+export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'meshcore';
+
 export interface Radio {
   id: string;
   port: string;
   name: string;
+  protocol: RadioProtocol;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   nodeInfo?: {
     nodeId: string;
@@ -18,6 +22,21 @@ export interface Radio {
   messagesReceived: number;
   messagesSent: number;
   errors: number;
+  // Protocol-specific metadata
+  protocolMetadata?: {
+    // Reticulum-specific
+    destinationHash?: string;
+    identityHash?: string;
+    // RNode-specific
+    frequency?: number;
+    bandwidth?: number;
+    spreadingFactor?: number;
+    codingRate?: number;
+    txPower?: number;
+    // Mesh Core-specific
+    activeProtocols?: string[];
+    routingTable?: any;
+  };
 }
 
 export interface BridgeConfig {
@@ -41,6 +60,7 @@ export interface Message {
   timestamp: Date;
   fromRadio: string;
   toRadio?: string;
+  protocol: RadioProtocol;
   from: number;
   to: number;
   channel: number;

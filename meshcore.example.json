@@ -1,0 +1,20 @@
+{
+  "protocol": "meshtastic",
+  "autoDetect": true,
+  "meshtastic": {
+    "baudRate": 115200,
+    "heartbeatInterval": 30000
+  },
+  "reticulum": {
+    "useDirectSerial": false,
+    "pythonBridge": "rns_bridge.py",
+    "rnsConfigPath": "/home/user/.reticulum"
+  },
+  "rnode": {
+    "frequency": 915000000,
+    "bandwidth": 125000,
+    "spreadingFactor": 7,
+    "codingRate": 5,
+    "txPower": 17
+  }
+}

@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -368,12 +368,12 @@ export class WebSocketRadioManager {
   /**
    * Connect to a radio via bridge server
    */
-  async connectRadio(portPath: string): Promise<{ success: boolean; radioId?: string; error?: string }> {
+  async connectRadio(portPath: string, protocol: RadioProtocol = 'meshtastic'): Promise<{ success: boolean; radioId?: string; error?: string }> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return { success: false, error: 'Not connected to bridge server' };
     }
 
-    this.log('info', `Requesting radio connection to ${portPath}...`);
+    this.log('info', `Requesting radio connection to ${portPath} using ${protocol} protocol...`);
 
     // Set up listener BEFORE sending request to avoid race condition
     return new Promise((resolve) => {
@@ -396,7 +396,8 @@ export class WebSocketRadioManager {
       // Send request AFTER listener is set up
       this.ws!.send(JSON.stringify({
         type: 'connect',
-        port: portPath
+        port: portPath,
+        protocol: protocol
       }));
     });
   }
