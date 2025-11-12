@@ -81,29 +81,61 @@ export class MeshtasticProtocol extends BaseProtocol {
     });
 
     // Subscribe to channel updates
-    this.device.events.onChannelPacket.subscribe((channels) => {
+    this.device.events.onChannelPacket.subscribe((channelPacket) => {
       try {
-        this.updateChannels(channels);
-        console.log(`[Meshtastic] Channels updated: ${channels.length} channels`);
+        // Build channel array from individual channel packets
+        if (!this.channelArray) {
+          this.channelArray = [];
+        }
+
+        const channelInfo = {
+          index: channelPacket.index,
+          role: channelPacket.role,
+          name: channelPacket.settings?.name || '',
+          psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
+        };
+
+        this.channelArray[channelPacket.index] = channelInfo;
+        this.updateChannels(this.channelArray.filter(ch => ch !== undefined));
+
+        console.log(`[Meshtastic] Channel ${channelPacket.index} updated: ${channelInfo.name || '(unnamed)'}`);
       } catch (error) {
-        console.error('[Meshtastic] Error handling channels:', error);
+        console.error('[Meshtastic] Error handling channel packet:', error);
         this.handleError(error);
       }
     });
 
-    // Subscribe to device metrics/telemetry
-    this.device.events.onDeviceMetricsPacket.subscribe((metrics) => {
+    // Subscribe to device status for connection monitoring
+    this.device.events.onDeviceStatus.subscribe((status) => {
       try {
-        const telemetry = {
-          batteryLevel: metrics.batteryLevel,
-          voltage: metrics.voltage,
-          channelUtilization: metrics.channelUtilization,
-          airUtilTx: metrics.airUtilTx
-        };
-        this.updateTelemetry(telemetry);
+        console.log(`[Meshtastic] Device status: ${status}`);
+        if (status === 2) { // DeviceDisconnected
+          this.connected = false;
+          this.emit('disconnected');
+        }
       } catch (error) {
-        console.error('[Meshtastic] Error handling telemetry:', error);
+        console.error('[Meshtastic] Error handling device status:', error);
         this.handleError(error);
+      }
+    });
+
+    // Subscribe to mesh packets for telemetry data
+    this.device.events.onMeshPacket.subscribe((packet) => {
+      try {
+        // Extract telemetry from mesh packets if available
+        if (packet.decoded?.portnum === 67) { // TELEMETRY_APP
+          const telemetryData = packet.decoded.payload;
+          if (telemetryData) {
+            this.updateTelemetry({
+              batteryLevel: telemetryData.deviceMetrics?.batteryLevel,
+              voltage: telemetryData.deviceMetrics?.voltage,
+              channelUtilization: telemetryData.deviceMetrics?.channelUtilization,
+              airUtilTx: telemetryData.deviceMetrics?.airUtilTx
+            });
+          }
+        }
+      } catch (error) {
+        // Silently ignore telemetry parsing errors
       }
     });
   }
