@@ -29,13 +29,13 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Create device
       this.device = new MeshDevice(this.transport);
 
+      // Subscribe to events BEFORE configuring
+      this.setupEventHandlers();
+
       // Configure device and wait for connection
       await this.device.configure();
 
       console.log(`[Meshtastic] Device configured, waiting for node info...`);
-
-      // Subscribe to events
-      this.setupEventHandlers();
 
       // Wait for node info (with timeout)
       await this.waitForNodeInfo();
