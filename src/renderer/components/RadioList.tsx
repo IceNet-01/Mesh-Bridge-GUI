@@ -1,4 +1,3 @@
-import React from 'react';
 import { Radio } from '../types';
 
 interface RadioListProps {
@@ -11,7 +10,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold text-white mb-2">Radio Management</h2>
-        <p className="text-slate-400">Monitor and manage connected Meshtastic radios</p>
+        <p className="text-slate-400">Monitor and manage connected Meshtastic radios via bridge server</p>
       </div>
 
       {radios.length === 0 ? (

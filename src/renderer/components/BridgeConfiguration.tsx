@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BridgeConfig, BridgeRoute, Radio } from '../types';
 
 interface BridgeConfigurationProps {

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Radio, Statistics, Message } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

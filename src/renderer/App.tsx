@@ -1,76 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { Radio, Statistics, LogEntry, BridgeConfig, Message } from './types';
+import { useState, useEffect } from 'react';
+import { useStore } from './store/useStore';
 import Dashboard from './components/Dashboard';
 import RadioList from './components/RadioList';
 import MessageMonitor from './components/MessageMonitor';
 import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
-import ConnectRadioModal from './components/ConnectRadioModal';
 
 type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [radios, setRadios] = useState<Radio[]>([]);
-  const [statistics, setStatistics] = useState<Statistics | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
-  const [showConnectModal, setShowConnectModal] = useState(false);
+
+  // Zustand store
+  const radios = useStore(state => state.radios);
+  const statistics = useStore(state => state.statistics);
+  const logs = useStore(state => state.logs);
+  const messages = useStore(state => state.messages);
+  const bridgeConfig = useStore(state => state.bridgeConfig);
+  const bridgeConnected = useStore(state => state.bridgeConnected);
+  const initialize = useStore(state => state.initialize);
+  const connectToBridge = useStore(state => state.connectToBridge);
+  const scanAndConnectRadio = useStore(state => state.scanAndConnectRadio);
+  const disconnectRadio = useStore(state => state.disconnectRadio);
+  const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
+  const clearLogs = useStore(state => state.clearLogs);
 
   useEffect(() => {
-    // Load initial data
-    loadData();
+    initialize();
 
-    // Set up event listeners
-    window.electronAPI.onRadioStatusChange((updatedRadios) => {
-      setRadios(updatedRadios);
+    // Auto-connect to bridge server
+    connectToBridge().then(result => {
+      if (!result.success) {
+        console.error('Failed to connect to bridge:', result.error);
+        alert(`Failed to connect to bridge server: ${result.error}\n\nMake sure the bridge server is running:\n  npm run start`);
+      }
     });
+  }, [initialize, connectToBridge]);
 
-    window.electronAPI.onStatisticsUpdate((stats) => {
-      setStatistics(stats);
-    });
+  const handleConnectRadio = async () => {
+    try {
+      await scanAndConnectRadio();
+    } catch (error) {
+      console.error('Failed to connect radio:', error);
+      const errorMessage = (error as Error).message || 'Unknown error';
 
-    window.electronAPI.onLogMessage((log) => {
-      setLogs((prev) => [...prev, log].slice(-1000));
-    });
-
-    window.electronAPI.onMessageReceived(({ radioId, message }) => {
-      setMessages((prev) => [message, ...prev].slice(0, 500));
-    });
-
-    window.electronAPI.onMessageForwarded(({ sourceRadioId, targetRadioId, message }) => {
-      // Update message as forwarded
-      setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? { ...m, forwarded: true, toRadio: targetRadioId } : m))
-      );
-    });
-  }, []);
-
-  const loadData = async () => {
-    const [radiosData, statsData, logsData, configData] = await Promise.all([
-      window.electronAPI.getRadios(),
-      window.electronAPI.getStatistics(),
-      window.electronAPI.getLogs(),
-      window.electronAPI.getBridgeConfig(),
-    ]);
-
-    setRadios(radiosData);
-    setStatistics(statsData);
-    setLogs(logsData);
-    setBridgeConfig(configData);
-  };
-
-  const handleDisconnectRadio = async (radioId: string) => {
-    await window.electronAPI.disconnectRadio(radioId);
-  };
-
-  const handleUpdateBridgeConfig = async (config: Partial<BridgeConfig>) => {
-    const updated = await window.electronAPI.updateBridgeConfig(config);
-    setBridgeConfig(updated);
+      if (errorMessage.includes('cancel') || errorMessage.includes('NotFoundError')) {
+        console.log('User canceled serial port selection');
+      } else {
+        alert(`Failed to connect radio: ${errorMessage}\n\nMake sure:\n- Your Meshtastic device is connected via USB\n- You granted permission to access the serial port\n- No other application is using the device`);
+      }
+    }
   };
 
   const connectedRadios = radios.filter((r) => r.status === 'connected');
+
+  // Check for Web Serial API support
+  const isWebSerialSupported = 'serial' in navigator;
+
+  if (!isWebSerialSupported) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+        <div className="card p-8 max-w-md text-center">
+          <svg className="w-16 h-16 mx-auto mb-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <h2 className="text-2xl font-bold text-white mb-4">Web Serial API Not Supported</h2>
+          <p className="text-slate-300 mb-4">
+            This application requires the Web Serial API, which is only available in:
+          </p>
+          <ul className="text-left text-slate-300 mb-6 space-y-2">
+            <li>✅ Chrome 89+ (Desktop)</li>
+            <li>✅ Edge 89+ (Desktop)</li>
+            <li>✅ Opera 75+ (Desktop)</li>
+          </ul>
+          <p className="text-slate-400 text-sm">
+            Please use a supported browser to access USB Meshtastic devices.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -85,7 +94,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-white">Meshtastic</h1>
-              <p className="text-xs text-slate-400">Bridge GUI</p>
+              <p className="text-xs text-slate-400">Bridge PWA</p>
             </div>
           </div>
         </div>
@@ -127,10 +136,23 @@ function App() {
           />
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-800 space-y-3">
+          {/* Bridge Connection Status */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/50">
+            <div className={`w-2 h-2 rounded-full ${bridgeConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <span className="text-xs text-slate-400">
+              {bridgeConnected ? 'Bridge Connected' : 'Bridge Disconnected'}
+            </span>
+          </div>
+
+          {/* Connect Radio Button */}
           <button
-            onClick={() => setShowConnectModal(true)}
-            className="w-full btn-primary flex items-center justify-center gap-2"
+            onClick={handleConnectRadio}
+            disabled={!bridgeConnected}
+            className={`w-full btn-primary flex items-center justify-center gap-2 ${
+              !bridgeConnected ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={!bridgeConnected ? 'Bridge server must be connected first' : 'Connect a Meshtastic radio'}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -148,7 +170,7 @@ function App() {
               <Dashboard radios={radios} statistics={statistics} messages={messages} />
             )}
             {activeTab === 'radios' && (
-              <RadioList radios={radios} onDisconnect={handleDisconnectRadio} />
+              <RadioList radios={radios} onDisconnect={disconnectRadio} />
             )}
             {activeTab === 'messages' && (
               <MessageMonitor messages={messages} radios={radios} />
@@ -157,19 +179,15 @@ function App() {
               <BridgeConfiguration
                 config={bridgeConfig}
                 radios={radios}
-                onUpdate={handleUpdateBridgeConfig}
+                onUpdate={updateBridgeConfig}
               />
             )}
             {activeTab === 'logs' && (
-              <LogViewer logs={logs} onClear={() => window.electronAPI.clearLogs()} />
+              <LogViewer logs={logs} onClear={clearLogs} />
             )}
           </div>
         </div>
       </div>
-
-      {showConnectModal && (
-        <ConnectRadioModal onClose={() => setShowConnectModal(false)} />
-      )}
     </div>
   );
 }

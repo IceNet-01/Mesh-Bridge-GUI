@@ -1,0 +1,25 @@
+#!/bin/bash
+# Meshtastic Bridge GUI Launcher
+
+# Get the directory where this script is installed
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR/../lib/mesh-bridge-gui"
+
+# Check if project directory exists
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: Project directory not found at $PROJECT_DIR"
+    exit 1
+fi
+
+cd "$PROJECT_DIR"
+
+# Check if node_modules exists
+if [ ! -d "node_modules" ]; then
+    echo "Error: Dependencies not installed. Please run the installer first."
+    exit 1
+fi
+
+# Start the application
+echo "Starting Meshtastic Bridge GUI..."
+echo "Open your browser to: http://localhost:5173"
+npm run dev
