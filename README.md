@@ -1,6 +1,8 @@
 # Meshtastic Bridge GUI
 
-A modern **web-based** interface for managing Meshtastic radio bridge relay stations. Built with React, TypeScript, and Node.js with official Meshtastic libraries.
+A powerful **web-based communication gateway** for Meshtastic radios. Features message bridging (2+ radios), AI assistant, email/Discord notifications, interactive commands, and real-time monitoring. Built with React, TypeScript, and Node.js with official Meshtastic libraries.
+
+**Works great with just ONE radio!** While designed for bridging multiple radios, the AI assistant, email/Discord notifications, and command system make it incredibly useful even with a single device.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
@@ -21,12 +23,12 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 ## Features
 
 🎯 **Core Functionality**
-- 📡 Support for 2+ Meshtastic radios with automatic bridging
-- 🔄 **Automatic bidirectional message forwarding** (no manual route configuration needed)
+- 📡 Support for **1+ Meshtastic radios** (single radio gets AI, commands, notifications!)
+- 🔄 **Automatic bidirectional message forwarding** (2+ radios only, no manual route configuration needed)
 - 🔐 **Smart channel matching** - forwards messages based on PSK+name, not just index
 - 🛡️ Message deduplication and loop prevention
 - 🔌 Auto-detect USB-connected devices
-- ⚡ Real-time message forwarding
+- ⚡ Real-time message forwarding and monitoring
 
 📊 **Monitoring & Analytics**
 - Real-time dashboard with live statistics
@@ -78,8 +80,11 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 
 - **Node.js 18+** (required for bridge server)
 - **Modern Browser**: Chrome, Firefox, Edge, Safari
-- **Meshtastic Devices**: 2+ radios connected via USB
+- **Meshtastic Device(s)**: 1+ radio connected via USB (2+ for message bridging)
 - **Git**: For cloning the repository
+- **Ollama** (optional): For AI assistant features
+- **SMTP Account** (optional): For email notifications
+- **Discord Webhook** (optional): For Discord notifications
 
 ### Installation (Development Mode)
 
@@ -185,9 +190,33 @@ npm run production
 └──────┘  └──────┘
 ```
 
-### Message Forwarding
+### Single Radio Mode
 
-**Automatic Forwarding** (default behavior):
+**This system is incredibly useful with just ONE radio!** You don't need multiple radios to benefit from this application.
+
+**Single Radio Use Cases:**
+- 🤖 **AI Assistant** - Ask questions via `#ai` commands and get responses on your radio screen
+- 📧 **Email Gateway** - Send emails from remote locations via `#email` commands
+- 💬 **Discord Integration** - Post status updates to Discord via `#discord` commands
+- 🌤️ **Information Services** - Get weather, time, status info via commands
+- 📊 **Monitoring** - View all mesh traffic in a clean web interface
+- 📝 **Message History** - Keep track of all messages with timestamps
+- 🔍 **Node Discovery** - See all nodes on your mesh network
+
+**Example Single Radio Workflow:**
+```
+You're hiking remotely with one radio:
+• #ai What plants are safe to eat in Pacific Northwest?
+• #weather Seattle
+• #email Reached checkpoint 3, all good
+• #notify Emergency - need pickup at coordinates
+```
+
+All commands work perfectly with one radio - no bridging required!
+
+### Message Forwarding (2+ Radios)
+
+**Automatic Forwarding** (default behavior when 2+ radios connected):
 1. Message received on Radio 1, channel X
 2. Bridge decrypts using channel X's PSK
 3. Bridge searches Radio 2 for matching channel (same name + PSK)
@@ -262,23 +291,54 @@ this.enabledCommands = [             // Remove unwanted commands
 
 ## Usage
 
-### 1. Connect Your Radios
+### 1. Connect Your Radio(s)
 
 **Development Mode:**
 1. Launch the application (`npm run start`)
 2. Open browser to http://localhost:5173
 3. Click **"Scan for Radios"** or **"Connect Radio"**
-4. Select each Meshtastic device from the list
-5. Radios will appear in the sidebar instantly
+4. Select your Meshtastic device(s) from the list
+5. Radio(s) will appear in the sidebar instantly
 
 **Production Mode / Service:**
 1. Start the service (`npm run service:start` or `npm run production`)
 2. Open browser to http://localhost:8080
 3. Click **"Scan for Radios"** or **"Connect Radio"**
-4. Select each Meshtastic device from the list
-5. Radios will appear in the sidebar instantly
+4. Select your Meshtastic device(s) from the list
+5. Radio(s) will appear in the sidebar instantly
 
-### 2. Message Forwarding
+### 2. Single Radio Usage
+
+**With just one radio connected**, you get access to these powerful features:
+
+**AI Assistant:**
+- Ask questions: `#ai How far is Mars from Earth?`
+- Get information: `#ask What is a mesh network?`
+- Responses appear on your radio screen
+
+**Email Notifications:**
+- Configure SMTP in "Communication" tab
+- Send emails: `#email Sensor reading: 72°F, humidity 45%`
+- Perfect for remote monitoring and alerts
+
+**Discord Integration:**
+- Configure webhook in "Communication" tab
+- Post updates: `#discord Solar panel online, battery 100%`
+- Great for status updates and team communication
+
+**Information Commands:**
+- `#weather [city]` - Weather reports
+- `#time` - Current date and time
+- `#status` - System status
+- `#help` - List all commands
+
+**Message Monitoring:**
+- View all mesh traffic in real-time
+- Track message history
+- See connected nodes
+- Monitor signal quality
+
+### 3. Message Forwarding (2+ Radios)
 
 **Messages are automatically forwarded!** No manual configuration needed.
 
@@ -289,7 +349,7 @@ The bridge:
 - ✅ Prevents loops (won't forward messages it sent)
 - ✅ Deduplicates messages (both radios often receive same broadcast)
 
-### 3. Forwarding Private Channels
+### 4. Forwarding Private Channels (2+ Radios)
 
 To bridge/repeat encrypted private channels:
 
@@ -309,14 +369,16 @@ To bridge/repeat encrypted private channels:
 
 3. **Result:** Messages on "skynet" channel will be forwarded between both radios, maintaining encryption!
 
-### 4. Monitoring
+### 5. Monitoring
 
-- **Dashboard**: Overview of connected radios and recent messages
-- **Messages**: Live feed of all messages passing through the bridge
+- **Dashboard**: Overview of connected radio(s) and recent messages
+- **Messages**: Live feed of all messages from your radio(s)
 - **Radios**: Detailed status of each connected radio
 - **Logs**: System logs for troubleshooting
+- **AI Assistant**: Configure and manage local AI models
+- **Communication**: Configure email and Discord notifications
 
-### 5. AI Assistant Setup
+### 6. AI Assistant Setup
 
 The AI Assistant allows users to query a local AI model via Meshtastic messages.
 
@@ -392,7 +454,7 @@ Choose based on your hardware:
 - Cancel and retry
 - Check Ollama logs: `ollama logs`
 
-### 6. Communication Notifications Setup
+### 7. Communication Notifications Setup
 
 Configure email and Discord notifications to send messages from your radio to external platforms.
 
@@ -628,10 +690,14 @@ This is normal! The `device.configure()` call takes 10-30 seconds. You'll see:
 | Feature | GUI Version (2.0 Alpha) | Headless Version |
 |---------|-------------------------|------------------|
 | Visual Interface | ✅ Modern web UI | ❌ Command-line only |
-| Multiple Radios | ✅ 2+ radios | ✅ 2 radios |
-| Auto Forwarding | ✅ Automatic | ✅ Automatic |
+| Radio Support | ✅ 1+ radios | ✅ 2 radios (required) |
+| Auto Forwarding | ✅ Automatic (2+ radios) | ✅ Automatic |
 | Smart Channel Matching | ✅ Yes (PSK+name) | ❌ Index-based only |
 | Private Channel Support | ✅ Yes | ⚠️ Limited |
+| AI Assistant | ✅ Yes (Ollama) | ❌ No |
+| Email Notifications | ✅ Yes (SMTP) | ❌ No |
+| Discord Integration | ✅ Yes (Webhooks) | ❌ No |
+| Interactive Commands | ✅ 16 commands | ❌ No |
 | Real-time Monitoring | ✅ Dashboard | ⚠️ Logs only |
 | Configuration | ✅ Visual + code | ⚠️ Code only |
 | Cross-platform | ✅ Win/Mac/Linux | ✅ Linux (primary) |
@@ -640,7 +706,7 @@ This is normal! The `device.configure()` call takes 10-30 seconds. You'll see:
 | Auto-restart on Crash | ✅ Yes (when using service) | ✅ Yes |
 | Port Cleanup | ✅ Automatic | ⚠️ Manual |
 | Maturity | ⚠️ Alpha | ✅ Stable |
-| Use Case | Desktop/Server/Testing | Production/Server |
+| Use Case | Desktop/Server/Single Radio | Production Bridging Only |
 
 ## Contributing
 
@@ -688,7 +754,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Recommended for:**
 - Testing and development
 - Home/personal mesh networks
-- Learning about Meshtastic bridging
+- Single radio with AI/email/Discord features
+- Multi-radio message bridging
+- Learning about Meshtastic
+- Remote monitoring and notifications
 - Linux servers with systemd
 
 **Use with caution for:**
