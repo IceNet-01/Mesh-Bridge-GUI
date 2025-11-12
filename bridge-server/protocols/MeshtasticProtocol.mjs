@@ -13,6 +13,7 @@ export class MeshtasticProtocol extends BaseProtocol {
     super(radioId, portPath, options);
     this.transport = null;
     this.device = null;
+    this.channelMap = new Map();
   }
 
   getProtocolName() {
@@ -23,25 +24,28 @@ export class MeshtasticProtocol extends BaseProtocol {
     try {
       console.log(`[Meshtastic] Connecting to ${this.portPath}...`);
 
-      // Create serial transport
+      // Create serial transport using the static create method
       this.transport = await TransportNodeSerial.create(this.portPath, 115200);
+      console.log(`[Meshtastic] Transport connected`);
 
-      // Create device
+      // Create Meshtastic device
       this.device = new MeshDevice(this.transport);
+      console.log(`[Meshtastic] MeshDevice created, configuring...`);
 
       // Subscribe to events BEFORE configuring
       this.setupEventHandlers();
 
-      // Configure device and wait for connection
+      // Configure the device (required for message flow)
+      console.log(`[Meshtastic] Configuring radio...`);
       await this.device.configure();
+      console.log(`[Meshtastic] Radio configured successfully`);
 
-      console.log(`[Meshtastic] Device configured, waiting for node info...`);
-
-      // Wait for node info (with timeout)
-      await this.waitForNodeInfo();
+      // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
+      this.device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
+      console.log(`[Meshtastic] Heartbeat enabled`);
 
       this.connected = true;
-      console.log(`[Meshtastic] Connected successfully to ${this.portPath}`);
+      console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
       return true;
     } catch (error) {
@@ -52,8 +56,34 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   setupEventHandlers() {
+    // Subscribe to connection status events
+    this.device.events.onDeviceStatus.subscribe((status) => {
+      console.log(`[Meshtastic] Device status: ${status}`);
+
+      // Handle disconnection
+      if (status === 2) { // DeviceDisconnected
+        console.log(`[Meshtastic] Radio disconnected, cleaning up...`);
+        this.connected = false;
+        this.emit('disconnected');
+      }
+    });
+
+    // Subscribe to ALL mesh packets
+    this.device.events.onMeshPacket.subscribe((packet) => {
+      console.log(`[Meshtastic] Raw MeshPacket:`, {
+        from: packet.from,
+        to: packet.to,
+        channel: packet.channel,
+        decoded: packet.decoded ? {
+          portnum: packet.decoded.portnum,
+          payloadVariant: packet.decoded.payloadVariant
+        } : null
+      });
+    });
+
     // Subscribe to message packets
     this.device.events.onMessagePacket.subscribe((packet) => {
+      console.log(`[Meshtastic] onMessagePacket fired!`);
       try {
         const normalized = this.normalizeMessagePacket(packet);
         this.emitMessage(normalized);
@@ -64,30 +94,31 @@ export class MeshtasticProtocol extends BaseProtocol {
     });
 
     // Subscribe to node info updates
-    this.device.events.onMyNodeInfo.subscribe((info) => {
+    this.device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
+      console.log(`[Meshtastic] My node info:`, myNodeInfo);
       try {
         const nodeInfo = {
-          nodeId: info.myNodeNum?.toString() || 'unknown',
-          longName: info.user?.longName || 'Unknown',
-          shortName: info.user?.shortName || '????',
-          hwModel: info.user?.hwModel || 'Unknown'
+          nodeId: myNodeInfo.myNodeNum?.toString() || 'unknown',
+          longName: myNodeInfo.user?.longName || 'Unknown',
+          shortName: myNodeInfo.user?.shortName || '????',
+          hwModel: myNodeInfo.user?.hwModel || 'Unknown'
         };
         this.updateNodeInfo(nodeInfo);
-        console.log(`[Meshtastic] Node info updated:`, nodeInfo);
+        console.log(`[Meshtastic] Node number set to ${myNodeInfo.myNodeNum}`);
       } catch (error) {
         console.error('[Meshtastic] Error handling node info:', error);
         this.handleError(error);
       }
     });
 
-    // Subscribe to channel updates
+    // Subscribe to other node info
+    this.device.events.onNodeInfoPacket.subscribe((node) => {
+      console.log(`[Meshtastic] Node info packet:`, node);
+    });
+
+    // Subscribe to channel configuration packets
     this.device.events.onChannelPacket.subscribe((channelPacket) => {
       try {
-        // Build channel array from individual channel packets
-        if (!this.channelArray) {
-          this.channelArray = [];
-        }
-
         const channelInfo = {
           index: channelPacket.index,
           role: channelPacket.role,
@@ -95,67 +126,21 @@ export class MeshtasticProtocol extends BaseProtocol {
           psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
         };
 
-        this.channelArray[channelPacket.index] = channelInfo;
-        this.updateChannels(this.channelArray.filter(ch => ch !== undefined));
+        this.channelMap.set(channelPacket.index, channelInfo);
 
-        console.log(`[Meshtastic] Channel ${channelPacket.index} updated: ${channelInfo.name || '(unnamed)'}`);
+        console.log(`[Meshtastic] Channel ${channelPacket.index}:`, {
+          name: channelInfo.name || '(unnamed)',
+          role: channelInfo.role === 1 ? 'PRIMARY' : 'SECONDARY',
+          pskLength: channelInfo.psk.length
+        });
+
+        // Convert Map to array for updateChannels
+        const channelsArray = Array.from(this.channelMap.values());
+        this.updateChannels(channelsArray);
       } catch (error) {
         console.error('[Meshtastic] Error handling channel packet:', error);
         this.handleError(error);
       }
-    });
-
-    // Subscribe to device status for connection monitoring
-    this.device.events.onDeviceStatus.subscribe((status) => {
-      try {
-        console.log(`[Meshtastic] Device status: ${status}`);
-        if (status === 2) { // DeviceDisconnected
-          this.connected = false;
-          this.emit('disconnected');
-        }
-      } catch (error) {
-        console.error('[Meshtastic] Error handling device status:', error);
-        this.handleError(error);
-      }
-    });
-
-    // Subscribe to mesh packets for telemetry data
-    this.device.events.onMeshPacket.subscribe((packet) => {
-      try {
-        // Extract telemetry from mesh packets if available
-        if (packet.decoded?.portnum === 67) { // TELEMETRY_APP
-          const telemetryData = packet.decoded.payload;
-          if (telemetryData) {
-            this.updateTelemetry({
-              batteryLevel: telemetryData.deviceMetrics?.batteryLevel,
-              voltage: telemetryData.deviceMetrics?.voltage,
-              channelUtilization: telemetryData.deviceMetrics?.channelUtilization,
-              airUtilTx: telemetryData.deviceMetrics?.airUtilTx
-            });
-          }
-        }
-      } catch (error) {
-        // Silently ignore telemetry parsing errors
-      }
-    });
-  }
-
-  async waitForNodeInfo(timeout = 30000) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for node info'));
-      }, timeout);
-
-      const checkNodeInfo = () => {
-        if (this.nodeInfo && this.nodeInfo.nodeId !== 'unknown') {
-          clearTimeout(timer);
-          resolve();
-        } else {
-          setTimeout(checkNodeInfo, 100);
-        }
-      };
-
-      checkNodeInfo();
     });
   }
 
@@ -189,13 +174,17 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       const { wantAck = false } = options;
 
-      // Send message using Meshtastic device
-      const result = await this.device.sendText(text, channel, wantAck);
+      console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel}`);
+
+      // Send using the device
+      // sendText(text, destination, wantAck, channel)
+      // Use "broadcast" as destination to broadcast on the specified channel
+      await this.device.sendText(text, "broadcast", wantAck, channel);
 
       this.stats.messagesSent++;
-      console.log(`[Meshtastic] Message sent to channel ${channel}: ${text.substring(0, 50)}...`);
+      console.log(`[Meshtastic] Text broadcast successfully on channel ${channel}`);
 
-      return result;
+      return true;
     } catch (error) {
       console.error('[Meshtastic] Error sending message:', error);
       this.handleError(error);
@@ -204,6 +193,10 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   normalizeMessagePacket(packet) {
+    // The @meshtastic/core library already decodes text messages
+    // packet.data contains the decoded string for text messages
+    const text = packet.data;
+
     return {
       id: packet.id || Date.now().toString(),
       timestamp: packet.rxTime ? new Date(packet.rxTime * 1000) : new Date(),
@@ -211,23 +204,12 @@ export class MeshtasticProtocol extends BaseProtocol {
       to: packet.to,
       channel: packet.channel || 0,
       portnum: packet.portnum || 1,
-      text: packet.text || this.extractText(packet),
+      text: text || '',
       rssi: packet.rssi,
       snr: packet.snr,
       hopLimit: packet.hopLimit,
       payload: packet
     };
-  }
-
-  extractText(packet) {
-    // Try to extract text from different packet formats
-    if (packet.decoded && packet.decoded.text) {
-      return packet.decoded.text;
-    }
-    if (packet.data && typeof packet.data === 'string') {
-      return packet.data;
-    }
-    return '';
   }
 
   channelsMatch(channel1, channel2) {
