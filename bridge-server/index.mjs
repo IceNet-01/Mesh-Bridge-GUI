@@ -1652,16 +1652,18 @@ class MeshtasticBridgeServer {
       const data = await response.json();
 
       ws.send(JSON.stringify({
-        type: 'ai-models-list',
+        type: 'ai-models',
         models: data.models || []
       }));
     } catch (error) {
-      console.error('❌ AI list models error:', error);
+      // Only log error if it's not just Ollama not running
+      if (error.cause?.code !== 'ECONNREFUSED') {
+        console.error('❌ AI list models error:', error);
+      }
+
       ws.send(JSON.stringify({
-        type: 'error',
-        error: error.code === 'ECONNREFUSED' ?
-          'Ollama not running. Install from https://ollama.com' :
-          `Failed to list models: ${error.message}`
+        type: 'ai-models',
+        models: [] // Return empty list if Ollama not available
       }));
     }
   }
