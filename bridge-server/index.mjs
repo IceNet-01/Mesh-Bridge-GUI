@@ -443,11 +443,28 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // Channels match if they have the same name AND same PSK
-    const nameMatch = sourceChannel.name === targetChannel.name;
+    // PSK MUST match (this is the encryption key)
     const pskMatch = sourceChannel.psk === targetChannel.psk;
+    if (!pskMatch) {
+      return false;
+    }
 
-    return nameMatch && pskMatch;
+    // If both channels have names, they must match
+    // If both are unnamed, they match by PSK only (but log warning)
+    const sourceName = sourceChannel.name || '';
+    const targetName = targetChannel.name || '';
+
+    // SECURITY: If names are present, they MUST match
+    if (sourceName && targetName && sourceName !== targetName) {
+      return false;
+    }
+
+    // If either is unnamed, only PSK matching applies (less secure, warn)
+    if (!sourceName || !targetName) {
+      console.warn(`⚠️  Matching channels by PSK only (missing names): "${sourceName}" vs "${targetName}"`);
+    }
+
+    return true;
   }
 
   /**
