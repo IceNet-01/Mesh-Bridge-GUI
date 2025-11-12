@@ -43,10 +43,19 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 
 🤖 **Interactive Command System**
 - **Bridge commands** - send commands like `#weather Seattle` or `#ping` from your radio
-- **11 built-in commands** - weather, status, uptime, radios, channels, stats, and more
+- **13 built-in commands** - weather, status, uptime, radios, channels, stats, ai, and more
 - **Rate limiting** - prevents command spam (max 10/min per user)
 - **No phone needed** - get info directly on radio screen
 - **Fully configurable** - enable/disable commands, change prefix, customize
+
+🧠 **AI Assistant** (NEW in 2.0)
+- **Local AI queries** - ask questions via `#ai [question]` or `#ask [question]` from your radio
+- **Powered by Ollama** - runs locally on your hardware (Raspberry Pi 4+ supported)
+- **Mesh-optimized** - responses automatically shortened to fit Meshtastic message limits (~200 chars)
+- **Multiple models** - choose from ultra-fast 1B models to more capable 3B models
+- **Model management UI** - install, switch, and configure models directly from web interface
+- **Rate limited** - max 3 AI queries per minute per user to conserve resources
+- **No cloud required** - completely local, private, and works offline
 
 🎨 **Modern UI**
 - Clean, dark-themed interface
@@ -198,6 +207,7 @@ The bridge includes an **interactive command system** that responds to messages 
 - `#channels` - List configured channels on the bridge
 - `#stats` - View message statistics (total messages, nodes, per-radio counts)
 - `#nodes` - List recently seen nodes on the mesh
+- `#ai [question]` or `#ask [question]` - Query local AI assistant (requires Ollama, see AI Assistant section)
 
 **Example Usage:**
 ```
@@ -213,13 +223,16 @@ Bridge responds: 📊 Bridge Status:
 
 You send: #ping
 Bridge responds: 🏓 Pong! Bridge is alive and running.
+
+You send: #ai What is the capital of France?
+Bridge responds: 🤖 Paris is the capital of France, located in the north-central part of the country.
 ```
 
 **Features:**
 - ✅ Commands are NOT forwarded (consumed by bridge)
-- ✅ Rate limiting (max 10 commands/minute per user)
+- ✅ Rate limiting (max 10 commands/minute per user, max 3 AI queries/minute)
 - ✅ Works on any channel
-- ✅ No internet connection required (except for weather)
+- ✅ No internet connection required (except for weather and AI)
 - ✅ Responses visible on radio screen without phone
 
 **Configuration:**
@@ -290,6 +303,82 @@ To bridge/repeat encrypted private channels:
 - **Messages**: Live feed of all messages passing through the bridge
 - **Radios**: Detailed status of each connected radio
 - **Logs**: System logs for troubleshooting
+
+### 5. AI Assistant Setup
+
+The AI Assistant allows users to query a local AI model via Meshtastic messages.
+
+#### Prerequisites
+
+1. **Install Ollama** (https://ollama.ai)
+   ```bash
+   # Linux/macOS
+   curl -fsSL https://ollama.ai/install.sh | sh
+
+   # Or download from https://ollama.ai
+   ```
+
+2. **Start Ollama**
+   ```bash
+   ollama serve
+   ```
+
+#### Using the AI Assistant
+
+1. **Open Web UI** → Navigate to **"AI Assistant"** tab
+
+2. **Check Ollama Status**
+   - Green indicator = Ollama is running and ready
+   - Red indicator = Ollama not running (start it with `ollama serve`)
+
+3. **Install a Model**
+   - Click **"Install"** on a recommended model (e.g., `llama3.2:1b`)
+   - Wait for download to complete (600MB-2GB depending on model)
+   - First download may take several minutes
+
+4. **Enable AI Assistant**
+   - Toggle **"Enable AI Assistant"** switch to ON
+   - Select your installed model from the dropdown
+
+5. **Send Queries from Radio**
+   - From any Meshtastic radio: `#ai What is the weather?`
+   - Or use: `#ask How far is the moon?`
+   - Response appears on your radio screen (~2-10 seconds)
+
+#### Recommended Models
+
+Choose based on your hardware:
+
+| Model | Size | Hardware | Response Time | Quality |
+|-------|------|----------|---------------|---------|
+| `llama3.2:1b` | 700MB | Pi 4+ (4GB RAM) | 2-4s | Good |
+| `phi3:mini` | 2.2GB | Pi 5 (8GB RAM) | 4-6s | Excellent |
+| `llama3.2:3b` | 2GB | Desktop/Pi 5 (8GB+) | 6-10s | Very Good |
+| `tinyllama:latest` | 637MB | Pi 4+ (2GB RAM) | 1-2s | Basic |
+
+#### AI Features
+
+- **Automatic Response Shortening**: Responses are truncated to ~200 characters to fit Meshtastic message limits
+- **Rate Limiting**: Max 3 AI queries per minute per user (prevents abuse)
+- **Timeout**: 15-second timeout for slow responses
+- **System Prompt**: Pre-configured to give concise, mesh-friendly responses
+- **Privacy**: Completely local - no data sent to cloud services
+
+#### Troubleshooting
+
+**"AI offline. Is Ollama running?"**
+- Start Ollama: `ollama serve`
+- Check it's running: `curl http://localhost:11434/api/version`
+
+**"AI timeout. Try a simpler question."**
+- Question took too long to process (>15s)
+- Try a shorter, simpler question
+- Consider using a faster model
+
+**Model download stuck:**
+- Check internet connection
+- Cancel and retry
+- Check Ollama logs: `ollama logs`
 
 ## Configuration
 

@@ -70,8 +70,22 @@ class MeshtasticBridgeServer {
     // Enabled commands list - remove any you don't want
     this.enabledCommands = [
       'ping', 'help', 'status', 'time', 'uptime', 'version',
-      'weather', 'radios', 'channels', 'stats', 'nodes'
+      'weather', 'radios', 'channels', 'stats', 'nodes', 'ai', 'ask'
     ];
+
+    // ===== AI ASSISTANT CONFIGURATION =====
+    // Optional AI assistant powered by local LLM (Ollama)
+    // Responds to questions via #ai or #ask commands
+    //
+    this.aiEnabled = false;                    // Enable/disable AI assistant (requires Ollama)
+    this.aiEndpoint = 'http://localhost:11434'; // Ollama API endpoint
+    this.aiModel = 'llama3.2:1b';              // Default model (fast, ~700MB)
+    this.aiMaxTokens = 50;                     // Limit response length
+    this.aiMaxResponseLength = 200;            // Max chars (Meshtastic limit ~237)
+    this.aiTimeout = 15000;                    // 15 second timeout
+    this.aiRateLimit = 3;                      // Max 3 AI queries per minute per user
+    this.aiUsage = new Map();                  // Track AI usage separately
+    this.aiSystemPrompt = 'You are a helpful assistant for a mesh network. Keep ALL responses under 200 characters. Be extremely concise and direct. No explanations unless asked.';
 
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
@@ -80,6 +94,11 @@ class MeshtasticBridgeServer {
     if (this.commandsEnabled) {
       console.log(`   Command prefix: ${this.commandPrefix}`);
       console.log(`   Available commands: ${this.enabledCommands.length} commands`);
+    }
+    console.log(`   AI assistant: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.aiEnabled) {
+      console.log(`   AI model: ${this.aiModel}`);
+      console.log(`   AI endpoint: ${this.aiEndpoint}`);
     }
     console.log('');
   }
@@ -256,6 +275,31 @@ class MeshtasticBridgeServer {
 
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+
+        // AI Management
+        case 'ai-get-config':
+          await this.aiGetConfig(ws);
+          break;
+
+        case 'ai-set-enabled':
+          await this.aiSetEnabled(ws, message.enabled);
+          break;
+
+        case 'ai-list-models':
+          await this.aiListModels(ws);
+          break;
+
+        case 'ai-set-model':
+          await this.aiSetModel(ws, message.model);
+          break;
+
+        case 'ai-pull-model':
+          await this.aiPullModel(ws, message.model);
+          break;
+
+        case 'ai-check-status':
+          await this.aiCheckStatus(ws);
           break;
 
         default:
@@ -682,6 +726,10 @@ class MeshtasticBridgeServer {
         case 'nodes':
           response = await this.cmdNodes();
           break;
+        case 'ai':
+        case 'ask':
+          response = await this.cmdAI(fromNode, cmdArgs);
+          break;
         default:
           response = `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help`;
       }
@@ -752,6 +800,12 @@ class MeshtasticBridgeServer {
       `${this.commandPrefix}stats - Message statistics`,
       `${this.commandPrefix}nodes - List known nodes`
     ];
+
+    // Add AI commands if enabled
+    if (this.aiEnabled) {
+      commands.push(`${this.commandPrefix}ai [question] - Ask AI assistant`);
+      commands.push(`${this.commandPrefix}ask [question] - Ask AI assistant`);
+    }
 
     return `📖 Bridge Commands:\n${commands.join('\n')}`;
   }
@@ -929,6 +983,112 @@ class MeshtasticBridgeServer {
       });
 
     return `👥 Known Nodes (${nodes.size} total, showing 10):\n${nodeList.join('\n')}`;
+  }
+
+  /**
+   * Command: #ai / #ask - Ask AI assistant (requires Ollama)
+   */
+  async cmdAI(fromNode, args) {
+    // Check if AI is enabled
+    if (!this.aiEnabled) {
+      return '🤖 AI assistant is disabled. Enable it in bridge configuration.';
+    }
+
+    // Parse question
+    const question = args.join(' ').trim();
+    if (!question) {
+      return `💭 Usage: ${this.commandPrefix}ai [your question]`;
+    }
+
+    // Check AI-specific rate limiting (stricter than regular commands)
+    if (this.isAIRateLimited(fromNode)) {
+      return `⚠️ AI rate limit exceeded. Max ${this.aiRateLimit} AI queries per minute.`;
+    }
+
+    try {
+      console.log(`🤖 AI query from node ${fromNode}: "${question}"`);
+
+      // Call Ollama API with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.aiTimeout);
+
+      const response = await fetch(`${this.aiEndpoint}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.aiModel,
+          prompt: question,
+          system: this.aiSystemPrompt,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: this.aiMaxTokens
+          }
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.error(`AI API error: ${response.status}`);
+        return '❌ AI service error. Check Ollama is running.';
+      }
+
+      const data = await response.json();
+      let answer = data.response.trim();
+
+      // Truncate if too long (Meshtastic limit)
+      if (answer.length > this.aiMaxResponseLength) {
+        answer = answer.substring(0, this.aiMaxResponseLength - 3) + '...';
+      }
+
+      console.log(`🤖 AI response: "${answer}"`);
+      return `🤖 ${answer}`;
+
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.error('AI query timeout');
+        return '⏱️ AI timeout. Try a simpler question.';
+      }
+      console.error('AI error:', error);
+      if (error.code === 'ECONNREFUSED') {
+        return '❌ AI offline. Is Ollama running?';
+      }
+      return '❌ AI error. Check logs.';
+    }
+  }
+
+  /**
+   * Check if user is AI rate limited (stricter than regular commands)
+   */
+  isAIRateLimited(nodeId) {
+    const now = Date.now();
+    const usage = this.aiUsage.get(nodeId) || [];
+
+    // Filter to only recent usage (last minute)
+    const recentUsage = usage.filter(timestamp => now - timestamp < 60000);
+
+    // Check if limit exceeded
+    if (recentUsage.length >= this.aiRateLimit) {
+      return true;
+    }
+
+    // Add current usage
+    recentUsage.push(now);
+    this.aiUsage.set(nodeId, recentUsage);
+
+    // Clean up old entries periodically
+    if (this.aiUsage.size > 100) {
+      for (const [key, timestamps] of this.aiUsage.entries()) {
+        const recent = timestamps.filter(t => now - t < 60000);
+        if (recent.length === 0) {
+          this.aiUsage.delete(key);
+        }
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1183,6 +1343,222 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Disconnect failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Get current AI configuration
+   */
+  async aiGetConfig(ws) {
+    ws.send(JSON.stringify({
+      type: 'ai-config',
+      config: {
+        enabled: this.aiEnabled,
+        model: this.aiModel,
+        endpoint: this.aiEndpoint,
+        maxTokens: this.aiMaxTokens,
+        rateLimit: this.aiRateLimit,
+        timeout: this.aiTimeout
+      }
+    }));
+  }
+
+  /**
+   * AI Management: Enable/disable AI assistant
+   */
+  async aiSetEnabled(ws, enabled) {
+    try {
+      this.aiEnabled = enabled;
+      console.log(`🤖 AI assistant ${enabled ? 'enabled' : 'disabled'}`);
+
+      ws.send(JSON.stringify({
+        type: 'ai-set-enabled-success',
+        enabled: this.aiEnabled
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'ai-config-changed',
+        config: { enabled: this.aiEnabled }
+      });
+    } catch (error) {
+      console.error('❌ AI set enabled error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to set AI enabled: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: List available models from Ollama
+   */
+  async aiListModels(ws) {
+    try {
+      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+
+      if (!response.ok) {
+        throw new Error('Ollama not responding');
+      }
+
+      const data = await response.json();
+
+      ws.send(JSON.stringify({
+        type: 'ai-models-list',
+        models: data.models || []
+      }));
+    } catch (error) {
+      console.error('❌ AI list models error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: error.code === 'ECONNREFUSED' ?
+          'Ollama not running. Install from https://ollama.com' :
+          `Failed to list models: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Set active model
+   */
+  async aiSetModel(ws, model) {
+    try {
+      // Verify model exists
+      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+      const data = await response.json();
+      const modelExists = data.models.some(m => m.name === model);
+
+      if (!modelExists) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Model ${model} not installed. Pull it first.`
+        }));
+        return;
+      }
+
+      this.aiModel = model;
+      console.log(`🤖 AI model changed to: ${model}`);
+
+      ws.send(JSON.stringify({
+        type: 'ai-set-model-success',
+        model: this.aiModel
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'ai-config-changed',
+        config: { model: this.aiModel }
+      });
+    } catch (error) {
+      console.error('❌ AI set model error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to set model: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Pull (download/install) a model
+   */
+  async aiPullModel(ws, model) {
+    try {
+      console.log(`🤖 Pulling model: ${model} (this may take a while...)`);
+
+      // Send initial acknowledgment
+      ws.send(JSON.stringify({
+        type: 'ai-pull-started',
+        model: model
+      }));
+
+      // Pull model (streaming response)
+      const response = await fetch(`${this.aiEndpoint}/api/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: model })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Pull failed: ${response.statusText}`);
+      }
+
+      // Stream progress updates
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(l => l.trim());
+
+        for (const line of lines) {
+          try {
+            const progress = JSON.parse(line);
+            ws.send(JSON.stringify({
+              type: 'ai-pull-progress',
+              model: model,
+              status: progress.status,
+              completed: progress.completed,
+              total: progress.total
+            }));
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+        }
+      }
+
+      console.log(`✅ Model ${model} pulled successfully`);
+      ws.send(JSON.stringify({
+        type: 'ai-pull-complete',
+        model: model
+      }));
+
+    } catch (error) {
+      console.error('❌ AI pull model error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to pull model: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Check if Ollama is running and responsive
+   */
+  async aiCheckStatus(ws) {
+    try {
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        signal: AbortSignal.timeout(5000)
+      });
+
+      const running = response.ok;
+      let version = null;
+
+      if (running) {
+        try {
+          const versionResponse = await fetch(`${this.aiEndpoint}/api/version`);
+          const versionData = await versionResponse.json();
+          version = versionData.version;
+        } catch (e) {
+          // Ignore version errors
+        }
+      }
+
+      ws.send(JSON.stringify({
+        type: 'ai-status',
+        running: running,
+        version: version,
+        endpoint: this.aiEndpoint
+      }));
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'ai-status',
+        running: false,
+        error: error.message,
+        endpoint: this.aiEndpoint
       }));
     }
   }

@@ -80,6 +80,37 @@ export interface LogEntry {
   error?: string;
 }
 
+export interface AIConfig {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  maxTokens: number;
+  maxResponseLength: number;
+  timeout: number;
+  rateLimit: number;
+  systemPrompt: string;
+}
+
+export interface AIModel {
+  name: string;
+  size: number;
+  digest?: string;
+  modified_at?: string;
+}
+
+export interface AIStatus {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface AIModelPullProgress {
+  model: string;
+  status: string;
+  completed?: number;
+  total?: number;
+}
+
 // Web Serial API Type Extensions
 declare global {
   interface Navigator {

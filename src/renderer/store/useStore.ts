@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -14,6 +14,12 @@ interface AppStore {
   messages: Message[];
   bridgeConfig: BridgeConfig | null;
 
+  // AI State
+  aiConfig: AIConfig | null;
+  aiModels: AIModel[];
+  aiStatus: AIStatus | null;
+  aiPullProgress: AIModelPullProgress | null;
+
   // Actions
   initialize: () => void;
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
@@ -21,6 +27,14 @@ interface AppStore {
   disconnectRadio: (radioId: string) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
+
+  // AI Actions
+  getAIConfig: () => Promise<void>;
+  setAIEnabled: (enabled: boolean) => Promise<void>;
+  listAIModels: () => Promise<void>;
+  setAIModel: (model: string) => Promise<void>;
+  pullAIModel: (model: string) => Promise<void>;
+  checkAIStatus: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set) => {
@@ -66,6 +80,31 @@ export const useStore = create<AppStore>((set) => {
     set({ bridgeConnected: false });
   });
 
+  // AI event listeners
+  manager.on('ai-config-update', (config: AIConfig) => {
+    set({ aiConfig: config });
+  });
+
+  manager.on('ai-models-list', (models: AIModel[]) => {
+    set({ aiModels: models });
+  });
+
+  manager.on('ai-status-update', (status: AIStatus) => {
+    set({ aiStatus: status });
+  });
+
+  manager.on('ai-pull-started', ({ model }: { model: string }) => {
+    set({ aiPullProgress: { model, status: 'Starting...', completed: 0, total: 0 } });
+  });
+
+  manager.on('ai-pull-progress', (progress: AIModelPullProgress) => {
+    set({ aiPullProgress: progress });
+  });
+
+  manager.on('ai-pull-complete', ({ model }: { model: string }) => {
+    set({ aiPullProgress: null });
+  });
+
   return {
     manager,
     bridgeConnected: false,
@@ -74,6 +113,10 @@ export const useStore = create<AppStore>((set) => {
     logs: [],
     messages: [],
     bridgeConfig: null,
+    aiConfig: null,
+    aiModels: [],
+    aiStatus: null,
+    aiPullProgress: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();
@@ -132,6 +175,38 @@ export const useStore = create<AppStore>((set) => {
 
     clearLogs: () => {
       set({ logs: [] });
+    },
+
+    // AI Actions
+    getAIConfig: async () => {
+      const config = await manager.getAIConfig();
+      if (config) {
+        set({ aiConfig: config });
+      }
+    },
+
+    setAIEnabled: async (enabled: boolean) => {
+      await manager.setAIEnabled(enabled);
+    },
+
+    listAIModels: async () => {
+      const models = await manager.listAIModels();
+      set({ aiModels: models });
+    },
+
+    setAIModel: async (model: string) => {
+      await manager.setAIModel(model);
+    },
+
+    pullAIModel: async (model: string) => {
+      await manager.pullAIModel(model);
+    },
+
+    checkAIStatus: async () => {
+      const status = await manager.checkAIStatus();
+      if (status) {
+        set({ aiStatus: status });
+      }
     },
   };
 });
