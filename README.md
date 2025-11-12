@@ -16,6 +16,7 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 - 📱 **PWA Support** - installable as a progressive web app
 - 🔄 **Auto Message Forwarding** - intelligent channel-aware bridging
 - ✨ **Smart Channel Matching** - handles different channel configurations across radios
+- 🛠️ **System Service Support** - runs as permanent service with auto-start on boot
 
 ## Features
 
@@ -55,7 +56,7 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 - **Meshtastic Devices**: 2+ radios connected via USB
 - **Git**: For cloning the repository
 
-### Installation
+### Installation (Development Mode)
 
 ```bash
 # Clone the repository
@@ -69,9 +70,9 @@ npm install
 npm run start
 ```
 
-The application will start:
+**Development mode** starts two servers:
 - **Bridge Server**: http://localhost:8080 (WebSocket)
-- **Web UI**: http://localhost:5173
+- **Web UI (Vite)**: http://localhost:5173 (with hot-reload)
 
 Open your browser to **http://localhost:5173**
 
@@ -119,15 +120,36 @@ npm run production
 
 ### Architecture
 
+**Development Mode** (two servers):
 ```
 ┌─────────────────┐
 │   Web Browser   │ ← You interact here
-│  (localhost:5173)│
+│  (localhost:5173)│    (Vite dev server with hot-reload)
 └────────┬────────┘
          │ WebSocket
          │
 ┌────────▼────────┐
-│  Bridge Server  │ ← Node.js server
+│  Bridge Server  │ ← Node.js WebSocket server
+│ (localhost:8080)│
+└────────┬────────┘
+         │ Serial (USB)
+    ┌────┴────┐
+    │         │
+┌───▼──┐  ┌──▼───┐
+│Radio1│  │Radio2│ ← Meshtastic devices
+└──────┘  └──────┘
+```
+
+**Production Mode / Service** (single server):
+```
+┌─────────────────┐
+│   Web Browser   │ ← You interact here
+│  (localhost:8080)│
+└────────┬────────┘
+         │ HTTP + WebSocket
+         │ (same port!)
+┌────────▼────────┐
+│  Bridge Server  │ ← Serves static files + WebSocket
 │ (localhost:8080)│
 └────────┬────────┘
          │ Serial (USB)
@@ -157,11 +179,19 @@ npm run production
 
 ### 1. Connect Your Radios
 
+**Development Mode:**
 1. Launch the application (`npm run start`)
 2. Open browser to http://localhost:5173
 3. Click **"Scan for Radios"** or **"Connect Radio"**
 4. Select each Meshtastic device from the list
-5. Radios will appear in the sidebar automatically
+5. Radios will appear in the sidebar instantly
+
+**Production Mode / Service:**
+1. Start the service (`npm run service:start` or `npm run production`)
+2. Open browser to http://localhost:8080
+3. Click **"Scan for Radios"** or **"Connect Radio"**
+4. Select each Meshtastic device from the list
+5. Radios will appear in the sidebar instantly
 
 ### 2. Message Forwarding
 
@@ -217,16 +247,23 @@ this.channelMap = null;  // e.g., {0: 3} to force ch0→ch3 forwarding
 
 **Recommended:** Keep `enableSmartMatching = true` for proper channel handling.
 
-## Known Issues (Alpha)
+## Recent Improvements (Alpha)
 
 ⚠️ **This is an ALPHA release** - expect bugs!
 
-- ⏱️ Radio connection can be slow (radios appear after configuration completes)
-- 📊 Radio metrics page may not display correctly
-- 🔁 Messages may appear twice in the message stream (deduplication working but UI shows duplicates)
-- ⚙️ "Build Routes" configuration page is currently redundant (routing happens automatically)
+**Recently Fixed:**
+- ✅ Radio connection now shows instant feedback (connecting → connected status)
+- ✅ Radio metrics display correctly with all required fields
+- ✅ Message deduplication working in both backend and UI
+- ✅ Removed redundant "Build Routes" page (automatic forwarding explained clearly)
+- ✅ Added systemd service support for production deployment
 
-These will be fixed in future releases. See [Issues](https://github.com/IceNet-01/Mesh-Bridge-GUI/issues) for status.
+**Known Limitations:**
+- Radio configuration takes 10-30 seconds (this is normal - device.configure() is slow)
+- Limited to serial/USB connected radios (no network/BLE radios yet)
+- Service installation currently Linux-only (Windows/macOS service support coming)
+
+See [Issues](https://github.com/IceNet-01/Mesh-Bridge-GUI/issues) for status and bug reports.
 
 ## Development
 
@@ -235,14 +272,20 @@ These will be fixed in future releases. See [Issues](https://github.com/IceNet-0
 ```
 Mesh-Bridge-GUI/
 ├── bridge-server/
-│   └── index.mjs          # Node.js bridge server (WebSocket + Serial)
+│   └── index.mjs              # Node.js bridge (HTTP + WebSocket + Serial)
+├── scripts/
+│   ├── install-service.sh     # Service installation script
+│   ├── uninstall-service.sh   # Service removal script
+│   └── cleanup-ports.sh       # Port cleanup utility
 ├── src/
 │   └── renderer/
-│       ├── components/    # React UI components
-│       ├── lib/           # WebSocket manager, utilities
-│       ├── store/         # Zustand state management
-│       ├── App.tsx        # Main app component
-│       └── types.ts       # TypeScript types
+│       ├── components/        # React UI components
+│       ├── lib/               # WebSocket manager, utilities
+│       ├── store/             # Zustand state management
+│       ├── App.tsx            # Main app component
+│       └── types.ts           # TypeScript types
+├── dist/                      # Built frontend (after npm run build)
+├── meshtastic-bridge.service  # Systemd service template
 ├── package.json
 └── vite.config.ts
 ```
@@ -251,13 +294,28 @@ Mesh-Bridge-GUI/
 
 ```bash
 # Development
-npm run start           # Start bridge server AND web UI (recommended)
-npm run dev             # Run web UI only
+npm run start           # Start bridge + dev server (localhost:5173)
+npm run dev             # Run web UI dev server only
 npm run bridge          # Run bridge server only
 
-# Building
+# Building & Production
 npm run build           # Build production frontend
-npm run preview         # Preview production build
+npm run production      # Build + run in production mode (localhost:8080)
+npm run preview         # Preview production build (Vite)
+
+# Service Management (Linux)
+npm run service:install     # Install systemd service (requires sudo)
+npm run service:uninstall   # Remove systemd service (requires sudo)
+npm run service:start       # Start the service
+npm run service:stop        # Stop the service
+npm run service:restart     # Restart the service
+npm run service:status      # Check service status
+npm run service:logs        # View live service logs
+npm run service:enable      # Enable auto-start on boot
+npm run service:disable     # Disable auto-start
+
+# Utilities
+npm run cleanup-ports   # Kill processes using port 8080
 ```
 
 ### Tech Stack
@@ -274,34 +332,68 @@ npm run preview         # Preview production build
 
 ### Radios Won't Connect
 
-1. Check USB connection
-2. Ensure no other application is using the serial port (close Meshtastic app, other bridges)
-3. Try unplugging and reconnecting the devices
-4. Check bridge server logs in terminal for errors
-5. Restart the bridge server: `npm run start`
+1. **Check USB connection** - Ensure radios are plugged in and powered
+2. **Serial port conflicts** - Close Meshtastic app, other bridges, or serial monitors
+3. **Permission issues (Linux)** - Add user to dialout group:
+   ```bash
+   sudo usermod -a -G dialout $USER
+   # Log out and back in for changes to take effect
+   ```
+4. **Port cleanup** - Kill stale processes: `npm run cleanup-ports`
+5. **Check logs** - Look for errors in bridge server console or `npm run service:logs`
+6. **Restart** - Try restarting the bridge: `npm run service:restart` or Ctrl+C and restart
 
 ### Messages Not Forwarding
 
 1. **Check channel configurations**:
-   - Run `npm run start` and look for channel configuration logs
    - Both radios must have the channel configured with matching PSK+name
+   - Channel index can differ, but PSK and name must match exactly
+   - Look for channel config logs when radios connect
 
 2. **Check logs for**:
-   - "No matching channel" warnings
-   - PSK mismatch errors
-   - "Message from our own bridge radio" (expected - prevents loops)
+   - `⚠️ No matching channel` warnings
+   - PSK mismatch messages
+   - `🔁 Message from our own bridge radio` (expected - prevents loops)
+   - `✅ Forwarded broadcast to...` success messages
 
-3. **Enable verbose logging**:
-   - Check bridge server console output
-   - Look for `🔀 [SMART MATCH]` forwarding logs
+3. **Verify smart matching is enabled**:
+   - Check `bridge-server/index.mjs` line 47
+   - Should be: `this.enableSmartMatching = true`
 
-### Radio Connection Delay
+### Port 8080 Already in Use
 
-This is a known issue in alpha. Radios may take 10-30 seconds to appear in UI while they configure. Watch the bridge server console for configuration progress.
+If port 8080 is occupied:
+```bash
+# Clean up stale processes
+npm run cleanup-ports
 
-### Double Messages
+# Or manually find and kill:
+lsof -ti:8080 | xargs kill -9
+```
 
-Known issue - deduplication is working on the bridge side, but UI may show duplicates. Will be fixed in next release.
+### Service Won't Start (Linux)
+
+```bash
+# Check service status
+npm run service:status
+
+# View detailed logs
+npm run service:logs
+
+# Ensure service is installed
+sudo npm run service:install
+
+# Try restarting
+npm run service:restart
+```
+
+### Radio Takes Long to Appear
+
+This is normal! The `device.configure()` call takes 10-30 seconds. You'll see:
+1. "Radio connecting" status appears instantly
+2. Channel configuration logs appear as they're received
+3. "Radio connected" status after configuration completes
+4. Watch bridge console for progress
 
 ## Comparison with Headless Version
 
@@ -316,9 +408,11 @@ Known issue - deduplication is working on the bridge side, but UI may show dupli
 | Configuration | ✅ Visual + code | ⚠️ Code only |
 | Cross-platform | ✅ Win/Mac/Linux | ✅ Linux (primary) |
 | Resource Usage | ~150-250 MB RAM | ~50-100 MB RAM |
-| Boot Persistence | ❌ Run manually | ✅ Systemd service |
+| Boot Persistence | ✅ Systemd service (Linux) | ✅ Systemd service |
+| Auto-restart on Crash | ✅ Yes (when using service) | ✅ Yes |
+| Port Cleanup | ✅ Automatic | ⚠️ Manual |
 | Maturity | ⚠️ Alpha | ✅ Stable |
-| Use Case | Desktop/Testing | Production/Server |
+| Use Case | Desktop/Server/Testing | Production/Server |
 
 ## Contributing
 
@@ -353,6 +447,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**⚠️ ALPHA SOFTWARE** - Use at your own risk. Not recommended for production use yet.
+**⚠️ ALPHA SOFTWARE** - This is actively developed alpha software. While core functionality works well, expect bugs and occasional breaking changes.
+
+**Production Readiness:**
+- ✅ Core bridging functionality is stable
+- ✅ Smart channel matching works reliably
+- ✅ Message deduplication is solid
+- ✅ Service installation for permanent deployment
+- ⚠️ UI/UX may have minor issues
+- ⚠️ Limited testing on all platforms
+
+**Recommended for:**
+- Testing and development
+- Home/personal mesh networks
+- Learning about Meshtastic bridging
+- Linux servers with systemd
+
+**Use with caution for:**
+- Critical infrastructure
+- High-reliability requirements
+- Production deployments without testing
 
 Made with ❤️ for the Meshtastic community
