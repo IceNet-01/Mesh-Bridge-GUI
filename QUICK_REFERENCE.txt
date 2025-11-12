@@ -1,0 +1,311 @@
+================================================================================
+MESH BRIDGE GUI - RADIO IMPLEMENTATION QUICK REFERENCE
+================================================================================
+
+CURRENT STATUS: Meshtastic-only (single protocol support)
+
+KEY FACTS:
+- Frontend: React/TypeScript PWA (protocol-agnostic)
+- Backend: Node.js bridge server (protocol-specific)
+- Connection: USB Serial via WebSocket
+- UI: Generic radio display + Meshtastic-specific features
+- Forwarding: Smart channel matching (PSK+name based)
+- Features: Commands, AI, Email/Discord notifications (all protocol-independent)
+
+================================================================================
+CRITICAL FILES FOR RADIO SUPPORT
+================================================================================
+
+TYPE DEFINITIONS:
+  /home/user/Mesh-Bridge-GUI/src/renderer/types.ts
+    Lines 1-21:    Radio interface (add 'protocol' field here)
+    Lines 23-37:   BridgeConfig interface (generic, reusable)
+    Lines 39-54:   Message interface (add protocol field)
+    
+  MISSING: RadioType enum, protocol-specific interfaces
+
+BACKEND/BRIDGE SERVER (MOST IMPORTANT):
+  /home/user/Mesh-Bridge-GUI/bridge-server/index.mjs (2114 lines)
+    Lines 1-100:      Imports and configuration (HARDCODED MESHTASTIC)
+    Lines 31-128:     MeshtasticBridgeServer constructor
+    Lines 415-575:    connectRadio() - CHANGE THIS FOR MULTI-PROTOCOL
+    Lines 606-693:    handleMessagePacket() - mostly protocol-independent
+    Lines 1415-1524:  forwardToOtherRadios() - smart channel matching logic
+    Lines 278-363:    handleClientMessage() - WebSocket message routing
+
+FRONTEND UI:
+  /home/user/Mesh-Bridge-GUI/src/renderer/App.tsx
+    Lines 42-55:      handleConnectRadio() - add protocol selector here
+    
+  /home/user/Mesh-Bridge-GUI/src/renderer/components/RadioList.tsx
+    Lines 1-177:      Generic radio display (minimal changes needed)
+    
+  /home/user/Mesh-Bridge-GUI/src/renderer/components/Dashboard.tsx
+    Fully generic - no protocol-specific code
+
+STATE MANAGEMENT:
+  /home/user/Mesh-Bridge-GUI/src/renderer/store/useStore.ts
+    Lines 152-180:    scanAndConnectRadio() - update to pass protocol
+    
+COMMUNICATION:
+  /home/user/Mesh-Bridge-GUI/src/renderer/lib/webSocketManager.ts
+    Lines 344-366:    scanForRadios() - generic serial port listing
+    Lines 371-402:    connectRadio() - update to pass protocol
+
+DEPENDENCIES:
+  /home/user/Mesh-Bridge-GUI/package.json
+    Lines 27-29:      @meshtastic libraries (need to add others)
+
+================================================================================
+WHAT TO MODIFY FOR MULTI-PROTOCOL SUPPORT
+================================================================================
+
+PRIORITY ORDER (Effort = Time Estimate):
+
+1. TYPE SYSTEM (EASY - 30 mins)
+   File: src/renderer/types.ts
+   Action: Add RadioProtocol type, extend Radio interface
+   
+2. BACKEND ARCHITECTURE (HARD - 3-4 hours)
+   File: bridge-server/index.mjs
+   Action: Extract to protocol plugins, create IRadioProtocol base class
+   
+3. CONNECTION FLOW (MEDIUM - 1-2 hours)
+   Files: src/renderer/App.tsx, src/renderer/store/useStore.ts
+   Action: Add protocol selection, pass to backend
+   
+4. WEBSOCKET PROTOCOL (EASY - 30 mins)
+   File: bridge-server/index.mjs
+   Action: Add protocol field to connect/radio-connected messages
+   
+5. UI DISPLAY (EASY - 1 hour)
+   Files: src/renderer/components/RadioList.tsx
+   Action: Show protocol type, protocol-specific fields
+   
+6. PROTOCOL IMPLEMENTATIONS (VARIES - 4-6 hours per protocol)
+   Files: bridge-server/protocols/*.js (NEW)
+   Action: Create MeshtasticProtocol, ReticulumProtocol, RNodeProtocol, etc.
+
+TOTAL ESTIMATED EFFORT: 10-15 hours for all 4 protocols
+
+================================================================================
+KEY CODE PATTERNS TO UNDERSTAND
+================================================================================
+
+MESHTASTIC CONNECTION:
+  const transport = await TransportNodeSerial.create(portPath, 115200);
+  const device = new MeshDevice(transport);
+  await device.configure();
+  device.events.onMessagePacket.subscribe((packet) => { ... });
+
+PROTOCOL-INDEPENDENT MESSAGE HANDLING:
+  const message = {
+    id: packet.id,
+    timestamp: packet.rxTime,
+    from: packet.from,
+    to: packet.to,
+    text: packet.text,          ← Each protocol must provide this
+    radioId: radioId,
+    forwarded: false
+  };
+
+CHANNEL MATCHING (Meshtastic-specific):
+  const channelsMatch = (ch1, ch2) => 
+    ch1.psk === ch2.psk && ch1.name === ch2.name;
+
+MESSAGE FORWARDING (Protocol-independent):
+  For each other radio:
+    Find matching channel on target radio
+    Send message to that channel
+
+WEBSOCKET MESSAGES (Add protocol field):
+  Server → Client: { type: 'radio-connected', radio: { ..., protocol } }
+  Client → Server: { type: 'connect', port: '...', protocol: 'meshtastic' }
+
+================================================================================
+WHAT'S ALREADY WORKING FOR ALL PROTOCOLS
+================================================================================
+
+These features are 100% protocol-independent:
+
+- Dashboard display (statistics, messages, uptime)
+- Message history and caching
+- Message deduplication and loop prevention
+- Forwarding logic (once channels are identified)
+- Command system (#ping, #help, #status, etc.) ← WORKS WITHOUT CHANGES
+- AI assistant integration ← WORKS WITHOUT CHANGES
+- Email/Discord notifications ← WORKS WITHOUT CHANGES
+- Web UI (Dashboard, Radio List, Configuration, etc.)
+- Statistics collection (messages sent/received, errors)
+- Log viewer and monitoring
+- WebSocket communication layer
+
+Just provide:
+  1. Protocol handler that connects to device
+  2. Event emitter that sends normalized packets
+  3. Method to send text messages
+  4. Channel/destination list
+  
+And EVERYTHING else works!
+
+================================================================================
+RETICULUM-SPECIFIC NOTES
+================================================================================
+
+No Channels:
+  Meshtastic: channels[0], channels[1], channels[2], ...
+  Reticulum: destinations via destination hash
+  
+  Solution: Store destinations as "channel"-like concept
+           Use destinationHash as channel identifier
+
+Message Format:
+  Meshtastic: portnum=TEXT_MESSAGE_APP, payload=bytes
+  Reticulum: Announce + link-based messaging
+  
+  Solution: Convert Reticulum packets to Message interface
+           portnum=1 (normalized)
+
+Configuration:
+  Meshtastic: device.configure() - reads from device
+  Reticulum: .rns files - reads from filesystem
+  
+  Solution: Read config from portPath + "/../.rns" files
+
+================================================================================
+RNODE-SPECIFIC NOTES
+================================================================================
+
+Simpler Serial Protocol:
+  No configuration device
+  Raw packet format simpler than Meshtastic
+  
+  Solution: Parse raw packets directly
+           Extract message from payload bytes
+
+Frequencies/Bandwidth:
+  Stored in device ROM
+  Accessed via serial protocol
+  
+  Solution: Read via serial command
+           Display in UI as device properties
+
+Text Extraction:
+  Messages are raw bytes
+  Must decode UTF-8 carefully
+  
+  Solution: Try UTF-8 decode with error handling
+           Mark binary messages separately
+
+================================================================================
+MESH CORE-SPECIFIC NOTES
+================================================================================
+
+Abstraction Layer:
+  Mesh Core coordinates multiple protocols
+  Can route between RNode, Meshtastic, Reticulum
+  
+  Solution: Create MeshCoreProtocol that:
+           - Detects which sub-protocol is active
+           - Delegates connection/messaging
+           - Translates messages
+
+Configuration:
+  JSON-based config files
+  Specifies which protocols to enable
+  
+  Solution: Read config.json from portPath
+           Load appropriate sub-protocols
+
+Cross-Protocol Routing:
+  Messages can originate from any protocol
+  Must forward to correct target protocol
+  
+  Solution: Store protocol type with each radio
+           Use protocol when forwarding
+
+================================================================================
+TESTING STRATEGY
+================================================================================
+
+1. Test Meshtastic refactor (no functional change)
+   - Existing tests should pass
+   - Manual test with real device
+   
+2. Test Reticulum support
+   - Unit tests for protocol handler
+   - Integration test with Reticulum node
+   
+3. Test multi-protocol scenario
+   - 1 Meshtastic + 1 Reticulum device
+   - Send message on each
+   - Verify both receive forwarded messages
+   
+4. Test edge cases
+   - Device disconnection
+   - Serial port errors
+   - Message timing issues
+   - Protocol switching
+
+================================================================================
+DEPENDENCIES TO ADD
+================================================================================
+
+Reticulum:
+  npm install rns  (if available)
+  OR: Find Node.js bindings
+  Research: https://github.com/markqvist/Reticulum
+
+RNode:
+  npm install rnode-protocol  (if exists)
+  OR: Implement from serial protocol spec
+  Research: https://github.com/markqvist/RNode_Firmware
+
+Mesh Core:
+  npm install mesh-core  (if available)
+  Research: https://github.com/mesh-core/...
+
+================================================================================
+DEPLOYMENT CONSIDERATIONS
+================================================================================
+
+Single vs Multi-Protocol:
+  User should be able to:
+  - Auto-detect protocol (try each one)
+  - Manually select protocol
+  - Configure protocol settings
+  
+System Service:
+  Each protocol may have different requirements
+  Store protocol in service config: /etc/meshtastic-bridge/radios.json
+  
+Performance:
+  Polling rates differ by protocol
+  Adjust heartbeat/keepalive per protocol
+  
+Backward Compatibility:
+  Ensure Meshtastic continues working without UI changes
+  Only require protocol selection for new protocols
+
+================================================================================
+USEFUL RESOURCES
+================================================================================
+
+Meshtastic (existing):
+  /home/user/Mesh-Bridge-GUI/bridge-server/index.mjs
+  
+Protocol Comparison:
+  /home/user/Mesh-Bridge-GUI/PROTOCOL_COMPARISON.md
+  
+Architecture Analysis:
+  /home/user/Mesh-Bridge-GUI/RADIO_ARCHITECTURE_ANALYSIS.md
+  
+Integration Guide:
+  /home/user/Mesh-Bridge-GUI/RADIO_INTEGRATION_GUIDE.md
+
+Official Documentation:
+  Meshtastic: https://meshtastic.org/docs/
+  Reticulum: https://reticulum.network/
+  RNode: https://unsigned.io/rnode/
+  
+================================================================================
