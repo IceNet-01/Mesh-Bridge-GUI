@@ -241,12 +241,35 @@ class MeshtasticBridgeServer {
         console.log(`ℹ️  Radio ${radioId} node info:`, node);
       });
 
+      // Subscribe to channel configuration packets to track which channels are configured
+      device.events.onChannelPacket.subscribe((channelPacket) => {
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          if (!radio.channels) {
+            radio.channels = new Map();
+          }
+          const channelInfo = {
+            index: channelPacket.index,
+            role: channelPacket.role,
+            name: channelPacket.settings?.name || '',
+            psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
+          };
+          radio.channels.set(channelPacket.index, channelInfo);
+          console.log(`🔐 Radio ${radioId} channel ${channelPacket.index}:`, {
+            name: channelInfo.name || '(unnamed)',
+            role: channelInfo.role === 1 ? 'PRIMARY' : 'SECONDARY',
+            pskLength: channelInfo.psk.length
+          });
+        }
+      });
+
       // Store radio reference BEFORE configure() so onMyNodeInfo can find it
       this.radios.set(radioId, {
         device,
         transport,
         port: portPath,
         nodeNum: null, // Will be set when we receive myNodeInfo (during configure)
+        channels: new Map(), // Will be populated when channel packets arrive during configure()
         info: {
           port: portPath,
           connectedAt: new Date()
@@ -398,10 +421,41 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Check if two channels have matching configuration (name and PSK)
+   * for secure bridging
+   */
+  channelsMatch(sourceChannel, targetChannel) {
+    if (!sourceChannel || !targetChannel) {
+      return false;
+    }
+
+    // Channels match if they have the same name AND same PSK
+    const nameMatch = sourceChannel.name === targetChannel.name;
+    const pskMatch = sourceChannel.psk === targetChannel.psk;
+
+    return nameMatch && pskMatch;
+  }
+
+  /**
    * Forward a message to all radios except the source
+   * ONLY forwards to radios that have matching channel configuration (name + PSK)
    */
   async forwardToOtherRadios(sourceRadioId, text, channel) {
     try {
+      const sourceRadio = this.radios.get(sourceRadioId);
+      if (!sourceRadio) {
+        console.error(`❌ Source radio ${sourceRadioId} not found`);
+        return;
+      }
+
+      const sourceChannel = sourceRadio.channels?.get(channel);
+      if (!sourceChannel) {
+        console.warn(`⚠️  Source radio ${sourceRadioId} has no channel ${channel} configured`);
+        return;
+      }
+
+      console.log(`🔀 Checking other radios for matching channel ${channel} ("${sourceChannel.name}")...`);
+
       const otherRadios = Array.from(this.radios.entries()).filter(
         ([radioId]) => radioId !== sourceRadioId
       );
@@ -411,15 +465,27 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`🔀 Forwarding message to ${otherRadios.length} other radio(s)...`);
-
-      // Forward to each radio
+      // Forward to each radio that has matching channel configuration
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
         try {
+          const targetChannel = radio.channels?.get(channel);
+
+          if (!targetChannel) {
+            console.warn(`⚠️  Target radio ${targetRadioId} has no channel ${channel} configured, skipping`);
+            return { radioId: targetRadioId, success: false, reason: 'channel_not_configured' };
+          }
+
+          // SECURITY CHECK: Only forward if channel name and PSK match
+          if (!this.channelsMatch(sourceChannel, targetChannel)) {
+            console.warn(`🔒 SECURITY: Refusing to bridge channel ${channel} - mismatch between radios:`);
+            console.warn(`   Source: "${sourceChannel.name}" | Target: "${targetChannel.name}"`);
+            return { radioId: targetRadioId, success: false, reason: 'channel_mismatch' };
+          }
+
           // sendText(text, destination, wantAck, channel)
           // Use "broadcast" as destination to broadcast on the specified channel
           await radio.device.sendText(text, "broadcast", false, channel);
-          console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${channel}`);
+          console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${channel} ("${targetChannel.name}")`);
           return { radioId: targetRadioId, success: true };
         } catch (error) {
           console.error(`❌ Failed to forward to ${targetRadioId}:`, error.message);
@@ -429,7 +495,14 @@ class MeshtasticBridgeServer {
 
       const results = await Promise.allSettled(forwardPromises);
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      const mismatchCount = results.filter(r =>
+        r.status === 'fulfilled' && r.value.reason === 'channel_mismatch'
+      ).length;
+
       console.log(`📊 Forwarding complete: ${successCount}/${otherRadios.length} successful`);
+      if (mismatchCount > 0) {
+        console.log(`🔒 ${mismatchCount} radio(s) blocked due to channel configuration mismatch`);
+      }
     } catch (error) {
       console.error('❌ Error in forwardToOtherRadios:', error);
     }
