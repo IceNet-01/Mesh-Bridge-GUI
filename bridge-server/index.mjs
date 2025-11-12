@@ -29,19 +29,27 @@ class MeshtasticBridgeServer {
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
 
-    // ===== MANUAL CHANNEL MAPPING FOR TESTING =====
-    // Set to null to disable security checks and forward by index
-    // Set to object for manual channel mapping:
-    // { 0: 3, 1: 1 } means: incoming ch0→outgoing ch3, incoming ch1→outgoing ch1
-    this.channelMap = null; // null = forward to same index (no security)
-
-    // Set to true to enable security checks (PSK/name matching)
-    // Set to false to bypass all security and use channelMap
-    this.enableSecurity = false;
+    // ===== CHANNEL FORWARDING CONFIGURATION =====
+    // Two modes for channel forwarding:
+    //
+    // MODE 1: Simple index-based forwarding (enableSmartMatching = false)
+    //   - Fast and simple
+    //   - channelMap = null: Forward channel 0→0, 1→1, etc (passthrough)
+    //   - channelMap = {0: 3, 1: 1}: Forward channel 0→3, 1→1, etc (custom mapping)
+    //
+    // MODE 2: Smart PSK/name matching (enableSmartMatching = true)
+    //   - Searches ALL channels on target radio for matching PSK+name
+    //   - Handles radios with channels on different indices
+    //   - Example: Radio A has "skynet" on ch0, Radio B has "skynet" on ch3
+    //            → Automatically forwards ch0→ch3 maintaining encryption
+    //   - REQUIRED for private channel forwarding with mixed configurations
+    //
+    this.enableSmartMatching = true;  // Recommended: true for correct cross-index forwarding
+    this.channelMap = null;           // Only used when enableSmartMatching = false
 
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
-    console.log(`   Security checks: ${this.enableSecurity ? 'ENABLED' : 'DISABLED'}`);
-    console.log(`   Channel mapping: ${this.channelMap ? JSON.stringify(this.channelMap) : 'Same index (passthrough)'}`);
+    console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
+    console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
     console.log('');
   }
 
@@ -484,7 +492,7 @@ class MeshtasticBridgeServer {
 
   /**
    * Forward a message to all radios except the source
-   * Behavior depends on this.enableSecurity flag
+   * Behavior depends on this.enableSmartMatching flag
    */
   async forwardToOtherRadios(sourceRadioId, text, channel) {
     try {
@@ -497,12 +505,12 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      // ===== SIMPLE MODE (NO SECURITY) =====
-      if (!this.enableSecurity) {
+      // ===== SIMPLE INDEX-BASED FORWARDING =====
+      if (!this.enableSmartMatching) {
         // Determine target channel: use map if provided, otherwise same index
         const targetChannel = this.channelMap ? (this.channelMap[channel] ?? channel) : channel;
 
-        console.log(`🔀 [NO SECURITY] Forwarding from channel ${channel} → channel ${targetChannel}`);
+        console.log(`🔀 [INDEX MODE] Forwarding from channel ${channel} → channel ${targetChannel}`);
 
         const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
           try {
@@ -521,7 +529,7 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      // ===== SECURITY MODE (PSK/NAME MATCHING) =====
+      // ===== SMART PSK/NAME MATCHING MODE =====
       const sourceRadio = this.radios.get(sourceRadioId);
       if (!sourceRadio) {
         console.error(`❌ Source radio ${sourceRadioId} not found`);
@@ -534,7 +542,7 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`🔀 [SECURITY MODE] Forwarding from source channel ${channel}:`);
+      console.log(`🔀 [SMART MATCH] Forwarding from source channel ${channel}:`);
       console.log(`   Name: "${sourceChannel.name}"`);
       console.log(`   PSK: ${sourceChannel.psk.substring(0, 16)}...`);
       console.log(`   Searching for matching channel on other radios...`);
@@ -563,13 +571,14 @@ class MeshtasticBridgeServer {
           }
 
           if (matchingChannelIndex === null) {
-            console.warn(`🔒 SECURITY: Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
+            console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
+            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same name+PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 
           // If the matching channel is on a DIFFERENT index, log it
           if (matchingChannelIndex !== channel) {
-            console.log(`🔀 Cross-channel forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
+            console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
           await radio.device.sendText(text, "broadcast", false, matchingChannelIndex);
@@ -583,13 +592,13 @@ class MeshtasticBridgeServer {
 
       const results = await Promise.allSettled(forwardPromises);
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-      const blockedCount = results.filter(r =>
+      const skippedCount = results.filter(r =>
         r.status === 'fulfilled' && r.value.reason === 'no_matching_channel'
       ).length;
 
       console.log(`📊 Forwarding complete: ${successCount}/${otherRadios.length} successful`);
-      if (blockedCount > 0) {
-        console.log(`🔒 ${blockedCount} radio(s) blocked - no matching channel configuration (name+PSK)`);
+      if (skippedCount > 0) {
+        console.log(`⚠️  ${skippedCount} radio(s) skipped - no matching channel configuration`);
       }
     } catch (error) {
       console.error('❌ Error in forwardToOtherRadios:', error);
