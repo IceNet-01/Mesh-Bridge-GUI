@@ -1,16 +1,96 @@
-MIT License
-
+MESHTASTIC BRIDGE GUI LICENSE
 Copyright (c) 2025 IceNet-01
+All Rights Reserved
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+================================================================================
+DUAL LICENSE TERMS
+================================================================================
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This software is available under two license options:
+
+1. NON-COMMERCIAL LICENSE (free)
+2. COMMERCIAL LICENSE (requires separate agreement)
+
+================================================================================
+1. NON-COMMERCIAL LICENSE
+================================================================================
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of this software and associated documentation files (the
+"Software"), to use, copy, and modify the Software for NON-COMMERCIAL purposes
+only, subject to the following conditions:
+
+NON-COMMERCIAL USE DEFINITION:
+"Non-Commercial" means use of the Software that is not primarily intended for
+or directed toward commercial advantage or monetary compensation. This includes:
+  - Personal use
+  - Educational use
+  - Research purposes
+  - Use by non-profit organizations for their non-profit activities
+  - Evaluation purposes
+
+NON-COMMERCIAL LICENSE TERMS:
+
+a) The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+b) You may NOT use the Software for any commercial purpose without obtaining
+   a separate Commercial License from IceNet-01.
+
+c) You may NOT distribute, sublicense, sell, or otherwise transfer the Software
+   or any derivative works to third parties for commercial purposes.
+
+d) You may NOT offer services using the Software for commercial gain.
+
+e) All modifications and derivative works must also be for non-commercial use
+   only and must include this license.
+
+f) You must comply with all third-party licenses for dependencies used by this
+   Software (see NOTICE file and section below).
+
+================================================================================
+2. COMMERCIAL LICENSE
+================================================================================
+
+Any use of this Software for commercial purposes requires a separate Commercial
+License from IceNet-01.
+
+Commercial use includes but is not limited to:
+  - Use of the Software in a commercial product or service
+  - Use of the Software to provide commercial services
+  - Distribution of the Software or derivative works for commercial purposes
+  - Use by for-profit organizations in their business operations
+  - Any use that generates revenue or commercial advantage
+
+To obtain a Commercial License, please contact:
+  IceNet-01
+  [Contact information to be provided]
+
+================================================================================
+THIRD-PARTY SOFTWARE AND DEPENDENCIES
+================================================================================
+
+This Software uses third-party libraries and components that are subject to
+their own license terms. The use of this Software does NOT grant any rights
+to use third-party components beyond what their respective licenses allow.
+
+Key third-party dependencies include:
+  - Meshtastic libraries (GPL-3.0)
+  - React (MIT)
+  - Various npm packages (see NOTICE file for complete list)
+
+Users must comply with all applicable third-party licenses. See the NOTICE file
+for a complete list of third-party software, their licenses, and copyright
+notices.
+
+NOTE: The Meshtastic libraries used by this Software are licensed under GPL-3.0.
+The use of Meshtastic libraries as dependencies does not change the licensing
+terms of this Software, but users must comply with the GPL-3.0 license terms
+for the Meshtastic components themselves.
+
+================================================================================
+DISCLAIMER OF WARRANTY
+================================================================================
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +99,33 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+OWNERSHIP AND COPYRIGHT
+================================================================================
+
+IceNet-01 retains all ownership rights, copyright, and intellectual property
+rights to the Software. This license does not transfer any ownership rights.
+
+================================================================================
+TERMINATION
+================================================================================
+
+This license automatically terminates if you fail to comply with any of its
+terms. Upon termination, you must cease all use of the Software and destroy
+all copies in your possession.
+
+================================================================================
+CONTACT
+================================================================================
+
+For licensing inquiries, including commercial licensing, please contact:
+  IceNet-01
+  [Contact details to be provided]
+
+================================================================================
+LICENSE VERSION
+================================================================================
+
+License Version: 1.0
+Last Updated: 2025-11-12

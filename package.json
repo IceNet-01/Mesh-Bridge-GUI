@@ -4,7 +4,7 @@
   "description": "Modern PWA for managing Meshtastic radio bridge relay stations",
   "type": "module",
   "author": "IceNet-01",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
