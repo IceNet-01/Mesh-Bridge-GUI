@@ -416,8 +416,10 @@ class MeshtasticBridgeServer {
       // Forward to each radio
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
         try {
-          await radio.device.sendText(text, channel);
-          console.log(`✅ Forwarded to ${targetRadioId} on channel ${channel}`);
+          // sendText(text, destination, wantAck, channel)
+          // Use "broadcast" as destination to broadcast on the specified channel
+          await radio.device.sendText(text, "broadcast", false, channel);
+          console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${channel}`);
           return { radioId: targetRadioId, success: true };
         } catch (error) {
           console.error(`❌ Failed to forward to ${targetRadioId}:`, error.message);
@@ -447,12 +449,14 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📤 Sending text via ${radioId}: "${text}"`);
+      console.log(`📤 Sending text via ${radioId}: "${text}" on channel ${channel}`);
 
       // Send using the device
-      await radio.device.sendText(text, channel);
+      // sendText(text, destination, wantAck, channel)
+      // Use "broadcast" as destination to broadcast on the specified channel
+      await radio.device.sendText(text, "broadcast", false, channel);
 
-      console.log(`✅ Text sent successfully`);
+      console.log(`✅ Text broadcast successfully on channel ${channel}`);
 
       ws.send(JSON.stringify({
         type: 'send-success',
