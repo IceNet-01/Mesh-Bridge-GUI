@@ -28,6 +28,7 @@
     "@meshtastic/core": "^2.6.7",
     "@meshtastic/transport-node-serial": "^0.0.2",
     "buffer": "^6.0.3",
+    "nodemailer": "^7.0.10",
     "recharts": "^2.13.3",
     "serialport": "^13.0.0",
     "stream-browserify": "^3.0.0",

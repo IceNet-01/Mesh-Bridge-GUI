@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -300,6 +300,39 @@ export class WebSocketRadioManager {
         this.emit('ai-pull-complete', { model: data.model });
         break;
 
+      case 'comm-config':
+        // Communication configuration
+        this.emit('comm-config-update', data.config);
+        break;
+
+      case 'comm-config-changed':
+        // Communication configuration changed (broadcast from server)
+        this.emit('comm-config-update', data.config);
+        this.log('info', 'Communication configuration updated');
+        break;
+
+      case 'comm-email-updated':
+        this.log('info', 'Email configuration saved');
+        break;
+
+      case 'comm-discord-updated':
+        this.log('info', 'Discord configuration saved');
+        break;
+
+      case 'comm-test-result':
+        // Test result for email/Discord
+        this.emit('comm-test-result', {
+          service: data.service,
+          success: data.success,
+          error: data.error
+        });
+        if (data.success) {
+          this.log('info', `✅ ${data.service} test successful`);
+        } else {
+          this.log('error', `❌ ${data.service} test failed: ${data.error}`);
+        }
+        break;
+
       default:
         this.log('debug', `Unknown message type: ${data.type}`);
     }
@@ -571,6 +604,85 @@ export class WebSocketRadioManager {
         resolve(null);
       }, 5000);
     });
+  }
+
+  /**
+   * Get communication configuration
+   */
+  async getCommConfig(): Promise<CommunicationConfig | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: CommunicationConfig) => {
+        this.off('comm-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('comm-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'comm-get-config' }));
+
+      setTimeout(() => {
+        this.off('comm-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set email configuration
+   */
+  async setEmailConfig(config: EmailConfig): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'comm-set-email',
+      config
+    }));
+  }
+
+  /**
+   * Set Discord configuration
+   */
+  async setDiscordConfig(config: DiscordConfig): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'comm-set-discord',
+      config
+    }));
+  }
+
+  /**
+   * Test email configuration
+   */
+  async testEmail(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'comm-test-email' }));
+  }
+
+  /**
+   * Test Discord configuration
+   */
+  async testDiscord(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'comm-test-discord' }));
   }
 
   /**

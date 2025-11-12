@@ -111,6 +111,30 @@ export interface AIModelPullProgress {
   total?: number;
 }
 
+export interface EmailConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password?: string;
+  from: string;
+  to: string;
+  subjectPrefix: string;
+}
+
+export interface DiscordConfig {
+  enabled: boolean;
+  webhook: string;
+  username: string;
+  avatarUrl: string;
+}
+
+export interface CommunicationConfig {
+  email: EmailConfig;
+  discord: DiscordConfig;
+}
+
 // Web Serial API Type Extensions
 declare global {
   interface Navigator {

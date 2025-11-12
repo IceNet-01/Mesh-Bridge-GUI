@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -20,6 +20,9 @@ interface AppStore {
   aiStatus: AIStatus | null;
   aiPullProgress: AIModelPullProgress | null;
 
+  // Communication State
+  commConfig: CommunicationConfig | null;
+
   // Actions
   initialize: () => void;
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
@@ -35,6 +38,13 @@ interface AppStore {
   setAIModel: (model: string) => Promise<void>;
   pullAIModel: (model: string) => Promise<void>;
   checkAIStatus: () => Promise<void>;
+
+  // Communication Actions
+  getCommConfig: () => Promise<void>;
+  setEmailConfig: (config: EmailConfig) => Promise<void>;
+  setDiscordConfig: (config: DiscordConfig) => Promise<void>;
+  testEmail: () => Promise<void>;
+  testDiscord: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set) => {
@@ -105,6 +115,11 @@ export const useStore = create<AppStore>((set) => {
     set({ aiPullProgress: null });
   });
 
+  // Communication event listeners
+  manager.on('comm-config-update', (config: CommunicationConfig) => {
+    set({ commConfig: config });
+  });
+
   return {
     manager,
     bridgeConnected: false,
@@ -117,6 +132,7 @@ export const useStore = create<AppStore>((set) => {
     aiModels: [],
     aiStatus: null,
     aiPullProgress: null,
+    commConfig: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();
@@ -207,6 +223,30 @@ export const useStore = create<AppStore>((set) => {
       if (status) {
         set({ aiStatus: status });
       }
+    },
+
+    // Communication Actions
+    getCommConfig: async () => {
+      const config = await manager.getCommConfig();
+      if (config) {
+        set({ commConfig: config });
+      }
+    },
+
+    setEmailConfig: async (config: EmailConfig) => {
+      await manager.setEmailConfig(config);
+    },
+
+    setDiscordConfig: async (config: DiscordConfig) => {
+      await manager.setDiscordConfig(config);
+    },
+
+    testEmail: async () => {
+      await manager.testEmail();
+    },
+
+    testDiscord: async () => {
+      await manager.testDiscord();
     },
   };
 });

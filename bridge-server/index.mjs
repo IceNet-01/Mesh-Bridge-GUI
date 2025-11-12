@@ -22,6 +22,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import nodemailer from 'nodemailer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -70,7 +71,8 @@ class MeshtasticBridgeServer {
     // Enabled commands list - remove any you don't want
     this.enabledCommands = [
       'ping', 'help', 'status', 'time', 'uptime', 'version',
-      'weather', 'radios', 'channels', 'stats', 'nodes', 'ai', 'ask'
+      'weather', 'radios', 'channels', 'stats', 'nodes', 'ai', 'ask',
+      'email', 'discord', 'notify'
     ];
 
     // ===== AI ASSISTANT CONFIGURATION =====
@@ -87,6 +89,23 @@ class MeshtasticBridgeServer {
     this.aiUsage = new Map();                  // Track AI usage separately
     this.aiSystemPrompt = 'You are a helpful assistant for a mesh network. Keep ALL responses under 200 characters. Be extremely concise and direct. No explanations unless asked.';
 
+    // ===== EMAIL CONFIGURATION =====
+    this.emailEnabled = false;                 // Enable/disable email notifications
+    this.emailHost = '';                       // SMTP host (e.g., smtp.gmail.com)
+    this.emailPort = 587;                      // SMTP port (587 for TLS, 465 for SSL)
+    this.emailSecure = false;                  // Use SSL (true for port 465)
+    this.emailUser = '';                       // SMTP username/email
+    this.emailPassword = '';                   // SMTP password or app-specific password
+    this.emailFrom = '';                       // From email address
+    this.emailTo = '';                         // Default recipient email address
+    this.emailSubjectPrefix = '[Meshtastic]';  // Email subject prefix
+
+    // ===== DISCORD CONFIGURATION =====
+    this.discordEnabled = false;               // Enable/disable Discord notifications
+    this.discordWebhook = '';                  // Discord webhook URL
+    this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
+    this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -100,6 +119,11 @@ class MeshtasticBridgeServer {
       console.log(`   AI model: ${this.aiModel}`);
       console.log(`   AI endpoint: ${this.aiEndpoint}`);
     }
+    console.log(`   Email notifications: ${this.emailEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.emailEnabled) {
+      console.log(`   Email recipient: ${this.emailTo}`);
+    }
+    console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
     console.log('');
   }
 
@@ -300,6 +324,27 @@ class MeshtasticBridgeServer {
 
         case 'ai-check-status':
           await this.aiCheckStatus(ws);
+          break;
+
+        // Communication Management
+        case 'comm-get-config':
+          await this.commGetConfig(ws);
+          break;
+
+        case 'comm-set-email':
+          await this.commSetEmail(ws, message.config);
+          break;
+
+        case 'comm-set-discord':
+          await this.commSetDiscord(ws, message.config);
+          break;
+
+        case 'comm-test-email':
+          await this.commTestEmail(ws);
+          break;
+
+        case 'comm-test-discord':
+          await this.commTestDiscord(ws);
           break;
 
         default:
@@ -730,6 +775,15 @@ class MeshtasticBridgeServer {
         case 'ask':
           response = await this.cmdAI(fromNode, cmdArgs);
           break;
+        case 'email':
+          response = await this.cmdEmail(fromNode, cmdArgs);
+          break;
+        case 'discord':
+          response = await this.cmdDiscord(fromNode, cmdArgs);
+          break;
+        case 'notify':
+          response = await this.cmdNotify(fromNode, cmdArgs);
+          break;
         default:
           response = `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help`;
       }
@@ -805,6 +859,17 @@ class MeshtasticBridgeServer {
     if (this.aiEnabled) {
       commands.push(`${this.commandPrefix}ai [question] - Ask AI assistant`);
       commands.push(`${this.commandPrefix}ask [question] - Ask AI assistant`);
+    }
+
+    // Add communication commands if enabled
+    if (this.emailEnabled) {
+      commands.push(`${this.commandPrefix}email [message] - Send email`);
+    }
+    if (this.discordEnabled) {
+      commands.push(`${this.commandPrefix}discord [message] - Send to Discord`);
+    }
+    if (this.emailEnabled || this.discordEnabled) {
+      commands.push(`${this.commandPrefix}notify [message] - Send to all`);
     }
 
     return `📖 Bridge Commands:\n${commands.join('\n')}`;
@@ -1089,6 +1154,188 @@ class MeshtasticBridgeServer {
     }
 
     return false;
+  }
+
+  /**
+   * Send email notification
+   */
+  async cmdEmail(fromNode, args) {
+    // Check if email is enabled
+    if (!this.emailEnabled) {
+      return '📧 Email notifications are disabled. Enable in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `📧 Usage: ${this.commandPrefix}email [your message]`;
+    }
+
+    try {
+      console.log(`📧 Email request from node ${fromNode}: "${message}"`);
+
+      // Get node info for sender identification
+      const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
+
+      // Create transporter
+      const transporter = nodemailer.createTransport({
+        host: this.emailHost,
+        port: this.emailPort,
+        secure: this.emailSecure,
+        auth: {
+          user: this.emailUser,
+          pass: this.emailPassword
+        }
+      });
+
+      // Send email
+      const info = await transporter.sendMail({
+        from: this.emailFrom || this.emailUser,
+        to: this.emailTo,
+        subject: `${this.emailSubjectPrefix} Message from ${nodeName}`,
+        text: `Message from ${nodeName} (${fromNode.toString(16)}):\n\n${message}\n\nSent via Meshtastic Bridge`,
+        html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #4F46E5;">Meshtastic Bridge Message</h2>
+          <p><strong>From:</strong> ${nodeName} (${fromNode.toString(16)})</p>
+          <div style="background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+          </div>
+          <p style="color: #6B7280; font-size: 12px;">Sent via Meshtastic Bridge</p>
+        </div>`
+      });
+
+      console.log(`📧 Email sent: ${info.messageId}`);
+      return `✅ Email sent successfully!`;
+
+    } catch (error) {
+      console.error('Email error:', error);
+      if (error.code === 'EAUTH') {
+        return '❌ Email authentication failed. Check credentials.';
+      }
+      if (error.code === 'ECONNECTION') {
+        return '❌ Cannot connect to email server. Check settings.';
+      }
+      return '❌ Email error. Check logs.';
+    }
+  }
+
+  /**
+   * Send Discord notification via webhook
+   */
+  async cmdDiscord(fromNode, args) {
+    // Check if Discord is enabled
+    if (!this.discordEnabled) {
+      return '💬 Discord notifications are disabled. Enable in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `💬 Usage: ${this.commandPrefix}discord [your message]`;
+    }
+
+    try {
+      console.log(`💬 Discord request from node ${fromNode}: "${message}"`);
+
+      // Get node info for sender identification
+      const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
+
+      // Send to Discord webhook
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          embeds: [{
+            title: '📡 Meshtastic Bridge Message',
+            description: message,
+            color: 5814783, // Blurple color
+            fields: [
+              {
+                name: 'From',
+                value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
+                inline: true
+              },
+              {
+                name: 'Time',
+                value: new Date().toLocaleString(),
+                inline: true
+              }
+            ],
+            footer: {
+              text: 'Sent via Meshtastic Bridge'
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        console.error(`Discord API error: ${response.status}`);
+        return '❌ Discord send failed. Check webhook URL.';
+      }
+
+      console.log(`💬 Discord message sent`);
+      return `✅ Discord message sent!`;
+
+    } catch (error) {
+      console.error('Discord error:', error);
+      if (error.code === 'ECONNREFUSED') {
+        return '❌ Cannot reach Discord. Check internet connection.';
+      }
+      return '❌ Discord error. Check logs.';
+    }
+  }
+
+  /**
+   * Send notification to both email and Discord
+   */
+  async cmdNotify(fromNode, args) {
+    // Check if at least one notification method is enabled
+    if (!this.emailEnabled && !this.discordEnabled) {
+      return '📣 No notification methods enabled. Enable email or Discord in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `📣 Usage: ${this.commandPrefix}notify [your message]`;
+    }
+
+    const results = [];
+
+    // Try email if enabled
+    if (this.emailEnabled) {
+      const emailResult = await this.cmdEmail(fromNode, args);
+      results.push(emailResult.includes('✅') ? 'Email ✅' : 'Email ❌');
+    }
+
+    // Try Discord if enabled
+    if (this.discordEnabled) {
+      const discordResult = await this.cmdDiscord(fromNode, args);
+      results.push(discordResult.includes('✅') ? 'Discord ✅' : 'Discord ❌');
+    }
+
+    return `📣 Notification sent: ${results.join(', ')}`;
+  }
+
+  /**
+   * Helper to get node name from node ID
+   */
+  getNodeName(nodeId) {
+    // Look through all radios to find node info
+    for (const [radioId, radio] of this.radios) {
+      if (radio.device && radio.device.nodeDb) {
+        const nodes = radio.device.nodeDb;
+        for (const [id, node] of nodes) {
+          if (id === nodeId && node.user) {
+            return node.user.longName || node.user.shortName;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -1559,6 +1806,233 @@ class MeshtasticBridgeServer {
         running: false,
         error: error.message,
         endpoint: this.aiEndpoint
+      }));
+    }
+  }
+
+  /**
+   * Get communication configuration
+   */
+  async commGetConfig(ws) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'comm-config',
+        config: {
+          email: {
+            enabled: this.emailEnabled,
+            host: this.emailHost,
+            port: this.emailPort,
+            secure: this.emailSecure,
+            user: this.emailUser,
+            from: this.emailFrom,
+            to: this.emailTo,
+            subjectPrefix: this.emailSubjectPrefix
+          },
+          discord: {
+            enabled: this.discordEnabled,
+            webhook: this.discordWebhook ? '(configured)' : '', // Don't send full webhook URL
+            username: this.discordUsername,
+            avatarUrl: this.discordAvatarUrl
+          }
+        }
+      }));
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to get communication config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set email configuration
+   */
+  async commSetEmail(ws, config) {
+    try {
+      this.emailEnabled = config.enabled;
+      this.emailHost = config.host || '';
+      this.emailPort = config.port || 587;
+      this.emailSecure = config.secure || false;
+      this.emailUser = config.user || '';
+      if (config.password) {
+        this.emailPassword = config.password;
+      }
+      this.emailFrom = config.from || '';
+      this.emailTo = config.to || '';
+      this.emailSubjectPrefix = config.subjectPrefix || '[Meshtastic]';
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'comm-config-changed',
+        config: {
+          email: {
+            enabled: this.emailEnabled,
+            host: this.emailHost,
+            port: this.emailPort,
+            secure: this.emailSecure,
+            user: this.emailUser,
+            from: this.emailFrom,
+            to: this.emailTo,
+            subjectPrefix: this.emailSubjectPrefix
+          }
+        }
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-email-updated',
+        success: true
+      }));
+
+      console.log(`📧 Email configuration updated: ${this.emailEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to update email config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set Discord configuration
+   */
+  async commSetDiscord(ws, config) {
+    try {
+      this.discordEnabled = config.enabled;
+      if (config.webhook) {
+        this.discordWebhook = config.webhook;
+      }
+      this.discordUsername = config.username || 'Meshtastic Bridge';
+      this.discordAvatarUrl = config.avatarUrl || '';
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'comm-config-changed',
+        config: {
+          discord: {
+            enabled: this.discordEnabled,
+            webhook: this.discordWebhook ? '(configured)' : '',
+            username: this.discordUsername,
+            avatarUrl: this.discordAvatarUrl
+          }
+        }
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-discord-updated',
+        success: true
+      }));
+
+      console.log(`💬 Discord configuration updated: ${this.discordEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to update Discord config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Test email configuration
+   */
+  async commTestEmail(ws) {
+    try {
+      if (!this.emailHost || !this.emailUser || !this.emailTo) {
+        ws.send(JSON.stringify({
+          type: 'comm-test-result',
+          service: 'email',
+          success: false,
+          error: 'Email not configured. Please set host, user, and recipient.'
+        }));
+        return;
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: this.emailHost,
+        port: this.emailPort,
+        secure: this.emailSecure,
+        auth: {
+          user: this.emailUser,
+          pass: this.emailPassword
+        }
+      });
+
+      await transporter.sendMail({
+        from: this.emailFrom || this.emailUser,
+        to: this.emailTo,
+        subject: `${this.emailSubjectPrefix} Test Email`,
+        text: 'This is a test email from your Meshtastic Bridge.\n\nIf you received this, your email configuration is working correctly!',
+        html: '<div style="font-family: Arial, sans-serif;"><h2 style="color: #4F46E5;">Test Email</h2><p>This is a test email from your Meshtastic Bridge.</p><p>If you received this, your email configuration is working correctly!</p></div>'
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'email',
+        success: true
+      }));
+
+      console.log('📧 Test email sent successfully');
+    } catch (error) {
+      console.error('Email test error:', error);
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'email',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Test Discord configuration
+   */
+  async commTestDiscord(ws) {
+    try {
+      if (!this.discordWebhook) {
+        ws.send(JSON.stringify({
+          type: 'comm-test-result',
+          service: 'discord',
+          success: false,
+          error: 'Discord webhook not configured. Please set webhook URL.'
+        }));
+        return;
+      }
+
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          embeds: [{
+            title: '✅ Test Message',
+            description: 'This is a test message from your Meshtastic Bridge.\n\nIf you can see this, your Discord configuration is working correctly!',
+            color: 5814783,
+            footer: {
+              text: 'Meshtastic Bridge'
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Discord API error: ${response.status}`);
+      }
+
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'discord',
+        success: true
+      }));
+
+      console.log('💬 Test Discord message sent successfully');
+    } catch (error) {
+      console.error('Discord test error:', error);
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'discord',
+        success: false,
+        error: error.message
       }));
     }
   }

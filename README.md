@@ -43,7 +43,7 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 
 🤖 **Interactive Command System**
 - **Bridge commands** - send commands like `#weather Seattle` or `#ping` from your radio
-- **13 built-in commands** - weather, status, uptime, radios, channels, stats, ai, and more
+- **16 built-in commands** - weather, status, uptime, radios, channels, stats, ai, email, discord, and more
 - **Rate limiting** - prevents command spam (max 10/min per user)
 - **No phone needed** - get info directly on radio screen
 - **Fully configurable** - enable/disable commands, change prefix, customize
@@ -56,6 +56,15 @@ A modern **web-based** interface for managing Meshtastic radio bridge relay stat
 - **Model management UI** - install, switch, and configure models directly from web interface
 - **Rate limited** - max 3 AI queries per minute per user to conserve resources
 - **No cloud required** - completely local, private, and works offline
+
+📧 **Communication Notifications** (NEW in 2.0)
+- **Email notifications** - send emails from your radio via `#email [message]`
+- **Discord integration** - post to Discord channels via `#discord [message]`
+- **Multi-channel notify** - send to both with `#notify [message]`
+- **SMTP support** - works with Gmail, Outlook, custom mail servers
+- **Discord webhooks** - easy setup with webhook URLs
+- **Web UI configuration** - configure and test from the interface
+- **Perfect for alerts** - notify yourself from remote locations
 
 🎨 **Modern UI**
 - Clean, dark-themed interface
@@ -208,6 +217,9 @@ The bridge includes an **interactive command system** that responds to messages 
 - `#stats` - View message statistics (total messages, nodes, per-radio counts)
 - `#nodes` - List recently seen nodes on the mesh
 - `#ai [question]` or `#ask [question]` - Query local AI assistant (requires Ollama, see AI Assistant section)
+- `#email [message]` - Send email notification (requires email configuration)
+- `#discord [message]` - Send Discord notification (requires Discord webhook)
+- `#notify [message]` - Send to both email and Discord
 
 **Example Usage:**
 ```
@@ -379,6 +391,73 @@ Choose based on your hardware:
 - Check internet connection
 - Cancel and retry
 - Check Ollama logs: `ollama logs`
+
+### 6. Communication Notifications Setup
+
+Configure email and Discord notifications to send messages from your radio to external platforms.
+
+#### Email Configuration
+
+1. **Open Web UI** → Navigate to **"Communication"** tab
+
+2. **Configure SMTP Settings**
+   - **Host**: Your SMTP server (e.g., `smtp.gmail.com`)
+   - **Port**: 587 (TLS) or 465 (SSL)
+   - **Username**: Your email address
+   - **Password**: App-specific password (for Gmail, generate at https://myaccount.google.com/apppasswords)
+   - **From**: Sender email address
+   - **To**: Recipient email address
+
+3. **Enable Email** toggle to ON
+
+4. **Test Configuration** - Click "Test Email" button
+
+5. **Send from Radio**
+   - From any Meshtastic radio: `#email System check - all sensors normal`
+   - Email will be sent with node name and message
+
+#### Discord Configuration
+
+1. **Create Discord Webhook**
+   - Open Discord → Server Settings → Integrations → Webhooks
+   - Click "New Webhook" → Copy webhook URL
+
+2. **Configure in Web UI**
+   - Open "Communication" tab
+   - Paste webhook URL
+   - Set bot username (optional)
+
+3. **Enable Discord** toggle to ON
+
+4. **Test Configuration** - Click "Test Discord" button
+
+5. **Send from Radio**
+   - From any Meshtastic radio: `#discord Temperature alert: 95°F`
+   - Message will post to Discord channel
+
+#### Use Cases
+
+- **Remote monitoring**: `#email Solar panel voltage low: 11.2V`
+- **Emergency alerts**: `#notify URGENT: Medical assistance needed`
+- **Status updates**: `#discord Weather station online, all sensors operational`
+- **Automation triggers**: Have scripts or integrations react to Discord messages
+
+#### Troubleshooting
+
+**"Email authentication failed"**
+- Use app-specific password, not regular account password
+- For Gmail: Enable 2FA, then generate app password
+- Check username is full email address
+
+**"Cannot connect to email server"**
+- Verify SMTP host and port are correct
+- Check firewall/network allows outbound SMTP
+- Try port 587 (TLS) or 465 (SSL)
+
+**"Discord send failed"**
+- Verify webhook URL is complete and correct
+- Check webhook hasn't been deleted in Discord
+- Test webhook URL directly with curl or Postman
 
 ## Configuration
 
