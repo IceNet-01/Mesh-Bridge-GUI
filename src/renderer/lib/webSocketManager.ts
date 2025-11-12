@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -180,10 +180,17 @@ export class WebSocketRadioManager {
         this.emit('radio-status-change', Array.from(this.radios.values()));
         break;
 
-      case 'radio-connected':
-        // New radio connected
+      case 'radio-connecting':
+        // Radio is connecting (before configuration completes)
         this.radios.set(data.radio.id, data.radio);
         this.statistics.radioStats[data.radio.id] = { received: 0, sent: 0, errors: 0 };
+        this.emit('radio-status-change', Array.from(this.radios.values()));
+        this.log('info', `Radio connecting: ${data.radio.id} on ${data.radio.port}...`);
+        break;
+
+      case 'radio-connected':
+        // Radio fully connected (after configuration completes)
+        this.radios.set(data.radio.id, data.radio);
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
         break;
@@ -248,6 +255,82 @@ export class WebSocketRadioManager {
 
       case 'pong':
         // Ping response
+        break;
+
+      case 'ai-config':
+        // AI configuration update
+        this.emit('ai-config-update', data.config);
+        break;
+
+      case 'ai-config-changed':
+        // AI configuration changed (broadcast from server)
+        this.emit('ai-config-update', data.config);
+        this.log('info', `AI configuration updated: ${data.config.enabled ? 'enabled' : 'disabled'}`);
+        break;
+
+      case 'ai-models':
+        // List of installed AI models
+        this.emit('ai-models-list', data.models);
+        break;
+
+      case 'ai-status':
+        // AI service status
+        this.emit('ai-status-update', data.status);
+        break;
+
+      case 'ai-pull-started':
+        // Model download started
+        this.log('info', `📥 Downloading model: ${data.model}...`);
+        this.emit('ai-pull-started', { model: data.model });
+        break;
+
+      case 'ai-pull-progress':
+        // Model download progress
+        this.emit('ai-pull-progress', {
+          model: data.model,
+          status: data.status,
+          completed: data.completed,
+          total: data.total
+        });
+        break;
+
+      case 'ai-pull-complete':
+        // Model download complete
+        this.log('info', `✅ Model downloaded: ${data.model}`);
+        this.emit('ai-pull-complete', { model: data.model });
+        break;
+
+      case 'comm-config':
+        // Communication configuration
+        this.emit('comm-config-update', data.config);
+        break;
+
+      case 'comm-config-changed':
+        // Communication configuration changed (broadcast from server)
+        this.emit('comm-config-update', data.config);
+        this.log('info', 'Communication configuration updated');
+        break;
+
+      case 'comm-email-updated':
+        this.log('info', 'Email configuration saved');
+        break;
+
+      case 'comm-discord-updated':
+        this.log('info', 'Discord configuration saved');
+        break;
+
+      case 'comm-test-result':
+        // Test result for email/Discord
+        this.emit('comm-test-result', {
+          service: data.service,
+          success: data.success,
+          error: data.error
+        });
+        if (data.success) {
+          this.log('info', `✅ ${data.service} test successful`);
+        } else {
+          this.log('error', `❌ ${data.service} test failed: ${data.error}`);
+        }
         break;
 
       default:
@@ -401,6 +484,205 @@ export class WebSocketRadioManager {
     this.statistics.messageRatePerMinute = this.messageTimestamps.length;
 
     this.emit('statistics-update', this.statistics);
+  }
+
+  /**
+   * Get AI configuration
+   */
+  async getAIConfig(): Promise<AIConfig | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: AIConfig) => {
+        this.off('ai-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('ai-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'ai-get-config' }));
+
+      setTimeout(() => {
+        this.off('ai-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set AI enabled/disabled
+   */
+  async setAIEnabled(enabled: boolean): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'ai-set-enabled',
+      enabled
+    }));
+  }
+
+  /**
+   * List installed AI models
+   */
+  async listAIModels(): Promise<AIModel[]> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return [];
+    }
+
+    return new Promise((resolve) => {
+      const handler = (models: AIModel[]) => {
+        this.off('ai-models-list', handler);
+        resolve(models);
+      };
+
+      this.on('ai-models-list', handler);
+      this.ws!.send(JSON.stringify({ type: 'ai-list-models' }));
+
+      setTimeout(() => {
+        this.off('ai-models-list', handler);
+        resolve([]);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set active AI model
+   */
+  async setAIModel(model: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'ai-set-model',
+      model
+    }));
+  }
+
+  /**
+   * Pull/download AI model
+   */
+  async pullAIModel(model: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'ai-pull-model',
+      model
+    }));
+  }
+
+  /**
+   * Check AI service status
+   */
+  async checkAIStatus(): Promise<AIStatus | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (status: AIStatus) => {
+        this.off('ai-status-update', handler);
+        resolve(status);
+      };
+
+      this.on('ai-status-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'ai-check-status' }));
+
+      setTimeout(() => {
+        this.off('ai-status-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Get communication configuration
+   */
+  async getCommConfig(): Promise<CommunicationConfig | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: CommunicationConfig) => {
+        this.off('comm-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('comm-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'comm-get-config' }));
+
+      setTimeout(() => {
+        this.off('comm-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set email configuration
+   */
+  async setEmailConfig(config: EmailConfig): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'comm-set-email',
+      config
+    }));
+  }
+
+  /**
+   * Set Discord configuration
+   */
+  async setDiscordConfig(config: DiscordConfig): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'comm-set-discord',
+      config
+    }));
+  }
+
+  /**
+   * Test email configuration
+   */
+  async testEmail(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'comm-test-email' }));
+  }
+
+  /**
+   * Test Discord configuration
+   */
+  async testDiscord(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'comm-test-discord' }));
   }
 
   /**

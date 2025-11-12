@@ -11,12 +11,22 @@
  * - Uses @meshtastic/core for protocol handling
  * - Handles all Meshtastic protocol details (protobuf, framing, etc.)
  * - Exposes simple WebSocket API for PWA to consume
+ * - Serves static frontend files from dist/ directory in production
  */
 
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
 import { SerialPort } from 'serialport';
+import { createServer } from 'http';
+import { readFileSync, existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import nodemailer from 'nodemailer';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const distPath = join(__dirname, '..', 'dist');
 
 class MeshtasticBridgeServer {
   constructor(port = 8080) {
@@ -47,21 +57,95 @@ class MeshtasticBridgeServer {
     this.enableSmartMatching = true;  // Recommended: true for correct cross-index forwarding
     this.channelMap = null;           // Only used when enableSmartMatching = false
 
+    // ===== COMMAND SYSTEM CONFIGURATION =====
+    // Interactive bridge commands triggered by prefix (default: #)
+    // Users can send commands like "#weather Seattle" or "#ping"
+    // Bridge responds instead of forwarding the message
+    //
+    this.commandsEnabled = true;         // Enable/disable command system
+    this.commandPrefix = '#';            // Command prefix (e.g., # for #ping, ! for !ping)
+    this.commandRateLimit = 10;          // Max commands per minute per user
+    this.commandUsage = new Map();       // Track command usage for rate limiting
+    this.bridgeStartTime = Date.now();   // Track uptime
+
+    // Enabled commands list - remove any you don't want
+    this.enabledCommands = [
+      'ping', 'help', 'status', 'time', 'uptime', 'version',
+      'weather', 'radios', 'channels', 'stats', 'nodes', 'ai', 'ask',
+      'email', 'discord', 'notify'
+    ];
+
+    // ===== AI ASSISTANT CONFIGURATION =====
+    // Optional AI assistant powered by local LLM (Ollama)
+    // Responds to questions via #ai or #ask commands
+    //
+    this.aiEnabled = false;                    // Enable/disable AI assistant (requires Ollama)
+    this.aiEndpoint = 'http://localhost:11434'; // Ollama API endpoint
+    this.aiModel = 'llama3.2:1b';              // Default model (fast, ~700MB)
+    this.aiMaxTokens = 50;                     // Limit response length
+    this.aiMaxResponseLength = 200;            // Max chars (Meshtastic limit ~237)
+    this.aiTimeout = 15000;                    // 15 second timeout
+    this.aiRateLimit = 3;                      // Max 3 AI queries per minute per user
+    this.aiUsage = new Map();                  // Track AI usage separately
+    this.aiSystemPrompt = 'You are a helpful assistant for a mesh network. Keep ALL responses under 200 characters. Be extremely concise and direct. No explanations unless asked.';
+
+    // ===== EMAIL CONFIGURATION =====
+    this.emailEnabled = false;                 // Enable/disable email notifications
+    this.emailHost = '';                       // SMTP host (e.g., smtp.gmail.com)
+    this.emailPort = 587;                      // SMTP port (587 for TLS, 465 for SSL)
+    this.emailSecure = false;                  // Use SSL (true for port 465)
+    this.emailUser = '';                       // SMTP username/email
+    this.emailPassword = '';                   // SMTP password or app-specific password
+    this.emailFrom = '';                       // From email address
+    this.emailTo = '';                         // Default recipient email address
+    this.emailSubjectPrefix = '[Meshtastic]';  // Email subject prefix
+
+    // ===== DISCORD CONFIGURATION =====
+    this.discordEnabled = false;               // Enable/disable Discord notifications
+    this.discordWebhook = '';                  // Discord webhook URL
+    this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
+    this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
+    console.log(`   Command system: ${this.commandsEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.commandsEnabled) {
+      console.log(`   Command prefix: ${this.commandPrefix}`);
+      console.log(`   Available commands: ${this.enabledCommands.length} commands`);
+    }
+    console.log(`   AI assistant: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.aiEnabled) {
+      console.log(`   AI model: ${this.aiModel}`);
+      console.log(`   AI endpoint: ${this.aiEndpoint}`);
+    }
+    console.log(`   Email notifications: ${this.emailEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.emailEnabled) {
+      console.log(`   Email recipient: ${this.emailTo}`);
+    }
+    console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
     console.log('');
   }
 
   /**
-   * Start the WebSocket server
+   * Start the HTTP and WebSocket server
    */
   async start() {
     console.log('🚀 Meshtastic Bridge Server starting...');
     console.log('📦 Using latest @meshtastic packages from Meshtastic Web monorepo');
 
-    // Create WebSocket server
-    this.wss = new WebSocketServer({ port: this.wsPort });
+    // Create HTTP server for static files
+    const httpServer = createServer((req, res) => {
+      // Serve static files from dist/
+      const staticFileServed = this.serveStaticFile(req, res);
+      if (!staticFileServed) {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+
+    // Create WebSocket server attached to HTTP server
+    this.wss = new WebSocketServer({ server: httpServer });
 
     this.wss.on('connection', (ws) => {
       console.log('📱 PWA client connected');
@@ -110,10 +194,85 @@ class MeshtasticBridgeServer {
       });
     });
 
-    console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
-    console.log('📻 Ready to connect radios...');
-    console.log('');
-    console.log('💡 Connect your PWA to: ws://localhost:8080');
+    // Start HTTP server
+    httpServer.listen(this.wsPort, () => {
+      console.log(`✅ HTTP server listening on http://localhost:${this.wsPort}`);
+      console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
+
+      if (existsSync(distPath)) {
+        console.log(`📂 Serving static files from: ${distPath}`);
+        console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+      } else {
+        console.log(`⚠️  No dist/ folder found - run 'npm run build' first for production mode`);
+        console.log(`💡 For development, run 'npm run dev' in a separate terminal`);
+      }
+
+      console.log('📻 Ready to connect radios...');
+      console.log('');
+    });
+  }
+
+  /**
+   * Serve static files from dist/ directory
+   */
+  serveStaticFile(req, res) {
+    if (!existsSync(distPath)) {
+      return false;
+    }
+
+    // Map URL to file path
+    let filePath = req.url === '/' ? '/index.html' : req.url;
+
+    // Remove query string
+    const queryIndex = filePath.indexOf('?');
+    if (queryIndex !== -1) {
+      filePath = filePath.substring(0, queryIndex);
+    }
+
+    const fullPath = join(distPath, filePath);
+
+    // Security: ensure file is within dist directory
+    if (!fullPath.startsWith(distPath)) {
+      return false;
+    }
+
+    if (!existsSync(fullPath)) {
+      // For SPA routing, serve index.html for non-API routes
+      if (!filePath.includes('.')) {
+        const indexPath = join(distPath, 'index.html');
+        if (existsSync(indexPath)) {
+          const content = readFileSync(indexPath);
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(content);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    try {
+      const content = readFileSync(fullPath);
+      const ext = filePath.split('.').pop();
+      const contentType = {
+        'html': 'text/html',
+        'js': 'application/javascript',
+        'css': 'text/css',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'svg': 'image/svg+xml',
+        'ico': 'image/x-icon',
+        'woff': 'font/woff',
+        'woff2': 'font/woff2'
+      }[ext] || 'application/octet-stream';
+
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error serving ${filePath}:`, error);
+      return false;
+    }
   }
 
   /**
@@ -140,6 +299,52 @@ class MeshtasticBridgeServer {
 
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+
+        // AI Management
+        case 'ai-get-config':
+          await this.aiGetConfig(ws);
+          break;
+
+        case 'ai-set-enabled':
+          await this.aiSetEnabled(ws, message.enabled);
+          break;
+
+        case 'ai-list-models':
+          await this.aiListModels(ws);
+          break;
+
+        case 'ai-set-model':
+          await this.aiSetModel(ws, message.model);
+          break;
+
+        case 'ai-pull-model':
+          await this.aiPullModel(ws, message.model);
+          break;
+
+        case 'ai-check-status':
+          await this.aiCheckStatus(ws);
+          break;
+
+        // Communication Management
+        case 'comm-get-config':
+          await this.commGetConfig(ws);
+          break;
+
+        case 'comm-set-email':
+          await this.commSetEmail(ws, message.config);
+          break;
+
+        case 'comm-set-discord':
+          await this.commSetDiscord(ws, message.config);
+          break;
+
+        case 'comm-test-email':
+          await this.commTestEmail(ws);
+          break;
+
+        case 'comm-test-discord':
+          await this.commTestDiscord(ws);
           break;
 
         default:
@@ -299,6 +504,24 @@ class MeshtasticBridgeServer {
         }
       });
 
+      // Notify clients IMMEDIATELY that radio is connecting
+      this.broadcast({
+        type: 'radio-connecting',
+        radio: {
+          id: radioId,
+          name: `Radio ${radioId.substring(0, 8)}`,
+          port: portPath,
+          status: 'connecting',
+          messagesReceived: 0,
+          messagesSent: 0,
+          errors: 0,
+          info: {
+            port: portPath,
+            connectedAt: new Date()
+          }
+        }
+      });
+
       // Configure the device (required for message flow)
       console.log(`⚙️  Configuring radio ${radioId}...`);
       await device.configure();
@@ -329,8 +552,12 @@ class MeshtasticBridgeServer {
         type: 'radio-connected',
         radio: {
           id: radioId,
+          name: `Radio ${radioId.substring(0, 8)}`,
           port: portPath,
           status: 'connected',
+          messagesReceived: 0,
+          messagesSent: 0,
+          errors: 0,
           info: {
             port: portPath,
             connectedAt: new Date()
@@ -393,6 +620,14 @@ class MeshtasticBridgeServer {
       const text = packet.data;
 
       if (text && typeof text === 'string' && text.length > 0) {
+        // ===== COMMAND DETECTION =====
+        // Check if this is a command (starts with command prefix)
+        if (this.commandsEnabled && text.trim().startsWith(this.commandPrefix)) {
+          console.log(`🤖 Command detected: ${text}`);
+          this.handleCommand(radioId, packet.channel, packet.from, text.trim());
+          return; // Don't forward commands - consume them
+        }
+
         // Check if this message is FROM one of our bridge radios (forwarding loop prevention)
         const isFromOurBridgeRadio = Array.from(this.radios.values()).some(
           radio => radio.nodeNum === packet.from
@@ -455,6 +690,689 @@ class MeshtasticBridgeServer {
     } catch (error) {
       console.error('❌ Error handling message packet:', error, packet);
     }
+  }
+
+  /**
+   * Handle command messages (messages starting with command prefix)
+   */
+  async handleCommand(radioId, channel, fromNode, commandText) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        console.error(`❌ Radio ${radioId} not found for command`);
+        return;
+      }
+
+      // Check rate limiting
+      if (this.isRateLimited(fromNode)) {
+        console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
+        await radio.device.sendText(
+          `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
+          'broadcast',
+          false,
+          channel
+        );
+        return;
+      }
+
+      // Parse command
+      const command = commandText.substring(this.commandPrefix.length).trim().toLowerCase();
+      const args = command.split(/\s+/);
+      const cmd = args[0];
+      const cmdArgs = args.slice(1);
+
+      console.log(`🤖 Processing command: ${cmd} with args:`, cmdArgs);
+
+      // Check if command is enabled
+      if (!this.enabledCommands.includes(cmd)) {
+        console.log(`⚠️  Command not enabled: ${cmd}`);
+        await radio.device.sendText(
+          `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
+          'broadcast',
+          false,
+          channel
+        );
+        return;
+      }
+
+      // Route to appropriate command handler
+      let response = '';
+      switch (cmd) {
+        case 'ping':
+          response = await this.cmdPing();
+          break;
+        case 'help':
+          response = await this.cmdHelp();
+          break;
+        case 'status':
+          response = await this.cmdStatus();
+          break;
+        case 'time':
+          response = await this.cmdTime();
+          break;
+        case 'uptime':
+          response = await this.cmdUptime();
+          break;
+        case 'version':
+          response = await this.cmdVersion();
+          break;
+        case 'weather':
+          response = await this.cmdWeather(cmdArgs);
+          break;
+        case 'radios':
+          response = await this.cmdRadios();
+          break;
+        case 'channels':
+          response = await this.cmdChannels(radioId);
+          break;
+        case 'stats':
+          response = await this.cmdStats();
+          break;
+        case 'nodes':
+          response = await this.cmdNodes();
+          break;
+        case 'ai':
+        case 'ask':
+          response = await this.cmdAI(fromNode, cmdArgs);
+          break;
+        case 'email':
+          response = await this.cmdEmail(fromNode, cmdArgs);
+          break;
+        case 'discord':
+          response = await this.cmdDiscord(fromNode, cmdArgs);
+          break;
+        case 'notify':
+          response = await this.cmdNotify(fromNode, cmdArgs);
+          break;
+        default:
+          response = `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help`;
+      }
+
+      if (response) {
+        console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
+        await radio.device.sendText(response, 'broadcast', false, channel);
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling command:', error);
+    }
+  }
+
+  /**
+   * Check if user is rate limited (returns true if exceeded limit)
+   */
+  isRateLimited(nodeId) {
+    const now = Date.now();
+    const usage = this.commandUsage.get(nodeId) || [];
+
+    // Filter to only recent usage (last minute)
+    const recentUsage = usage.filter(timestamp => now - timestamp < 60000);
+
+    // Check if limit exceeded
+    if (recentUsage.length >= this.commandRateLimit) {
+      return true;
+    }
+
+    // Add current usage
+    recentUsage.push(now);
+    this.commandUsage.set(nodeId, recentUsage);
+
+    // Clean up old entries periodically
+    if (this.commandUsage.size > 100) {
+      for (const [key, timestamps] of this.commandUsage.entries()) {
+        const recent = timestamps.filter(t => now - t < 60000);
+        if (recent.length === 0) {
+          this.commandUsage.delete(key);
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Command: #ping - Check if bridge is alive
+   */
+  async cmdPing() {
+    return '🏓 Pong! Bridge is alive and running.';
+  }
+
+  /**
+   * Command: #help - List available commands
+   */
+  async cmdHelp() {
+    const commands = [
+      `${this.commandPrefix}ping - Check if bridge is alive`,
+      `${this.commandPrefix}help - Show this help message`,
+      `${this.commandPrefix}status - Bridge status & info`,
+      `${this.commandPrefix}time - Current date/time`,
+      `${this.commandPrefix}uptime - Bridge uptime`,
+      `${this.commandPrefix}version - Software version`,
+      `${this.commandPrefix}weather [city] - Get weather`,
+      `${this.commandPrefix}radios - List connected radios`,
+      `${this.commandPrefix}channels - List bridge channels`,
+      `${this.commandPrefix}stats - Message statistics`,
+      `${this.commandPrefix}nodes - List known nodes`
+    ];
+
+    // Add AI commands if enabled
+    if (this.aiEnabled) {
+      commands.push(`${this.commandPrefix}ai [question] - Ask AI assistant`);
+      commands.push(`${this.commandPrefix}ask [question] - Ask AI assistant`);
+    }
+
+    // Add communication commands if enabled
+    if (this.emailEnabled) {
+      commands.push(`${this.commandPrefix}email [message] - Send email`);
+    }
+    if (this.discordEnabled) {
+      commands.push(`${this.commandPrefix}discord [message] - Send to Discord`);
+    }
+    if (this.emailEnabled || this.discordEnabled) {
+      commands.push(`${this.commandPrefix}notify [message] - Send to all`);
+    }
+
+    return `📖 Bridge Commands:\n${commands.join('\n')}`;
+  }
+
+  /**
+   * Command: #status - Bridge status and info
+   */
+  async cmdStatus() {
+    const uptimeStr = this.getUptimeString();
+    const radioCount = this.radios.size;
+    const messageCount = this.messageHistory.length;
+
+    return `📊 Bridge Status:\n` +
+           `Radios: ${radioCount} connected\n` +
+           `Messages: ${messageCount} in history\n` +
+           `Uptime: ${uptimeStr}\n` +
+           `Version: 2.0.0-alpha`;
+  }
+
+  /**
+   * Command: #time - Current date and time
+   */
+  async cmdTime() {
+    const now = new Date();
+    return `🕐 ${now.toLocaleString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })}`;
+  }
+
+  /**
+   * Command: #uptime - Bridge uptime
+   */
+  async cmdUptime() {
+    return `⏱️ Bridge uptime: ${this.getUptimeString()}`;
+  }
+
+  /**
+   * Command: #version - Software version
+   */
+  async cmdVersion() {
+    return `🔖 Meshtastic Bridge GUI v2.0.0-alpha\n` +
+           `Node.js ${process.version}\n` +
+           `Platform: ${process.platform}`;
+  }
+
+  /**
+   * Command: #weather [location] - Get weather report
+   */
+  async cmdWeather(args) {
+    const location = args.length > 0 ? args.join(' ') : 'Seattle';
+
+    try {
+      // Using wttr.in - free weather service, no API key needed
+      const url = `https://wttr.in/${encodeURIComponent(location)}?format=%l:+%C+%t+💧%h+💨%w`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        return `❌ Weather service unavailable`;
+      }
+
+      const weather = await response.text();
+      return `🌤️ ${weather.trim()}`;
+
+    } catch (error) {
+      console.error('Weather fetch error:', error);
+      return `❌ Couldn't fetch weather for ${location}`;
+    }
+  }
+
+  /**
+   * Command: #radios - List connected radios
+   */
+  async cmdRadios() {
+    if (this.radios.size === 0) {
+      return '📻 No radios connected';
+    }
+
+    const radioList = Array.from(this.radios.entries()).map(([id, radio]) => {
+      const shortId = id.substring(0, 8);
+      const nodeNum = radio.nodeNum ? `!${radio.nodeNum.toString(16)}` : 'unknown';
+      return `📻 ${shortId} (${nodeNum}) on ${radio.port}`;
+    });
+
+    return `Connected Radios (${this.radios.size}):\n${radioList.join('\n')}`;
+  }
+
+  /**
+   * Command: #channels - List configured channels on this bridge
+   */
+  async cmdChannels(radioId) {
+    const radio = this.radios.get(radioId);
+    if (!radio || !radio.channels || radio.channels.size === 0) {
+      return '⚠️ No channel info available';
+    }
+
+    const channelList = Array.from(radio.channels.entries()).map(([idx, ch]) => {
+      const name = ch.name || '(unnamed)';
+      const role = ch.role === 1 ? 'PRI' : ch.role === 0 ? 'SEC' : 'DIS';
+      return `[${idx}] ${name} (${role})`;
+    });
+
+    return `🔐 Bridge Channels:\n${channelList.join('\n')}`;
+  }
+
+  /**
+   * Command: #stats - Message statistics
+   */
+  async cmdStats() {
+    const totalMessages = this.messageHistory.length;
+    const uniqueNodes = new Set(this.messageHistory.map(m => m.from)).size;
+
+    // Calculate messages per radio
+    const radioStats = new Map();
+    for (const msg of this.messageHistory) {
+      const count = radioStats.get(msg.radioId) || 0;
+      radioStats.set(msg.radioId, count + 1);
+    }
+
+    let statsText = `📊 Message Statistics:\n` +
+                   `Total: ${totalMessages} messages\n` +
+                   `Unique nodes: ${uniqueNodes}\n`;
+
+    if (radioStats.size > 0) {
+      statsText += `Per Radio:\n`;
+      for (const [radioId, count] of radioStats.entries()) {
+        const shortId = radioId.substring(0, 8);
+        statsText += `  ${shortId}: ${count} msgs\n`;
+      }
+    }
+
+    return statsText.trim();
+  }
+
+  /**
+   * Command: #nodes - List known nodes
+   */
+  async cmdNodes() {
+    // Get unique nodes from message history
+    const nodes = new Map();
+
+    for (const msg of this.messageHistory) {
+      if (!nodes.has(msg.from)) {
+        nodes.set(msg.from, {
+          nodeNum: msg.from,
+          lastSeen: msg.timestamp,
+          messageCount: 1
+        });
+      } else {
+        const node = nodes.get(msg.from);
+        node.messageCount++;
+        if (msg.timestamp > node.lastSeen) {
+          node.lastSeen = msg.timestamp;
+        }
+      }
+    }
+
+    if (nodes.size === 0) {
+      return '👥 No nodes seen yet';
+    }
+
+    const nodeList = Array.from(nodes.entries())
+      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+      .slice(0, 10) // Top 10 most recent
+      .map(([nodeNum, info]) => {
+        const hexId = `!${nodeNum.toString(16)}`;
+        const timeAgo = this.getTimeAgo(info.lastSeen);
+        return `${hexId} (${info.messageCount} msgs, ${timeAgo})`;
+      });
+
+    return `👥 Known Nodes (${nodes.size} total, showing 10):\n${nodeList.join('\n')}`;
+  }
+
+  /**
+   * Command: #ai / #ask - Ask AI assistant (requires Ollama)
+   */
+  async cmdAI(fromNode, args) {
+    // Check if AI is enabled
+    if (!this.aiEnabled) {
+      return '🤖 AI assistant is disabled. Enable it in bridge configuration.';
+    }
+
+    // Parse question
+    const question = args.join(' ').trim();
+    if (!question) {
+      return `💭 Usage: ${this.commandPrefix}ai [your question]`;
+    }
+
+    // Check AI-specific rate limiting (stricter than regular commands)
+    if (this.isAIRateLimited(fromNode)) {
+      return `⚠️ AI rate limit exceeded. Max ${this.aiRateLimit} AI queries per minute.`;
+    }
+
+    try {
+      console.log(`🤖 AI query from node ${fromNode}: "${question}"`);
+
+      // Call Ollama API with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.aiTimeout);
+
+      const response = await fetch(`${this.aiEndpoint}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.aiModel,
+          prompt: question,
+          system: this.aiSystemPrompt,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: this.aiMaxTokens
+          }
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.error(`AI API error: ${response.status}`);
+        return '❌ AI service error. Check Ollama is running.';
+      }
+
+      const data = await response.json();
+      let answer = data.response.trim();
+
+      // Truncate if too long (Meshtastic limit)
+      if (answer.length > this.aiMaxResponseLength) {
+        answer = answer.substring(0, this.aiMaxResponseLength - 3) + '...';
+      }
+
+      console.log(`🤖 AI response: "${answer}"`);
+      return `🤖 ${answer}`;
+
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.error('AI query timeout');
+        return '⏱️ AI timeout. Try a simpler question.';
+      }
+      console.error('AI error:', error);
+      if (error.code === 'ECONNREFUSED') {
+        return '❌ AI offline. Is Ollama running?';
+      }
+      return '❌ AI error. Check logs.';
+    }
+  }
+
+  /**
+   * Check if user is AI rate limited (stricter than regular commands)
+   */
+  isAIRateLimited(nodeId) {
+    const now = Date.now();
+    const usage = this.aiUsage.get(nodeId) || [];
+
+    // Filter to only recent usage (last minute)
+    const recentUsage = usage.filter(timestamp => now - timestamp < 60000);
+
+    // Check if limit exceeded
+    if (recentUsage.length >= this.aiRateLimit) {
+      return true;
+    }
+
+    // Add current usage
+    recentUsage.push(now);
+    this.aiUsage.set(nodeId, recentUsage);
+
+    // Clean up old entries periodically
+    if (this.aiUsage.size > 100) {
+      for (const [key, timestamps] of this.aiUsage.entries()) {
+        const recent = timestamps.filter(t => now - t < 60000);
+        if (recent.length === 0) {
+          this.aiUsage.delete(key);
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Send email notification
+   */
+  async cmdEmail(fromNode, args) {
+    // Check if email is enabled
+    if (!this.emailEnabled) {
+      return '📧 Email notifications are disabled. Enable in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `📧 Usage: ${this.commandPrefix}email [your message]`;
+    }
+
+    try {
+      console.log(`📧 Email request from node ${fromNode}: "${message}"`);
+
+      // Get node info for sender identification
+      const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
+
+      // Create transporter
+      const transporter = nodemailer.createTransport({
+        host: this.emailHost,
+        port: this.emailPort,
+        secure: this.emailSecure,
+        auth: {
+          user: this.emailUser,
+          pass: this.emailPassword
+        }
+      });
+
+      // Send email
+      const info = await transporter.sendMail({
+        from: this.emailFrom || this.emailUser,
+        to: this.emailTo,
+        subject: `${this.emailSubjectPrefix} Message from ${nodeName}`,
+        text: `Message from ${nodeName} (${fromNode.toString(16)}):\n\n${message}\n\nSent via Meshtastic Bridge`,
+        html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #4F46E5;">Meshtastic Bridge Message</h2>
+          <p><strong>From:</strong> ${nodeName} (${fromNode.toString(16)})</p>
+          <div style="background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+          </div>
+          <p style="color: #6B7280; font-size: 12px;">Sent via Meshtastic Bridge</p>
+        </div>`
+      });
+
+      console.log(`📧 Email sent: ${info.messageId}`);
+      return `✅ Email sent successfully!`;
+
+    } catch (error) {
+      console.error('Email error:', error);
+      if (error.code === 'EAUTH') {
+        return '❌ Email authentication failed. Check credentials.';
+      }
+      if (error.code === 'ECONNECTION') {
+        return '❌ Cannot connect to email server. Check settings.';
+      }
+      return '❌ Email error. Check logs.';
+    }
+  }
+
+  /**
+   * Send Discord notification via webhook
+   */
+  async cmdDiscord(fromNode, args) {
+    // Check if Discord is enabled
+    if (!this.discordEnabled) {
+      return '💬 Discord notifications are disabled. Enable in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `💬 Usage: ${this.commandPrefix}discord [your message]`;
+    }
+
+    try {
+      console.log(`💬 Discord request from node ${fromNode}: "${message}"`);
+
+      // Get node info for sender identification
+      const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
+
+      // Send to Discord webhook
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          embeds: [{
+            title: '📡 Meshtastic Bridge Message',
+            description: message,
+            color: 5814783, // Blurple color
+            fields: [
+              {
+                name: 'From',
+                value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
+                inline: true
+              },
+              {
+                name: 'Time',
+                value: new Date().toLocaleString(),
+                inline: true
+              }
+            ],
+            footer: {
+              text: 'Sent via Meshtastic Bridge'
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        console.error(`Discord API error: ${response.status}`);
+        return '❌ Discord send failed. Check webhook URL.';
+      }
+
+      console.log(`💬 Discord message sent`);
+      return `✅ Discord message sent!`;
+
+    } catch (error) {
+      console.error('Discord error:', error);
+      if (error.code === 'ECONNREFUSED') {
+        return '❌ Cannot reach Discord. Check internet connection.';
+      }
+      return '❌ Discord error. Check logs.';
+    }
+  }
+
+  /**
+   * Send notification to both email and Discord
+   */
+  async cmdNotify(fromNode, args) {
+    // Check if at least one notification method is enabled
+    if (!this.emailEnabled && !this.discordEnabled) {
+      return '📣 No notification methods enabled. Enable email or Discord in bridge configuration.';
+    }
+
+    // Parse message
+    const message = args.join(' ').trim();
+    if (!message) {
+      return `📣 Usage: ${this.commandPrefix}notify [your message]`;
+    }
+
+    const results = [];
+
+    // Try email if enabled
+    if (this.emailEnabled) {
+      const emailResult = await this.cmdEmail(fromNode, args);
+      results.push(emailResult.includes('✅') ? 'Email ✅' : 'Email ❌');
+    }
+
+    // Try Discord if enabled
+    if (this.discordEnabled) {
+      const discordResult = await this.cmdDiscord(fromNode, args);
+      results.push(discordResult.includes('✅') ? 'Discord ✅' : 'Discord ❌');
+    }
+
+    return `📣 Notification sent: ${results.join(', ')}`;
+  }
+
+  /**
+   * Helper to get node name from node ID
+   */
+  getNodeName(nodeId) {
+    // Look through all radios to find node info
+    for (const [radioId, radio] of this.radios) {
+      if (radio.device && radio.device.nodeDb) {
+        const nodes = radio.device.nodeDb;
+        for (const [id, node] of nodes) {
+          if (id === nodeId && node.user) {
+            return node.user.longName || node.user.shortName;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get uptime as human-readable string
+   */
+  getUptimeString() {
+    const uptimeMs = Date.now() - this.bridgeStartTime;
+    const hours = Math.floor(uptimeMs / 3600000);
+    const minutes = Math.floor((uptimeMs % 3600000) / 60000);
+    const seconds = Math.floor((uptimeMs % 60000) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
+
+  /**
+   * Get time ago as human-readable string
+   */
+  getTimeAgo(timestamp) {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now - then;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   }
 
   /**
@@ -672,6 +1590,451 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Disconnect failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Get current AI configuration
+   */
+  async aiGetConfig(ws) {
+    ws.send(JSON.stringify({
+      type: 'ai-config',
+      config: {
+        enabled: this.aiEnabled,
+        model: this.aiModel,
+        endpoint: this.aiEndpoint,
+        maxTokens: this.aiMaxTokens,
+        rateLimit: this.aiRateLimit,
+        timeout: this.aiTimeout
+      }
+    }));
+  }
+
+  /**
+   * AI Management: Enable/disable AI assistant
+   */
+  async aiSetEnabled(ws, enabled) {
+    try {
+      this.aiEnabled = enabled;
+      console.log(`🤖 AI assistant ${enabled ? 'enabled' : 'disabled'}`);
+
+      ws.send(JSON.stringify({
+        type: 'ai-set-enabled-success',
+        enabled: this.aiEnabled
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'ai-config-changed',
+        config: { enabled: this.aiEnabled }
+      });
+    } catch (error) {
+      console.error('❌ AI set enabled error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to set AI enabled: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: List available models from Ollama
+   */
+  async aiListModels(ws) {
+    try {
+      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+
+      if (!response.ok) {
+        throw new Error('Ollama not responding');
+      }
+
+      const data = await response.json();
+
+      ws.send(JSON.stringify({
+        type: 'ai-models',
+        models: data.models || []
+      }));
+    } catch (error) {
+      // Only log error if it's not just Ollama not running
+      if (error.cause?.code !== 'ECONNREFUSED') {
+        console.error('❌ AI list models error:', error);
+      }
+
+      ws.send(JSON.stringify({
+        type: 'ai-models',
+        models: [] // Return empty list if Ollama not available
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Set active model
+   */
+  async aiSetModel(ws, model) {
+    try {
+      // Verify model exists
+      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+      const data = await response.json();
+      const modelExists = data.models.some(m => m.name === model);
+
+      if (!modelExists) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Model ${model} not installed. Pull it first.`
+        }));
+        return;
+      }
+
+      this.aiModel = model;
+      console.log(`🤖 AI model changed to: ${model}`);
+
+      ws.send(JSON.stringify({
+        type: 'ai-set-model-success',
+        model: this.aiModel
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'ai-config-changed',
+        config: { model: this.aiModel }
+      });
+    } catch (error) {
+      console.error('❌ AI set model error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to set model: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Pull (download/install) a model
+   */
+  async aiPullModel(ws, model) {
+    try {
+      console.log(`🤖 Pulling model: ${model} (this may take a while...)`);
+
+      // Send initial acknowledgment
+      ws.send(JSON.stringify({
+        type: 'ai-pull-started',
+        model: model
+      }));
+
+      // Pull model (streaming response)
+      const response = await fetch(`${this.aiEndpoint}/api/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: model })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Pull failed: ${response.statusText}`);
+      }
+
+      // Stream progress updates
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(l => l.trim());
+
+        for (const line of lines) {
+          try {
+            const progress = JSON.parse(line);
+            ws.send(JSON.stringify({
+              type: 'ai-pull-progress',
+              model: model,
+              status: progress.status,
+              completed: progress.completed,
+              total: progress.total
+            }));
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+        }
+      }
+
+      console.log(`✅ Model ${model} pulled successfully`);
+      ws.send(JSON.stringify({
+        type: 'ai-pull-complete',
+        model: model
+      }));
+
+    } catch (error) {
+      console.error('❌ AI pull model error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to pull model: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * AI Management: Check if Ollama is running and responsive
+   */
+  async aiCheckStatus(ws) {
+    try {
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        signal: AbortSignal.timeout(5000)
+      });
+
+      const running = response.ok;
+      let version = null;
+
+      if (running) {
+        try {
+          const versionResponse = await fetch(`${this.aiEndpoint}/api/version`);
+          const versionData = await versionResponse.json();
+          version = versionData.version;
+        } catch (e) {
+          // Ignore version errors
+        }
+      }
+
+      ws.send(JSON.stringify({
+        type: 'ai-status',
+        running: running,
+        version: version,
+        endpoint: this.aiEndpoint
+      }));
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'ai-status',
+        running: false,
+        error: error.message,
+        endpoint: this.aiEndpoint
+      }));
+    }
+  }
+
+  /**
+   * Get communication configuration
+   */
+  async commGetConfig(ws) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'comm-config',
+        config: {
+          email: {
+            enabled: this.emailEnabled,
+            host: this.emailHost,
+            port: this.emailPort,
+            secure: this.emailSecure,
+            user: this.emailUser,
+            from: this.emailFrom,
+            to: this.emailTo,
+            subjectPrefix: this.emailSubjectPrefix
+          },
+          discord: {
+            enabled: this.discordEnabled,
+            webhook: this.discordWebhook ? '(configured)' : '', // Don't send full webhook URL
+            username: this.discordUsername,
+            avatarUrl: this.discordAvatarUrl
+          }
+        }
+      }));
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to get communication config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set email configuration
+   */
+  async commSetEmail(ws, config) {
+    try {
+      this.emailEnabled = config.enabled;
+      this.emailHost = config.host || '';
+      this.emailPort = config.port || 587;
+      this.emailSecure = config.secure || false;
+      this.emailUser = config.user || '';
+      if (config.password) {
+        this.emailPassword = config.password;
+      }
+      this.emailFrom = config.from || '';
+      this.emailTo = config.to || '';
+      this.emailSubjectPrefix = config.subjectPrefix || '[Meshtastic]';
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'comm-config-changed',
+        config: {
+          email: {
+            enabled: this.emailEnabled,
+            host: this.emailHost,
+            port: this.emailPort,
+            secure: this.emailSecure,
+            user: this.emailUser,
+            from: this.emailFrom,
+            to: this.emailTo,
+            subjectPrefix: this.emailSubjectPrefix
+          }
+        }
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-email-updated',
+        success: true
+      }));
+
+      console.log(`📧 Email configuration updated: ${this.emailEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to update email config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set Discord configuration
+   */
+  async commSetDiscord(ws, config) {
+    try {
+      this.discordEnabled = config.enabled;
+      if (config.webhook) {
+        this.discordWebhook = config.webhook;
+      }
+      this.discordUsername = config.username || 'Meshtastic Bridge';
+      this.discordAvatarUrl = config.avatarUrl || '';
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'comm-config-changed',
+        config: {
+          discord: {
+            enabled: this.discordEnabled,
+            webhook: this.discordWebhook ? '(configured)' : '',
+            username: this.discordUsername,
+            avatarUrl: this.discordAvatarUrl
+          }
+        }
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-discord-updated',
+        success: true
+      }));
+
+      console.log(`💬 Discord configuration updated: ${this.discordEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to update Discord config: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Test email configuration
+   */
+  async commTestEmail(ws) {
+    try {
+      if (!this.emailHost || !this.emailUser || !this.emailTo) {
+        ws.send(JSON.stringify({
+          type: 'comm-test-result',
+          service: 'email',
+          success: false,
+          error: 'Email not configured. Please set host, user, and recipient.'
+        }));
+        return;
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: this.emailHost,
+        port: this.emailPort,
+        secure: this.emailSecure,
+        auth: {
+          user: this.emailUser,
+          pass: this.emailPassword
+        }
+      });
+
+      await transporter.sendMail({
+        from: this.emailFrom || this.emailUser,
+        to: this.emailTo,
+        subject: `${this.emailSubjectPrefix} Test Email`,
+        text: 'This is a test email from your Meshtastic Bridge.\n\nIf you received this, your email configuration is working correctly!',
+        html: '<div style="font-family: Arial, sans-serif;"><h2 style="color: #4F46E5;">Test Email</h2><p>This is a test email from your Meshtastic Bridge.</p><p>If you received this, your email configuration is working correctly!</p></div>'
+      });
+
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'email',
+        success: true
+      }));
+
+      console.log('📧 Test email sent successfully');
+    } catch (error) {
+      console.error('Email test error:', error);
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'email',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Test Discord configuration
+   */
+  async commTestDiscord(ws) {
+    try {
+      if (!this.discordWebhook) {
+        ws.send(JSON.stringify({
+          type: 'comm-test-result',
+          service: 'discord',
+          success: false,
+          error: 'Discord webhook not configured. Please set webhook URL.'
+        }));
+        return;
+      }
+
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          embeds: [{
+            title: '✅ Test Message',
+            description: 'This is a test message from your Meshtastic Bridge.\n\nIf you can see this, your Discord configuration is working correctly!',
+            color: 5814783,
+            footer: {
+              text: 'Meshtastic Bridge'
+            },
+            timestamp: new Date().toISOString()
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Discord API error: ${response.status}`);
+      }
+
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'discord',
+        success: true
+      }));
+
+      console.log('💬 Test Discord message sent successfully');
+    } catch (error) {
+      console.error('Discord test error:', error);
+      ws.send(JSON.stringify({
+        type: 'comm-test-result',
+        service: 'discord',
+        success: false,
+        error: error.message
       }));
     }
   }
