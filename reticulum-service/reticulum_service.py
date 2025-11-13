@@ -120,7 +120,7 @@ class ReticulumService:
         if not os.path.exists(config_file):
             self.log("Creating RNS config with full interface support...")
             config_content = """# Reticulum configuration for Mesh Bridge GUI
-# Full production configuration with LAN/WAN support
+# Full production configuration with LAN/WAN support and RNode radio
 
 [reticulum]
 enable_transport = yes
@@ -130,6 +130,43 @@ instance_control_port = 37429
 
 [logging]
 loglevel = 4
+
+# =============================================================================
+# RNode Interface - Physical radio hardware (PRIMARY MESH INTERFACE)
+# =============================================================================
+# This is the MAIN interface for actual mesh networking via LoRa radio hardware.
+# Enable this when you connect an RNode device for real mesh networking.
+#
+# To enable:
+# 1. Connect your RNode via USB
+# 2. Find the port: ls /dev/ttyUSB* or ls /dev/ttyACM*
+# 3. Set interface_enabled = yes below
+# 4. Configure port and radio settings
+# 5. Restart Reticulum service
+
+[[RNode Interface]]
+  type = RNodeInterface
+  interface_enabled = no  # Change to 'yes' when RNode is connected
+
+  # Port settings - check with: ls /dev/ttyUSB* or ls /dev/ttyACM*
+  port = /dev/ttyACM0           # Linux: /dev/ttyACM0 or /dev/ttyUSB0
+                                # macOS: /dev/cu.usbmodem1101
+                                # Windows: COM3
+
+  # Radio settings for 915 MHz ISM band (US)
+  frequency = 915000000         # 915 MHz (US) or 868000000 (EU/UK)
+  bandwidth = 125000            # 125 kHz (LoRa bandwidth)
+  txpower = 17                  # 17 dBm transmit power (max for RNode)
+  spreadingfactor = 9           # SF9 (range: 7-12, higher=longer range but slower)
+  codingrate = 6                # CR 4/6 (range: 5-8, higher=more error correction)
+
+  # Optional advanced settings
+  # id_callsign = YOUR_CALLSIGN # Your amateur radio callsign
+  # id_interval = 600           # Announce interval in seconds
+
+# =============================================================================
+# Network Interfaces - For internet/LAN connectivity
+# =============================================================================
 
 # AutoInterface - Automatic local network discovery (LAN)
 # Discovers and connects to other Reticulum instances on local networks
@@ -156,13 +193,17 @@ loglevel = 4
   forward_ip = 255.255.255.255
   forward_port = 4242
 
-# I2P Interface (optional, disabled by default)
+# =============================================================================
+# Optional Interfaces
+# =============================================================================
+
+# I2P Interface - Anonymous routing via I2P network
 # Uncomment to enable I2P networking for anonymous routing
 #[[I2P Interface]]
 #  type = I2PInterface
 #  interface_enabled = no
 
-# TCP Client Interface (optional)
+# TCP Client Interface - Connect to specific Reticulum nodes
 # Uncomment and configure to connect to a specific Reticulum node
 #[[TCP Client Interface]]
 #  type = TCPClientInterface
