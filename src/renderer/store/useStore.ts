@@ -170,7 +170,8 @@ export const useStore = create<AppStore>((set, get) => {
       const statistics = manager.getStatistics();
       const bridgeConfig = manager.getBridgeConfig();
       const logs = manager.getLogs();
-      set({ statistics, bridgeConfig, logs });
+      const nodes = manager.getNodes();
+      set({ statistics, bridgeConfig, logs, nodes });
     },
 
     connectToBridge: async () => {

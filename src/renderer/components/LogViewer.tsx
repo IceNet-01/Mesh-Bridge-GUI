@@ -9,6 +9,7 @@ interface LogViewerProps {
 function LogViewer({ logs, onClear }: LogViewerProps) {
   const [filter, setFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [viewMode, setViewMode] = useState<'structured' | 'raw'>('structured');
 
   const filteredLogs = logs.filter((log) => filter === 'all' || log.level === filter);
 
@@ -49,19 +50,41 @@ function LogViewer({ logs, onClear }: LogViewerProps) {
         </div>
       </div>
 
-      {/* Log Level Filters */}
-      <div className="flex gap-2">
-        {(['all', 'info', 'warn', 'error', 'debug'] as const).map((level) => (
+      {/* View Mode Toggle */}
+      <div className="flex gap-4 items-center">
+        <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
           <button
-            key={level}
-            onClick={() => setFilter(level)}
-            className={`px-4 py-2 rounded-lg font-medium transition-all capitalize ${
-              filter === level ? 'bg-primary-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+            onClick={() => setViewMode('structured')}
+            className={`px-4 py-2 rounded-md font-medium text-sm transition-all ${
+              viewMode === 'structured' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
-            {level} ({level === 'all' ? logs.length : logs.filter((l) => l.level === level).length})
+            Structured
           </button>
-        ))}
+          <button
+            onClick={() => setViewMode('raw')}
+            className={`px-4 py-2 rounded-md font-medium text-sm transition-all ${
+              viewMode === 'raw' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Raw Console
+          </button>
+        </div>
+
+        {/* Log Level Filters */}
+        <div className="flex gap-2">
+          {(['all', 'info', 'warn', 'error', 'debug'] as const).map((level) => (
+            <button
+              key={level}
+              onClick={() => setFilter(level)}
+              className={`px-4 py-2 rounded-lg font-medium transition-all capitalize ${
+                filter === level ? 'bg-primary-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              {level} ({level === 'all' ? logs.length : logs.filter((l) => l.level === level).length})
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Logs Container */}
@@ -70,7 +93,40 @@ function LogViewer({ logs, onClear }: LogViewerProps) {
           <div className="flex items-center justify-center h-full text-slate-400">
             No logs to display
           </div>
+        ) : viewMode === 'raw' ? (
+          /* Raw Console View */
+          <div className="space-y-0 bg-black/50 p-4 rounded-lg">
+            {filteredLogs.map((log, index) => {
+              const levelPrefix = log.level.toUpperCase().padEnd(5);
+              const timestamp = new Date(log.timestamp).toLocaleTimeString();
+              const context = log.context ? `[${log.context}]` : '';
+              const radioId = log.radioId ? `[${log.radioId}]` : '';
+
+              return (
+                <div key={index} className={`${levelColors[log.level]} leading-relaxed`}>
+                  <span className="text-slate-500">{timestamp}</span>
+                  {' '}
+                  <span className="font-bold">{levelPrefix}</span>
+                  {radioId && <span className="text-blue-400"> {radioId}</span>}
+                  {context && <span className="text-cyan-400"> {context}</span>}
+                  {' '}
+                  {log.message}
+                  {log.error && (
+                    <div className="ml-20 text-red-400">
+                      Error: {log.error}
+                    </div>
+                  )}
+                  {log.data && (
+                    <div className="ml-20 text-slate-400 text-xs">
+                      {JSON.stringify(log.data)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* Structured View */
           <div className="space-y-2">
             {filteredLogs.map((log, index) => (
               <div key={index} className="flex gap-3 p-2 hover:bg-slate-800/50 rounded">
