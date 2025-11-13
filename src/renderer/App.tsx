@@ -7,8 +7,9 @@ import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
 import AISettings from './components/AISettings';
 import CommunicationSettings from './components/CommunicationSettings';
+import { MapView } from './components/MapView';
 
-type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'ai' | 'communication' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'messages' | 'map' | 'configuration' | 'ai' | 'communication' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -18,6 +19,7 @@ function App() {
   const statistics = useStore(state => state.statistics);
   const logs = useStore(state => state.logs);
   const messages = useStore(state => state.messages);
+  const nodes = useStore(state => state.nodes);
   const bridgeConfig = useStore(state => state.bridgeConfig);
   const bridgeConnected = useStore(state => state.bridgeConnected);
   const autoScanEnabled = useStore(state => state.autoScanEnabled);
@@ -117,6 +119,13 @@ function App() {
             onClick={() => setActiveTab('messages')}
           />
           <NavButton
+            icon="map"
+            label="Map"
+            active={activeTab === 'map'}
+            badge={nodes.filter(n => n.position).length}
+            onClick={() => setActiveTab('map')}
+          />
+          <NavButton
             icon="config"
             label="Configuration"
             active={activeTab === 'configuration'}
@@ -205,6 +214,9 @@ function App() {
             {activeTab === 'messages' && (
               <MessageMonitor messages={messages} radios={radios} />
             )}
+            {activeTab === 'map' && (
+              <MapView nodes={nodes} radios={radios} />
+            )}
             {activeTab === 'configuration' && bridgeConfig && (
               <BridgeConfiguration
                 config={bridgeConfig}
@@ -247,6 +259,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     messages: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    ),
+    map: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
     ),
     config: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />

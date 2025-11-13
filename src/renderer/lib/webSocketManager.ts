@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol, MeshNode } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -13,6 +13,7 @@ export class WebSocketRadioManager {
   private ws: WebSocket | null = null;
   private radios: Map<string, Radio> = new Map();
   private messages: Map<string, Message> = new Map();
+  private nodes: Map<string, MeshNode> = new Map(); // Track all mesh nodes
   private logs: LogEntry[] = [];
   private statistics: Statistics;
   private bridgeConfig: BridgeConfig;
@@ -221,6 +222,24 @@ export class WebSocketRadioManager {
           this.radios.set(data.radioId, radio);
           this.emit('radio-status-change', Array.from(this.radios.values()));
           this.log('debug', `Radio telemetry updated: ${data.radioId}`, 'telemetry');
+        }
+        break;
+
+      case 'node-info':
+        // Node information from mesh network
+        if (data.node) {
+          const node: MeshNode = {
+            ...data.node,
+            lastHeard: new Date(data.node.lastHeard),
+            position: data.node.position ? {
+              ...data.node.position,
+              time: data.node.position.time ? new Date(data.node.position.time) : undefined
+            } : undefined
+          };
+
+          this.nodes.set(node.nodeId, node);
+          this.emit('node-update', node);
+          this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) ${node.position ? 'with location' : 'no location'}`, 'node');
         }
         break;
 
@@ -499,6 +518,14 @@ export class WebSocketRadioManager {
   getMessages(): Message[] {
     return Array.from(this.messages.values())
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+
+  /**
+   * Get all mesh nodes
+   */
+  getNodes(): MeshNode[] {
+    return Array.from(this.nodes.values())
+      .sort((a, b) => b.lastHeard.getTime() - a.lastHeard.getTime());
   }
 
   /**

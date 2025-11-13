@@ -88,6 +88,27 @@ export interface Statistics {
   };
 }
 
+export interface MeshNode {
+  nodeId: string;
+  num: number;
+  longName: string;
+  shortName: string;
+  hwModel: string;
+  lastHeard: Date;
+  snr?: number;
+  position?: {
+    latitude: number;
+    longitude: number;
+    altitude?: number;
+    time?: Date;
+  };
+  batteryLevel?: number;
+  voltage?: number;
+  channelUtilization?: number;
+  airUtilTx?: number;
+  fromRadio: string; // Which radio saw this node
+}
+
 export interface LogEntry {
   id?: string;
   timestamp: Date;

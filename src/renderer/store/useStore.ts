@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MeshNode } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -12,6 +12,7 @@ interface AppStore {
   statistics: Statistics | null;
   logs: LogEntry[];
   messages: Message[];
+  nodes: MeshNode[];
   bridgeConfig: BridgeConfig | null;
 
   // Auto-scan state
@@ -95,6 +96,20 @@ export const useStore = create<AppStore>((set, get) => {
     }));
   });
 
+  manager.on('node-update', (node: MeshNode) => {
+    set(state => {
+      // Update or add node
+      const existingIndex = state.nodes.findIndex(n => n.nodeId === node.nodeId);
+      if (existingIndex >= 0) {
+        const updated = [...state.nodes];
+        updated[existingIndex] = node;
+        return { nodes: updated };
+      } else {
+        return { nodes: [...state.nodes, node] };
+      }
+    });
+  });
+
   manager.on('logs-update', (logs: LogEntry[]) => {
     set({ logs });
   });
@@ -140,6 +155,7 @@ export const useStore = create<AppStore>((set, get) => {
     statistics: null,
     logs: [],
     messages: [],
+    nodes: [],
     bridgeConfig: null,
     autoScanEnabled: false,
     autoScanInterval: 30000, // 30 seconds default

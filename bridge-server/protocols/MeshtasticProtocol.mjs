@@ -162,6 +162,30 @@ export class MeshtasticProtocol extends BaseProtocol {
         this.updateNodeInfo(nodeInfo);
         console.log(`[Meshtastic] Updated our node info:`, nodeInfo);
       }
+
+      // Emit all node data for mesh map
+      if (node.user) {
+        const meshNode = {
+          nodeId: node.user.id || node.num.toString(),
+          num: node.num,
+          longName: node.user.longName || 'Unknown',
+          shortName: node.user.shortName || '????',
+          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown',
+          lastHeard: new Date(node.lastHeard * 1000),
+          snr: node.snr,
+          position: node.position && node.position.latitudeI && node.position.longitudeI ? {
+            latitude: node.position.latitudeI / 1e7,
+            longitude: node.position.longitudeI / 1e7,
+            altitude: node.position.altitude,
+            time: node.position.time ? new Date(node.position.time * 1000) : undefined
+          } : undefined,
+          batteryLevel: node.deviceMetrics?.batteryLevel,
+          voltage: node.deviceMetrics?.voltage,
+          channelUtilization: node.deviceMetrics?.channelUtilization,
+          airUtilTx: node.deviceMetrics?.airUtilTx
+        };
+        this.emit('node', meshNode);
+      }
     });
 
     // Subscribe to channel configuration packets

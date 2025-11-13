@@ -533,6 +533,25 @@ class MeshtasticBridgeServer {
         }
       });
 
+      protocolHandler.on('node', (meshNode) => {
+        console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+
+        // Broadcast node info to clients
+        this.broadcast({
+          type: 'node-info',
+          radioId: radioId,
+          node: {
+            ...meshNode,
+            lastHeard: meshNode.lastHeard.toISOString(),
+            position: meshNode.position ? {
+              ...meshNode.position,
+              time: meshNode.position.time?.toISOString()
+            } : undefined,
+            fromRadio: radioId
+          }
+        });
+      });
+
       protocolHandler.on('config', (config) => {
         console.log(`⚙️  Radio ${radioId} config updated`);
         // Broadcast updated radio info to clients (includes protocolMetadata with loraConfig)
