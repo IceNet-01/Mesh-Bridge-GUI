@@ -240,7 +240,7 @@ loglevel = 4
         # Remove disconnected clients
         self.ws_clients -= disconnected_clients
 
-    async def handle_websocket(self, websocket, path):
+    async def handle_websocket(self, websocket):
         """Handle WebSocket connection from web GUI"""
         client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
         self.log(f"WebSocket client connected: {client_id}")
