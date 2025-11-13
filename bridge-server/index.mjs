@@ -1669,15 +1669,7 @@ class MeshtasticBridgeServer {
 
       console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
 
-      // Send using the protocol handler
-      await radio.protocol.sendMessage(text, channel, { wantAck: false });
-
-      // Increment sent message counter
-      radio.messagesSent = (radio.messagesSent || 0) + 1;
-
-      console.log(`✅ Text sent successfully on channel ${channel}`);
-
-      // Create a message record for the sent message
+      // Create a message record for the sent message IMMEDIATELY (before waiting for send to complete)
       const sentMessage = {
         id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
         timestamp: new Date().toISOString(),
@@ -1691,22 +1683,34 @@ class MeshtasticBridgeServer {
         sent: true, // Mark as sent (not received)
       };
 
-      // Broadcast the sent message to all clients so it appears in message log
+      // Broadcast the sent message to all clients so it appears in message log immediately
       this.broadcast({
         type: 'message',
         message: sentMessage
       });
 
-      // Broadcast updated radio stats
-      this.broadcast({
-        type: 'radio-updated',
-        radio: this.getRadioInfo(radioId)
-      });
+      // Send using the protocol handler (fire and forget - don't wait for completion)
+      // The Meshtastic library's sendText may hang waiting for ACK even with wantAck:false
+      radio.protocol.sendMessage(text, channel, { wantAck: false }).then(() => {
+        console.log(`✅ Text sent successfully on channel ${channel}`);
 
-      ws.send(JSON.stringify({
-        type: 'send-success',
-        radioId: radioId
-      }));
+        // Increment sent message counter
+        radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+        // Broadcast updated radio stats
+        this.broadcast({
+          type: 'radio-updated',
+          radio: this.getRadioInfo(radioId)
+        });
+
+        ws.send(JSON.stringify({
+          type: 'send-success',
+          radioId: radioId
+        }));
+      }).catch((error) => {
+        console.error('❌ Send completion error:', error);
+        // Message was already logged, so just log the error
+      });
 
     } catch (error) {
       console.error('❌ Send failed:', error);
