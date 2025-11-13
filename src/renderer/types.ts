@@ -1,7 +1,16 @@
+// Radio protocol types
+// Note: 'auto' = automatic protocol detection (Meshtastic or RNode)
+// - Meshtastic devices are added as individual radios
+// - RNode devices are automatically added as transports to the global Reticulum Network Stack
+// - Reticulum runs as a single global network with multiple transports (not per-radio)
+// MeshCore (https://meshcore.co.uk/) is a separate mesh product, not yet supported
+export type RadioProtocol = 'meshtastic' | 'auto';
+
 export interface Radio {
   id: string;
   port: string;
   name: string;
+  protocol: RadioProtocol;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   nodeInfo?: {
     nodeId: string;
@@ -18,6 +27,33 @@ export interface Radio {
   messagesReceived: number;
   messagesSent: number;
   errors: number;
+  // Protocol-specific metadata
+  protocolMetadata?: {
+    // Meshtastic-specific
+    firmware?: string;
+    hardware?: string;
+    loraConfig?: {
+      region?: string;
+      modemPreset?: string;
+      hopLimit?: number;
+      txEnabled?: boolean;
+      txPower?: number;
+      channelNum?: number;
+    };
+    // Reticulum-specific (global network)
+    destinationHash?: string;
+    identityHash?: string;
+    // RNode-specific (used as Reticulum transports)
+    // Note: RNode devices are not standalone radios, they are transports for Reticulum
+    frequency?: number;
+    bandwidth?: number;
+    spreadingFactor?: number;
+    codingRate?: number;
+    txPower?: number;
+    // Mesh Core-specific
+    activeProtocols?: string[];
+    routingTable?: any;
+  };
 }
 
 export interface BridgeConfig {
@@ -27,6 +63,11 @@ export interface BridgeConfig {
   autoReconnect: boolean;
   reconnectDelay: number;
   maxReconnectAttempts: number;
+  // Cross-protocol bridging
+  crossProtocolBridgeEnabled?: boolean;
+  meshtasticToReticulum?: boolean;
+  reticulumToMeshtastic?: boolean;
+  meshtasticChannelToReticulumMap?: { [channel: number]: string }; // channel index → destination hash
 }
 
 export interface BridgeRoute {
@@ -41,6 +82,7 @@ export interface Message {
   timestamp: Date;
   fromRadio: string;
   toRadio?: string;
+  protocol: RadioProtocol;
   from: number;
   to: number;
   channel: number;
@@ -133,6 +175,36 @@ export interface DiscordConfig {
 export interface CommunicationConfig {
   email: EmailConfig;
   discord: DiscordConfig;
+}
+
+// Reticulum Network Stack types
+export interface ReticulumStatus {
+  running: boolean;
+  identity?: {
+    hash: string;
+    publicKey?: string;
+  };
+  destination?: {
+    hash: string;
+    name?: string;
+  };
+  transports: ReticulumTransport[];
+}
+
+export interface ReticulumTransport {
+  type: string; // 'rnode', 'udp', 'tcp', 'auto'
+  port: string;
+  connected: boolean;
+  messages_sent: number;
+  messages_received: number;
+  added_at: Date;
+  config?: {
+    frequency?: number;
+    bandwidth?: number;
+    spreadingFactor?: number;
+    codingRate?: number;
+    txPower?: number;
+  };
 }
 
 // Web Serial API Type Extensions

@@ -106,6 +106,7 @@ export class WebSerialRadioManager {
         id: radioId,
         port: `USB:${portInfo.usbVendorId}:${portInfo.usbProductId}`,
         name: `Radio ${this.radios.size + 1}`,
+        protocol: 'meshtastic',
         status: 'connecting',
         messagesReceived: 0,
         messagesSent: 0,
@@ -391,6 +392,7 @@ export class WebSerialRadioManager {
       id: `${Date.now()}-${radioId}-${Math.random()}`,
       timestamp: new Date(),
       fromRadio: radioId,
+      protocol: 'meshtastic',
       from: 0, // Would be extracted from protobuf
       to: 0,   // Would be extracted from protobuf
       channel: 0, // Would be extracted from protobuf

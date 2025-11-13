@@ -10,7 +10,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold text-white mb-2">Radio Management</h2>
-        <p className="text-slate-400">Monitor and manage connected Meshtastic radios via bridge server</p>
+        <p className="text-slate-400">Monitor and manage connected radios (auto-detects protocol)</p>
       </div>
 
       {radios.length === 0 ? (
@@ -21,7 +21,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
             </svg>
           </div>
           <h3 className="text-xl font-bold text-white mb-2">No Radios Connected</h3>
-          <p className="text-slate-400">Click "Connect Radio" to add your first Meshtastic device</p>
+          <p className="text-slate-400">Click "Connect Radio" to add your first radio device</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -54,13 +54,30 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
     error: 'Error',
   };
 
+  const protocolColors = {
+    meshtastic: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    auto: 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+  };
+
+  const protocolLabels = {
+    meshtastic: 'Meshtastic',
+    auto: 'Auto-Detect'
+  };
+
   return (
     <div className={`card p-6 ${statusColors[radio.status]}`}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`status-dot status-${radio.status}`} />
           <div>
-            <h3 className="text-lg font-bold text-white">{radio.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white">{radio.name}</h3>
+              {radio.protocol && (
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${protocolColors[radio.protocol]}`}>
+                  {protocolLabels[radio.protocol]}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-400">{radio.port}</p>
           </div>
         </div>
@@ -102,6 +119,38 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
               <p className="text-white font-medium">{radio.nodeInfo.hwModel}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Meshtastic-specific LoRa Configuration */}
+      {radio.protocol === 'meshtastic' && radio.protocolMetadata?.loraConfig && (
+        <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <p className="text-blue-300 text-xs font-semibold mb-2 uppercase">LoRa Configuration</p>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <p className="text-slate-400">Region</p>
+              <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.region}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">Modem Preset</p>
+              <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.modemPreset}</p>
+            </div>
+            {radio.protocolMetadata.loraConfig.txPower !== undefined && (
+              <div>
+                <p className="text-slate-400">TX Power</p>
+                <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.txPower} dBm</p>
+              </div>
+            )}
+            {radio.protocolMetadata.loraConfig.hopLimit !== undefined && (
+              <div>
+                <p className="text-slate-400">Hop Limit</p>
+                <p className="text-white font-medium">{radio.protocolMetadata.loraConfig.hopLimit}</p>
+              </div>
+            )}
+          </div>
+          {radio.protocolMetadata.firmware && (
+            <p className="text-xs text-slate-500 mt-2">Firmware: {radio.protocolMetadata.firmware}</p>
+          )}
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol, ReticulumStatus } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -209,6 +209,7 @@ export class WebSocketRadioManager {
           id: data.message.id,
           timestamp: new Date(data.message.timestamp),
           fromRadio: data.message.radioId,
+          protocol: data.message.protocol || 'meshtastic',
           from: data.message.from,
           to: data.message.to,
           channel: data.message.channel,
@@ -333,6 +334,37 @@ export class WebSocketRadioManager {
         }
         break;
 
+      case 'reticulum-status':
+        // Reticulum Network Stack status update
+        this.emit('reticulum-status-update', data.status);
+        if (data.status.running) {
+          this.log('info', `🌐 Reticulum Network Stack running (Identity: ${data.status.identity?.hash?.substring(0, 16) || 'pending'}...)`);
+        } else {
+          this.log('warn', '🌐 Reticulum Network Stack offline');
+        }
+        break;
+
+      case 'reticulum-transports-updated':
+        // Reticulum transports updated (RNode devices added/removed)
+        this.emit('reticulum-transports-updated', data.transports);
+        this.log('info', `🌐 Reticulum transports updated: ${data.transports.length} transport(s)`);
+        break;
+
+      case 'reticulum-transport-error':
+        // Reticulum transport error
+        this.log('error', `🌐 Reticulum transport error on ${data.port}: ${data.error}`);
+        break;
+
+      case 'reticulum-error':
+        // Reticulum general error
+        this.log('error', `🌐 Reticulum error: ${data.error}`);
+        break;
+
+      case 'rnode-added-to-reticulum':
+        // RNode device was detected and added to Reticulum as transport
+        this.log('info', `🔷 RNode device on ${data.port} added to Reticulum as transport`);
+        break;
+
       default:
         this.log('debug', `Unknown message type: ${data.type}`);
     }
@@ -368,12 +400,12 @@ export class WebSocketRadioManager {
   /**
    * Connect to a radio via bridge server
    */
-  async connectRadio(portPath: string): Promise<{ success: boolean; radioId?: string; error?: string }> {
+  async connectRadio(portPath: string, protocol: RadioProtocol = 'meshtastic'): Promise<{ success: boolean; radioId?: string; error?: string }> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return { success: false, error: 'Not connected to bridge server' };
     }
 
-    this.log('info', `Requesting radio connection to ${portPath}...`);
+    this.log('info', `Requesting radio connection to ${portPath} using ${protocol} protocol...`);
 
     // Set up listener BEFORE sending request to avoid race condition
     return new Promise((resolve) => {
@@ -396,7 +428,8 @@ export class WebSocketRadioManager {
       // Send request AFTER listener is set up
       this.ws!.send(JSON.stringify({
         type: 'connect',
-        port: portPath
+        port: portPath,
+        protocol: protocol
       }));
     });
   }

@@ -23,6 +23,9 @@ import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import nodemailer from 'nodemailer';
+import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
+import { ReticulumProtocol } from './protocols/ReticulumProtocol.mjs';
+import { RNodeDetectedError } from './protocols/AutoDetectProtocol.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +41,10 @@ class MeshtasticBridgeServer {
     this.maxHistorySize = 500;
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
+
+    // Reticulum Network Stack (singleton, auto-started)
+    this.reticulum = null; // Will be initialized in start()
+    this.reticulumEnabled = true; // Auto-start Reticulum on server startup
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -106,6 +113,16 @@ class MeshtasticBridgeServer {
     this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
     this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
 
+    // ===== CROSS-PROTOCOL BRIDGE CONFIGURATION =====
+    // Bridge messages between different protocol radios (e.g., Meshtastic → Reticulum)
+    this.crossProtocolBridgeEnabled = false;   // Enable/disable cross-protocol bridging
+    this.meshtasticToReticulum = false;        // Forward Meshtastic messages to Reticulum
+    this.reticulumToMeshtastic = false;        // Forward Reticulum messages to Meshtastic
+    // Map Meshtastic channels to Reticulum destination hashes
+    // Example: { 0: "abc123...", 1: "def456..." }
+    // Channel 0 on Meshtastic → destination abc123... on Reticulum
+    this.meshtasticChannelToReticulumMap = {}; // Channel index → destination hash
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -124,6 +141,7 @@ class MeshtasticBridgeServer {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
     console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Reticulum Network Stack: ${this.reticulumEnabled ? 'ENABLED (auto-start)' : 'DISABLED'}`);
     console.log('');
   }
 
@@ -209,7 +227,196 @@ class MeshtasticBridgeServer {
 
       console.log('📻 Ready to connect radios...');
       console.log('');
+
+      // Auto-start Reticulum Network Stack
+      if (this.reticulumEnabled) {
+        this.startReticulum().catch(error => {
+          console.error('Failed to auto-start Reticulum:', error);
+        });
+      }
     });
+  }
+
+  /**
+   * Start the Reticulum Network Stack
+   */
+  async startReticulum() {
+    try {
+      console.log('');
+      console.log('🌐 Starting Reticulum Network Stack...');
+
+      // Get singleton instance
+      this.reticulum = ReticulumProtocol.getInstance();
+
+      // Set up event listeners for Reticulum
+      this.setupReticulumEventListeners();
+
+      // Start Reticulum
+      await this.reticulum.start();
+
+      console.log('✅ Reticulum Network Stack started successfully');
+      console.log(`   Identity: ${this.reticulum.identity?.hash || 'Pending...'}`);
+      console.log(`   Destination: ${this.reticulum.destination?.hash || 'Pending...'}`);
+
+      // Broadcast Reticulum status to all clients
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: true,
+          identity: this.reticulum.identity,
+          destination: this.reticulum.destination,
+          transports: this.reticulum.getTransports()
+        }
+      });
+
+      console.log('');
+    } catch (error) {
+      console.error('❌ Failed to start Reticulum Network Stack:', error);
+      console.error('   Reticulum will remain offline. RNode devices will not be added as transports.');
+      console.log('');
+      this.reticulumEnabled = false;
+    }
+  }
+
+  /**
+   * Set up event listeners for Reticulum events
+   */
+  setupReticulumEventListeners() {
+    if (!this.reticulum) return;
+
+    // Handle incoming Reticulum messages
+    this.reticulum.on('message', (packet) => {
+      this.handleReticulumMessage(packet);
+    });
+
+    // Handle Reticulum initialization complete
+    this.reticulum.on('initialized', (data) => {
+      console.log(`[Reticulum] Initialized with identity: ${data.identity.hash}`);
+
+      // Broadcast updated status
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: true,
+          identity: data.identity,
+          destination: data.destination,
+          transports: this.reticulum.getTransports()
+        }
+      });
+    });
+
+    // Handle transport added
+    this.reticulum.on('transport_added', (data) => {
+      console.log(`[Reticulum] Transport added: ${data.type} ${data.port}`);
+
+      // Broadcast transport list update
+      this.broadcast({
+        type: 'reticulum-transports-updated',
+        transports: this.reticulum.getTransports()
+      });
+    });
+
+    // Handle transport removed
+    this.reticulum.on('transport_removed', (data) => {
+      console.log(`[Reticulum] Transport removed: ${data.type} ${data.port}`);
+
+      // Broadcast transport list update
+      this.broadcast({
+        type: 'reticulum-transports-updated',
+        transports: this.reticulum.getTransports()
+      });
+    });
+
+    // Handle transport errors
+    this.reticulum.on('transport_error', (data) => {
+      console.error(`[Reticulum] Transport error on ${data.port}: ${data.error}`);
+
+      // Broadcast error to clients
+      this.broadcast({
+        type: 'reticulum-transport-error',
+        port: data.port,
+        error: data.error
+      });
+    });
+
+    // Handle Reticulum disconnection
+    this.reticulum.on('disconnected', () => {
+      console.log('[Reticulum] Disconnected');
+
+      // Broadcast status update
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: false
+        }
+      });
+    });
+
+    // Handle Reticulum errors
+    this.reticulum.on('error', (error) => {
+      console.error('[Reticulum] Error:', error);
+
+      // Broadcast error to clients
+      this.broadcast({
+        type: 'reticulum-error',
+        error: error.message
+      });
+    });
+  }
+
+  /**
+   * Handle incoming message from Reticulum network
+   */
+  handleReticulumMessage(packet) {
+    try {
+      console.log(`📨 Reticulum message from ${packet.from.substring(0, 16)}...: "${packet.text}"`);
+
+      // Check for duplicate message
+      if (this.seenMessageIds.has(packet.id)) {
+        console.log(`🔁 Duplicate Reticulum message ${packet.id} ignored`);
+        return;
+      }
+
+      // Mark message as seen
+      this.seenMessageIds.add(packet.id);
+
+      // Limit size of seen messages set
+      if (this.seenMessageIds.size > this.maxSeenMessages) {
+        const firstId = this.seenMessageIds.values().next().value;
+        this.seenMessageIds.delete(firstId);
+      }
+
+      const message = {
+        id: packet.id,
+        timestamp: packet.timestamp,
+        from: packet.from,
+        to: packet.to,
+        text: packet.text,
+        protocol: 'reticulum',
+        rssi: packet.rssi,
+        snr: packet.snr,
+        radioId: 'reticulum-global',
+        type: 'text'
+      };
+
+      // Add to history
+      this.messageHistory.push(message);
+      if (this.messageHistory.length > this.maxHistorySize) {
+        this.messageHistory.shift();
+      }
+
+      // Broadcast to all connected clients
+      this.broadcast({
+        type: 'message',
+        message: message
+      });
+
+      // TODO: Cross-protocol forwarding to Meshtastic if enabled
+      // Will implement in future when bridging is ready
+
+    } catch (error) {
+      console.error('❌ Error handling Reticulum message:', error);
+    }
   }
 
   /**
@@ -286,7 +493,7 @@ class MeshtasticBridgeServer {
           break;
 
         case 'connect':
-          await this.connectRadio(ws, message.port);
+          await this.connectRadio(ws, message.port, message.protocol || 'meshtastic');
           break;
 
         case 'disconnect':
@@ -412,105 +619,126 @@ class MeshtasticBridgeServer {
   /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
    */
-  async connectRadio(ws, portPath) {
+  async connectRadio(ws, portPath, protocol = 'meshtastic') {
     try {
-      console.log(`📻 Connecting to radio on ${portPath}...`);
+      console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
+
+      // Check if a radio already exists for this port
+      for (const [existingId, existingRadio] of this.radios.entries()) {
+        if (existingRadio.port === portPath) {
+          console.log(`ℹ️  Radio already connected to ${portPath} (${existingId})`);
+          return; // Don't create duplicate
+        }
+      }
 
       const radioId = `radio-${Date.now()}`;
 
-      // Create serial transport using the static create method
-      const transport = await TransportNodeSerial.create(portPath, 115200);
-      console.log(`✅ Transport connected for ${radioId}`);
+      // Create protocol handler
+      const protocolHandler = createProtocol(protocol, radioId, portPath);
 
-      // Create Meshtastic device
-      const device = new MeshDevice(transport);
-      console.log(`📻 MeshDevice created for ${radioId}, configuring...`);
-
-      // Subscribe to connection status events BEFORE configuring
-      device.events.onDeviceStatus.subscribe((status) => {
-        console.log(`📊 Radio ${radioId} status:`, status);
-
-        // Handle disconnection
-        if (status === 2) { // DeviceDisconnected
-          console.log(`📻 Radio ${radioId} disconnected, cleaning up...`);
-          this.handleRadioDisconnect(radioId);
-        }
+      // Subscribe to protocol events
+      protocolHandler.on('message', (packet) => {
+        this.handleMessagePacket(radioId, portPath, packet, protocolHandler.getProtocolName());
       });
 
-      // Subscribe to ALL mesh packets to see what's coming through
-      device.events.onMeshPacket.subscribe((packet) => {
-        console.log(`📦 [DEBUG] Raw MeshPacket from ${radioId}:`, {
-          from: packet.from,
-          to: packet.to,
-          channel: packet.channel,
-          decoded: packet.decoded ? {
-            portnum: packet.decoded.portnum,
-            payloadVariant: packet.decoded.payloadVariant
-          } : null
-        });
-      });
-
-      device.events.onMessagePacket.subscribe((packet) => {
-        console.log(`💬 [DEBUG] onMessagePacket fired for ${radioId}!`);
-        this.handleMessagePacket(radioId, portPath, packet);
-      });
-
-      device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
-        console.log(`🆔 Radio ${radioId} my node info:`, myNodeInfo);
-        // Store our own node number to prevent forwarding loops
+      protocolHandler.on('nodeInfo', (nodeInfo) => {
+        console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
         const radio = this.radios.get(radioId);
         if (radio) {
-          radio.nodeNum = myNodeInfo.myNodeNum;
-          console.log(`✅ Radio ${radioId} node number set to ${myNodeInfo.myNodeNum}`);
-        }
-      });
+          radio.nodeInfo = nodeInfo;
+          radio.nodeNum = parseInt(nodeInfo.nodeId);
+          console.log(`✅ Radio ${radioId} node info updated`);
 
-      device.events.onNodeInfoPacket.subscribe((node) => {
-        console.log(`ℹ️  Radio ${radioId} node info:`, node);
-      });
-
-      // Subscribe to channel configuration packets to track which channels are configured
-      device.events.onChannelPacket.subscribe((channelPacket) => {
-        const radio = this.radios.get(radioId);
-        if (radio) {
-          if (!radio.channels) {
-            radio.channels = new Map();
-          }
-          const channelInfo = {
-            index: channelPacket.index,
-            role: channelPacket.role,
-            name: channelPacket.settings?.name || '',
-            psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
-          };
-          radio.channels.set(channelPacket.index, channelInfo);
-          console.log(`🔐 Radio ${radioId} channel ${channelPacket.index}:`, {
-            name: channelInfo.name || '(unnamed)',
-            role: channelInfo.role === 1 ? 'PRIMARY' : 'SECONDARY',
-            pskLength: channelInfo.psk.length
+          // Broadcast updated radio info to clients
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
           });
         }
       });
 
-      // Store radio reference BEFORE configure() so onMyNodeInfo can find it
+      protocolHandler.on('channels', (channels) => {
+        console.log(`🔐 Radio ${radioId} channels updated: ${channels.length} channels`);
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          // Convert array to Map for compatibility
+          radio.channels = new Map();
+          channels.forEach(ch => {
+            radio.channels.set(ch.index, ch);
+          });
+
+          // Log channel configuration
+          console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
+          channels.forEach(ch => {
+            console.log(`   [${ch.index}] "${ch.name || '(unnamed)'}" PSK: ${ch.psk ? ch.psk.substring(0, 8) + '...' : '(none)'}`);
+          });
+          console.log(`============================================================\n`);
+
+          // Broadcast updated radio info to clients
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
+        }
+      });
+
+      protocolHandler.on('telemetry', (telemetry) => {
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          radio.telemetry = telemetry;
+
+          // Broadcast telemetry to clients
+          this.broadcast({
+            type: 'radio-telemetry',
+            radioId: radioId,
+            telemetry: telemetry
+          });
+        }
+      });
+
+      protocolHandler.on('config', (config) => {
+        console.log(`⚙️  Radio ${radioId} config updated`);
+        // Broadcast updated radio info to clients (includes protocolMetadata with loraConfig)
+        this.broadcast({
+          type: 'radio-updated',
+          radio: this.getRadioInfo(radioId)
+        });
+      });
+
+      protocolHandler.on('error', (error) => {
+        console.error(`❌ Radio ${radioId} error:`, error);
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          radio.errors = (radio.errors || 0) + 1;
+        }
+      });
+
+      // Store radio reference
       this.radios.set(radioId, {
-        device,
-        transport,
+        protocol: protocolHandler,
+        protocolType: protocol,
         port: portPath,
-        nodeNum: null, // Will be set when we receive myNodeInfo (during configure)
-        channels: new Map(), // Will be populated when channel packets arrive during configure()
+        nodeNum: null,
+        nodeInfo: null,
+        channels: new Map(),
+        telemetry: {},
+        messagesReceived: 0,
+        messagesSent: 0,
+        errors: 0,
         info: {
           port: portPath,
           connectedAt: new Date()
         }
       });
 
-      // Notify clients IMMEDIATELY that radio is connecting
+      // Notify clients that radio is connecting
       this.broadcast({
         type: 'radio-connecting',
         radio: {
           id: radioId,
           name: `Radio ${radioId.substring(0, 8)}`,
           port: portPath,
+          protocol: protocol,
           status: 'connecting',
           messagesReceived: 0,
           messagesSent: 0,
@@ -522,56 +750,108 @@ class MeshtasticBridgeServer {
         }
       });
 
-      // Configure the device (required for message flow)
-      console.log(`⚙️  Configuring radio ${radioId}...`);
-      await device.configure();
-      console.log(`✅ Radio ${radioId} configured successfully`);
+      // Connect the protocol handler
+      console.log(`⚙️  Connecting radio ${radioId}...`);
+      await protocolHandler.connect();
+      console.log(`✅ Radio ${radioId} connected successfully`);
 
-      // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
-      device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
-      console.log(`💓 Heartbeat enabled for radio ${radioId}`);
-
-      console.log(`✅ Successfully connected to radio ${radioId} on ${portPath}`);
-
-      // Log all configured channels after configuration completes
-      const radio = this.radios.get(radioId);
-      console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
-      if (radio && radio.channels && radio.channels.size > 0) {
-        radio.channels.forEach((ch, idx) => {
-          const roleName = ch.role === 1 ? 'PRIMARY' : ch.role === 0 ? 'SECONDARY' : 'DISABLED';
-          const pskDisplay = ch.psk ? `${ch.psk.substring(0, 8)}...` : '(none)';
-          console.log(`   [${idx}] "${ch.name || '(unnamed)'}" [${roleName}] PSK: ${pskDisplay}`);
-        });
-      } else {
-        console.log(`   ⚠️  No channels configured yet (this is unusual)`);
-      }
-      console.log(`============================================================\n`);
-
-      // Notify all clients AFTER configuration is complete
+      // Notify all clients that connection is complete
       this.broadcast({
         type: 'radio-connected',
-        radio: {
-          id: radioId,
-          name: `Radio ${radioId.substring(0, 8)}`,
-          port: portPath,
-          status: 'connected',
-          messagesReceived: 0,
-          messagesSent: 0,
-          errors: 0,
-          info: {
-            port: portPath,
-            connectedAt: new Date()
-          }
-        }
+        radio: this.getRadioInfo(radioId)
       });
 
     } catch (error) {
+      // Special handling for RNode devices
+      if (error instanceof RNodeDetectedError) {
+        console.log(`🔷 RNode detected on ${portPath}, adding as Reticulum transport...`);
+
+        // Check if Reticulum is running
+        if (!this.reticulum || !this.reticulum.running) {
+          console.error('❌ Reticulum not running, cannot add RNode transport');
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: 'RNode detected but Reticulum is not running. Please ensure Reticulum starts successfully.'
+          }));
+          return;
+        }
+
+        try {
+          // Add RNode as transport to Reticulum
+          await this.reticulum.addRNodeTransport(error.portPath, error.config);
+
+          console.log(`✅ RNode on ${portPath} added to Reticulum as transport`);
+
+          // Notify client that RNode was added
+          ws.send(JSON.stringify({
+            type: 'rnode-added-to-reticulum',
+            port: error.portPath,
+            message: 'RNode device detected and added to Reticulum Network Stack'
+          }));
+
+          // Broadcast updated Reticulum status
+          this.broadcast({
+            type: 'reticulum-transports-updated',
+            transports: this.reticulum.getTransports()
+          });
+
+        } catch (addError) {
+          console.error(`❌ Failed to add RNode to Reticulum:`, addError);
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: `RNode detected but failed to add to Reticulum: ${addError.message}`
+          }));
+        }
+
+        return; // Don't continue with normal error handling
+      }
+
+      // Normal error handling for non-RNode errors
       console.error(`❌ Failed to connect to ${portPath}:`, error);
+
+      // Clean up any radio entry that was created before the failure
+      // Find radio with this port and remove it
+      for (const [id, radio] of this.radios.entries()) {
+        if (radio.port === portPath) {
+          console.log(`🧹 Cleaning up failed radio ${id}`);
+          this.radios.delete(id);
+
+          // Notify clients of failure/disconnection
+          this.broadcast({
+            type: 'radio-disconnected',
+            radioId: id
+          });
+        }
+      }
+
       ws.send(JSON.stringify({
         type: 'error',
         error: `Connection failed: ${error.message}`
       }));
     }
+  }
+
+  /**
+   * Get radio information for broadcasting to clients
+   */
+  getRadioInfo(radioId) {
+    const radio = this.radios.get(radioId);
+    if (!radio) return null;
+
+    return {
+      id: radioId,
+      name: radio.nodeInfo?.longName || `Radio ${radioId.substring(0, 8)}`,
+      port: radio.port,
+      protocol: radio.protocol?.getProtocolName() || radio.protocolType,
+      status: 'connected',
+      nodeInfo: radio.nodeInfo,
+      messagesReceived: radio.messagesReceived,
+      messagesSent: radio.messagesSent,
+      errors: radio.errors,
+      ...(radio.telemetry || {}),
+      protocolMetadata: radio.protocol?.getProtocolMetadata(),
+      info: radio.info
+    };
   }
 
   /**
@@ -600,24 +880,21 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Handle message packets from radio (using official library)
-   * PacketMetadata<string> structure: { id, rxTime, type, from, to, channel, data }
+   * Handle message packets from radio (protocol-agnostic)
+   * Packet is normalized by protocol handler
    */
-  handleMessagePacket(radioId, portPath, packet) {
+  handleMessagePacket(radioId, portPath, packet, protocol) {
     try {
-      console.log(`📨 Message packet from ${radioId}:`, {
+      console.log(`📨 Message packet from ${radioId} (${protocol}):`, {
         id: packet.id,
         from: packet.from,
         to: packet.to,
         channel: packet.channel,
-        type: packet.type,
-        dataType: typeof packet.data,
-        data: packet.data
+        text: packet.text
       });
 
-      // The @meshtastic/core library already decodes text messages
-      // packet.data contains the decoded string for text messages
-      const text = packet.data;
+      // Extract text from normalized packet
+      const text = packet.text;
 
       if (text && typeof text === 'string' && text.length > 0) {
         // ===== COMMAND DETECTION =====
@@ -655,13 +932,14 @@ class MeshtasticBridgeServer {
 
         const message = {
           id: packet.id || `msg-${Date.now()}`,
-          timestamp: packet.rxTime instanceof Date ? packet.rxTime : new Date(),
+          timestamp: packet.timestamp instanceof Date ? packet.timestamp : new Date(),
           from: packet.from,
           to: packet.to,
           channel: packet.channel || 0,
           text: text,
           radioId: radioId,
           portPath: portPath,
+          protocol: protocol,
           type: packet.type,
           forwarded: isFromOurBridgeRadio // Mark if this was forwarded by us
         };
@@ -706,11 +984,10 @@ class MeshtasticBridgeServer {
       // Check rate limiting
       if (this.isRateLimited(fromNode)) {
         console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
-        await radio.device.sendText(
+        await radio.protocol.sendMessage(
           `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
-          'broadcast',
-          false,
-          channel
+          channel,
+          { wantAck: false }
         );
         return;
       }
@@ -726,11 +1003,10 @@ class MeshtasticBridgeServer {
       // Check if command is enabled
       if (!this.enabledCommands.includes(cmd)) {
         console.log(`⚠️  Command not enabled: ${cmd}`);
-        await radio.device.sendText(
+        await radio.protocol.sendMessage(
           `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
-          'broadcast',
-          false,
-          channel
+          channel,
+          { wantAck: false }
         );
         return;
       }
@@ -790,7 +1066,7 @@ class MeshtasticBridgeServer {
 
       if (response) {
         console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
-        await radio.device.sendText(response, 'broadcast', false, channel);
+        await radio.protocol.sendMessage(response, channel, { wantAck: false });
       }
 
     } catch (error) {
@@ -1432,7 +1708,7 @@ class MeshtasticBridgeServer {
 
         const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
           try {
-            await radio.device.sendText(text, "broadcast", false, targetChannel);
+            await radio.protocol.sendMessage(text, targetChannel, { wantAck: false });
             console.log(`✅ Forwarded to ${targetRadioId} on channel ${targetChannel}`);
             return { radioId: targetRadioId, success: true };
           } catch (error) {
@@ -1455,8 +1731,23 @@ class MeshtasticBridgeServer {
       }
 
       const sourceChannel = sourceRadio.channels?.get(channel);
+
+      // If we don't have channel config yet, fall back to simple broadcast on same channel number
       if (!sourceChannel) {
-        console.warn(`⚠️  Source radio ${sourceRadioId} has no channel ${channel} configured`);
+        console.log(`⚠️  Channel ${channel} config not yet received, using simple broadcast mode`);
+
+        // Simple broadcast: send to same channel number on all other radios
+        const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
+          try {
+            console.log(`  📤 Forwarding to ${targetRadioId} on channel ${channel}`);
+            await radio.protocol.sendMessage(text, channel);
+            console.log(`  ✅ Forwarded to ${targetRadioId}`);
+          } catch (error) {
+            console.error(`  ❌ Failed to forward to ${targetRadioId}:`, error.message);
+          }
+        });
+
+        await Promise.allSettled(forwardPromises);
         return;
       }
 
@@ -1468,6 +1759,44 @@ class MeshtasticBridgeServer {
       // Forward to each radio that has matching channel configuration
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
         try {
+          // ===== CROSS-PROTOCOL BRIDGING =====
+          // Check if source and target are different protocols
+          const sourceProtocol = sourceRadio.protocolType;
+          const targetProtocol = radio.protocolType;
+
+          if (sourceProtocol !== targetProtocol && this.crossProtocolBridgeEnabled) {
+            console.log(`🌉 Cross-protocol bridge: ${sourceProtocol} → ${targetProtocol}`);
+
+            // Meshtastic → Reticulum
+            if (sourceProtocol === 'meshtastic' && targetProtocol === 'reticulum' && this.meshtasticToReticulum) {
+              const destHash = this.meshtasticChannelToReticulumMap[channel];
+              if (destHash) {
+                console.log(`  🔀 Forwarding Meshtastic ch${channel} → Reticulum dest ${destHash.substring(0, 16)}...`);
+                await radio.protocol.sendMessage(text, destHash, { wantAck: false });
+                console.log(`  ✅ Forwarded to Reticulum destination`);
+                return { radioId: targetRadioId, success: true, crossProtocol: true };
+              } else {
+                console.log(`  ⚠️  No Reticulum destination mapped for Meshtastic channel ${channel}`);
+                return { radioId: targetRadioId, success: false, reason: 'no_destination_mapping' };
+              }
+            }
+
+            // Reticulum → Meshtastic
+            if (sourceProtocol === 'reticulum' && targetProtocol === 'meshtastic' && this.reticulumToMeshtastic) {
+              // For Reticulum → Meshtastic, use channel 0 by default (or could map back)
+              const targetChannel = 0;
+              console.log(`  🔀 Forwarding Reticulum → Meshtastic ch${targetChannel}`);
+              await radio.protocol.sendMessage(text, targetChannel, { wantAck: false });
+              console.log(`  ✅ Forwarded to Meshtastic channel ${targetChannel}`);
+              return { radioId: targetRadioId, success: true, crossProtocol: true };
+            }
+
+            // Other cross-protocol combinations not yet supported
+            console.log(`  ⚠️  Cross-protocol ${sourceProtocol} → ${targetProtocol} not configured`);
+            return { radioId: targetRadioId, success: false, reason: 'cross_protocol_not_configured' };
+          }
+
+          // ===== SAME-PROTOCOL FORWARDING (existing logic) =====
           // Search ALL channels on target radio for matching name+PSK
           let matchingChannelIndex = null;
           let matchingChannel = null;
@@ -1499,7 +1828,7 @@ class MeshtasticBridgeServer {
             console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
-          await radio.device.sendText(text, "broadcast", false, matchingChannelIndex);
+          await radio.protocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
           console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
@@ -1524,7 +1853,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Send text message via a radio
+   * Send text message via a radio (protocol-agnostic)
    */
   async sendText(ws, radioId, text, channel = 0) {
     try {
@@ -1537,14 +1866,15 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📤 Sending text via ${radioId}: "${text}" on channel ${channel}`);
+      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
 
-      // Send using the device
-      // sendText(text, destination, wantAck, channel)
-      // Use "broadcast" as destination to broadcast on the specified channel
-      await radio.device.sendText(text, "broadcast", false, channel);
+      // Send using the protocol handler
+      await radio.protocol.sendMessage(text, channel, { wantAck: false });
 
-      console.log(`✅ Text broadcast successfully on channel ${channel}`);
+      // Increment sent message counter
+      radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+      console.log(`✅ Text sent successfully on channel ${channel}`);
 
       ws.send(JSON.stringify({
         type: 'send-success',
@@ -1561,7 +1891,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Disconnect a radio
+   * Disconnect a radio (protocol-agnostic)
    */
   async disconnectRadio(ws, radioId) {
     try {
@@ -1574,8 +1904,13 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📻 Disconnecting radio ${radioId}...`);
-      await radio.transport.disconnect();
+      console.log(`📻 Disconnecting radio ${radioId} (${radio.protocolType})...`);
+
+      // Disconnect using protocol handler
+      if (radio.protocol) {
+        await radio.protocol.disconnect();
+      }
+
       this.radios.delete(radioId);
 
       console.log(`✅ Disconnected radio ${radioId}`);
@@ -1798,16 +2133,18 @@ class MeshtasticBridgeServer {
 
       ws.send(JSON.stringify({
         type: 'ai-status',
-        running: running,
-        version: version,
-        endpoint: this.aiEndpoint
+        status: {
+          available: running,
+          version: version
+        }
       }));
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'ai-status',
-        running: false,
-        error: error.message,
-        endpoint: this.aiEndpoint
+        status: {
+          available: false,
+          error: error.message
+        }
       }));
     }
   }
@@ -2060,6 +2397,16 @@ class MeshtasticBridgeServer {
    */
   async shutdown() {
     console.log('\n🛑 Shutting down bridge server...');
+
+    // Stop Reticulum Network Stack
+    if (this.reticulum && this.reticulum.running) {
+      try {
+        await this.reticulum.stop();
+        console.log('🌐 Reticulum Network Stack stopped');
+      } catch (error) {
+        console.error('Error stopping Reticulum:', error);
+      }
+    }
 
     // Disconnect all radios
     for (const [radioId, radio] of this.radios.entries()) {
