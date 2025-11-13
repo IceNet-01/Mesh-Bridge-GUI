@@ -424,7 +424,7 @@ class MeshtasticBridgeServer {
 
       // Subscribe to protocol events
       protocolHandler.on('message', (packet) => {
-        this.handleMessagePacket(radioId, portPath, packet, protocol);
+        this.handleMessagePacket(radioId, portPath, packet, protocolHandler.getProtocolName());
       });
 
       protocolHandler.on('nodeInfo', (nodeInfo) => {
