@@ -358,21 +358,45 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error('Device not fully configured yet. Please wait a few seconds and try again.');
       }
 
+      // Validate channel exists
+      const availableChannels = Array.from(this.channelMap.keys());
+      console.log(`[Meshtastic] Available channels:`, availableChannels);
+      console.log(`[Meshtastic] Requested channel:`, channel);
+
+      if (!this.channelMap.has(channel)) {
+        throw new Error(`Channel ${channel} not found. Available channels: ${availableChannels.join(', ')}`);
+      }
+
+      const channelConfig = this.channelMap.get(channel);
+      console.log(`[Meshtastic] Channel ${channel} config:`, {
+        name: channelConfig.name,
+        role: channelConfig.role,
+        hasPSK: !!channelConfig.psk && channelConfig.psk.length > 0
+      });
+
       const { wantAck = false } = options;
 
-      console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel}`);
+      console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel} (broadcast)`);
+      console.log(`[Meshtastic] Send parameters:`, {
+        text,
+        destination: 'broadcast',
+        wantAck,
+        channel
+      });
 
       // Send using the device
       // sendText(text, destination, wantAck, channel)
       // Use "broadcast" as destination to broadcast on the specified channel
       const result = await this.device.sendText(text, "broadcast", wantAck, channel);
 
+      console.log(`[Meshtastic] sendText result:`, result);
+
       this.stats.messagesSent++;
-      console.log(`[Meshtastic] Text broadcast successfully on channel ${channel}`);
+      console.log(`[Meshtastic] ✅ Text broadcast successfully on channel ${channel}`);
 
       return true;
     } catch (error) {
-      console.error('[Meshtastic] Error sending message:', error);
+      console.error('[Meshtastic] ❌ Error sending message:', error);
       console.error('[Meshtastic] Error type:', typeof error);
       console.error('[Meshtastic] Error constructor:', error?.constructor?.name);
 
