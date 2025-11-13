@@ -47,6 +47,13 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] Heartbeat enabled`);
 
       this.connected = true;
+
+      // Explicitly fetch and emit node info from the device after configuration
+      // This ensures we get the data even if events don't fire properly
+      setTimeout(() => {
+        this.fetchAndEmitDeviceInfo();
+      }, 2000); // Wait 2 seconds for device to fully populate
+
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
       return true;
@@ -189,6 +196,81 @@ export class MeshtasticProtocol extends BaseProtocol {
         this.handleError(error);
       }
     });
+  }
+
+  /**
+   * Fetch and emit device info from the device object
+   * This is called after configure() to ensure we get node info and channels
+   * even if the event subscriptions don't fire properly
+   */
+  fetchAndEmitDeviceInfo() {
+    try {
+      console.log(`[Meshtastic] Fetching device info from device object...`);
+
+      // Get node info from device
+      if (this.device && this.device.nodes) {
+        const myNode = this.device.nodes.get(this.device.nodeNum);
+        if (myNode) {
+          this.myNodeNum = this.device.nodeNum;
+          const nodeInfo = {
+            nodeId: this.device.nodeNum?.toString() || 'unknown',
+            longName: myNode.user?.longName || 'Unknown',
+            shortName: myNode.user?.shortName || '????',
+            hwModel: myNode.user?.hwModel || 'Unknown'
+          };
+          this.updateNodeInfo(nodeInfo);
+          console.log(`[Meshtastic] Node info fetched:`, nodeInfo);
+        } else {
+          console.log(`[Meshtastic] My node not found in device.nodes`);
+        }
+      }
+
+      // Get channels from device
+      if (this.device && this.device.channels) {
+        console.log(`[Meshtastic] Found ${this.device.channels.length} channels in device object`);
+        this.device.channels.forEach((channel, index) => {
+          if (channel && channel.settings) {
+            const channelInfo = {
+              index: index,
+              role: channel.role,
+              name: channel.settings.name || '',
+              psk: channel.settings.psk ? Buffer.from(channel.settings.psk).toString('base64') : ''
+            };
+            this.channelMap.set(index, channelInfo);
+            console.log(`[Meshtastic] Channel ${index}: "${channelInfo.name || '(unnamed)'}"`);
+          }
+        });
+
+        // Emit channels
+        const channelsArray = Array.from(this.channelMap.values());
+        if (channelsArray.length > 0) {
+          this.updateChannels(channelsArray);
+          console.log(`[Meshtastic] Emitted ${channelsArray.length} channels`);
+        }
+      }
+
+      // Get config from device
+      if (this.device && this.device.config && this.device.config.lora) {
+        const lora = this.device.config.lora;
+        this.loraConfig = {
+          region: lora.region,
+          modemPreset: lora.modemPreset,
+          hopLimit: lora.hopLimit,
+          txEnabled: lora.txEnabled,
+          txPower: lora.txPower,
+          channelNum: lora.channelNum
+        };
+        console.log(`[Meshtastic] LoRa config fetched:`, {
+          region: this.getRegionName(this.loraConfig.region),
+          modemPreset: this.getModemPresetName(this.loraConfig.modemPreset)
+        });
+        this.emit('config', this.loraConfig);
+      }
+
+      console.log(`[Meshtastic] Device info fetch complete`);
+    } catch (error) {
+      console.error('[Meshtastic] Error fetching device info:', error);
+    }
   }
 
   async disconnect() {
