@@ -108,7 +108,17 @@ class ReticulumService:
     def log(self, message, level="INFO"):
         """Log with timestamp"""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] [{level}] {message}", file=sys.stderr, flush=True)
+        log_msg = f"[{timestamp}] [{level}] {message}"
+        print(log_msg, file=sys.stderr, flush=True)
+
+        # Also log to file for debugging
+        try:
+            log_file = os.path.join(self.config_dir, "reticulum_service.log")
+            with open(log_file, "a") as f:
+                f.write(log_msg + "\n")
+                f.flush()
+        except:
+            pass  # Don't fail if file logging doesn't work
 
     def ensure_directories(self):
         """Ensure required directories exist"""
@@ -436,21 +446,53 @@ loglevel = 4
         """Run the WebSocket server"""
         try:
             self.log(f"Starting WebSocket server on {self.ws_host}:{self.ws_port}")
-            async with websockets.serve(self.handle_websocket, self.ws_host, self.ws_port):
-                self.log("✓ WebSocket server started")
-                # Wait for shutdown - keep server alive
-                heartbeat_counter = 0
-                while self.running:
-                    await asyncio.sleep(1)
-                    heartbeat_counter += 1
-                    # Log heartbeat every 5 minutes to confirm service is alive
-                    if heartbeat_counter % 300 == 0:
-                        self.log(f"Service heartbeat - uptime: {heartbeat_counter}s, clients: {len(self.ws_clients)}")
-                self.log("WebSocket server shutting down...")
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            # Create server explicitly with error handling
+            server = await websockets.serve(
+                self.handle_websocket,
+                self.ws_host,
+                self.ws_port,
+                ping_interval=20,
+                ping_timeout=20
+            )
+
+            self.log("✓ WebSocket server started")
+            self.log(f"✓ Listening on ws://{self.ws_host}:{self.ws_port}")
+            sys.stdout.flush()
+
+            # Wait for shutdown - keep server alive
+            heartbeat_counter = 0
+            while self.running:
+                await asyncio.sleep(1)
+                heartbeat_counter += 1
+                # Log heartbeat every 5 minutes to confirm service is alive
+                if heartbeat_counter % 300 == 0:
+                    self.log(f"Service heartbeat - uptime: {heartbeat_counter}s, clients: {len(self.ws_clients)}")
+                    sys.stdout.flush()
+
+            self.log("WebSocket server shutting down...")
+            server.close()
+            await server.wait_closed()
+
+        except OSError as e:
+            if "Address already in use" in str(e):
+                self.log(f"ERROR: Port {self.ws_port} is already in use!", "ERROR")
+                self.log(f"Run: lsof -i :{self.ws_port}  to see what's using it", "ERROR")
+            else:
+                self.log(f"OSError starting WebSocket server: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
+            sys.stderr.flush()
+            raise
         except Exception as e:
             self.log(f"WebSocket server error: {e}", "ERROR")
             import traceback
             traceback.print_exc()
+            sys.stdout.flush()
+            sys.stderr.flush()
             raise
 
     def run(self):
