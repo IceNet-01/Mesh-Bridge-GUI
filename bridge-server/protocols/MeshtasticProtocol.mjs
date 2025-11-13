@@ -144,33 +144,9 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to LoRa config packets
-    this.device.events.onLoraConfigPacket.subscribe((loraConfig) => {
-      try {
-        this.loraConfig = {
-          region: loraConfig.region,
-          modemPreset: loraConfig.modemPreset,
-          hopLimit: loraConfig.hopLimit,
-          txEnabled: loraConfig.txEnabled,
-          txPower: loraConfig.txPower,
-          channelNum: loraConfig.channelNum,
-          overrideDutyCycle: loraConfig.overrideDutyCycle,
-          sx126xRxBoostedGain: loraConfig.sx126xRxBoostedGain,
-          overrideFrequency: loraConfig.overrideFrequency,
-          ignoreMqtt: loraConfig.ignoreMqtt
-        };
-
-        console.log(`[Meshtastic] LoRa config:`, {
-          region: this.loraConfig.region,
-          modemPreset: this.loraConfig.modemPreset,
-          txPower: this.loraConfig.txPower,
-          hopLimit: this.loraConfig.hopLimit
-        });
-      } catch (error) {
-        console.error('[Meshtastic] Error handling LoRa config:', error);
-        this.handleError(error);
-      }
-    });
+    // TODO: Subscribe to LoRa config when the correct event is identified
+    // The onLoraConfigPacket event doesn't exist in current @meshtastic/core
+    // Need to find the correct event name or alternative method to get LoRa config
   }
 
   async disconnect() {
