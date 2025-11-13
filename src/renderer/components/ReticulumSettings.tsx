@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import { bridgeManager } from '../lib/bridgeManager';
 
 interface ReticulumDestination {
   hash: string;
@@ -17,6 +16,7 @@ interface ReticulumIdentity {
 
 function ReticulumSettings() {
   const { radios } = useStore();
+  const connectRadio = useStore(state => state.connectRadio);
   const [selectedRadio, setSelectedRadio] = useState<string>('');
   const [destinations, setDestinations] = useState<ReticulumDestination[]>([]);
   const [identity, setIdentity] = useState<ReticulumIdentity | null>(null);
@@ -74,7 +74,7 @@ function ReticulumSettings() {
     setConnecting(true);
     try {
       // Connect to Reticulum in software-only mode (no physical port required)
-      const result = await bridgeManager.connectRadio('reticulum-virtual', 'reticulum');
+      const result = await connectRadio('reticulum-virtual', 'reticulum');
       if (!result.success) {
         alert(`Failed to connect Reticulum: ${result.error}\n\nMake sure:\n- Python 3 is installed\n- RNS (pip install rns) is installed\n- Bridge server is running`);
       }

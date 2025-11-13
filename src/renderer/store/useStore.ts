@@ -26,6 +26,7 @@ interface AppStore {
   // Actions
   initialize: () => void;
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
+  connectRadio: (port: string, protocol: string) => Promise<{ success: boolean; error?: string }>;
   scanAndConnectRadio: () => Promise<void>;
   disconnectRadio: (radioId: string) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
@@ -146,6 +147,11 @@ export const useStore = create<AppStore>((set) => {
       if (result.success) {
         set({ bridgeConnected: true });
       }
+      return result;
+    },
+
+    connectRadio: async (port: string, protocol: string) => {
+      const result = await manager.connectRadio(port, protocol as any);
       return result;
     },
 
