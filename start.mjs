@@ -175,6 +175,13 @@ class MeshBridgeApp {
     reticulumService.on('close', (code) => {
       if (!this.shuttingDown) {
         logWarning(`Reticulum Service exited with code ${code}`);
+        // Auto-restart after 3 seconds
+        logInfo('Restarting Reticulum Service in 3 seconds...');
+        setTimeout(() => {
+          if (!this.shuttingDown) {
+            this.services.reticulumService = this.startReticulumService();
+          }
+        }, 3000);
       }
     });
 
