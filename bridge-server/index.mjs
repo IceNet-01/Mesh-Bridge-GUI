@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import nodemailer from 'nodemailer';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
+import { ReticulumProtocol } from './protocols/ReticulumProtocol.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,6 +40,10 @@ class MeshtasticBridgeServer {
     this.maxHistorySize = 500;
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
+
+    // Reticulum Network Stack (singleton, auto-started)
+    this.reticulum = null; // Will be initialized in start()
+    this.reticulumEnabled = true; // Auto-start Reticulum on server startup
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -135,6 +140,7 @@ class MeshtasticBridgeServer {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
     console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Reticulum Network Stack: ${this.reticulumEnabled ? 'ENABLED (auto-start)' : 'DISABLED'}`);
     console.log('');
   }
 
@@ -220,7 +226,196 @@ class MeshtasticBridgeServer {
 
       console.log('📻 Ready to connect radios...');
       console.log('');
+
+      // Auto-start Reticulum Network Stack
+      if (this.reticulumEnabled) {
+        this.startReticulum().catch(error => {
+          console.error('Failed to auto-start Reticulum:', error);
+        });
+      }
     });
+  }
+
+  /**
+   * Start the Reticulum Network Stack
+   */
+  async startReticulum() {
+    try {
+      console.log('');
+      console.log('🌐 Starting Reticulum Network Stack...');
+
+      // Get singleton instance
+      this.reticulum = ReticulumProtocol.getInstance();
+
+      // Set up event listeners for Reticulum
+      this.setupReticulumEventListeners();
+
+      // Start Reticulum
+      await this.reticulum.start();
+
+      console.log('✅ Reticulum Network Stack started successfully');
+      console.log(`   Identity: ${this.reticulum.identity?.hash || 'Pending...'}`);
+      console.log(`   Destination: ${this.reticulum.destination?.hash || 'Pending...'}`);
+
+      // Broadcast Reticulum status to all clients
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: true,
+          identity: this.reticulum.identity,
+          destination: this.reticulum.destination,
+          transports: this.reticulum.getTransports()
+        }
+      });
+
+      console.log('');
+    } catch (error) {
+      console.error('❌ Failed to start Reticulum Network Stack:', error);
+      console.error('   Reticulum will remain offline. RNode devices will not be added as transports.');
+      console.log('');
+      this.reticulumEnabled = false;
+    }
+  }
+
+  /**
+   * Set up event listeners for Reticulum events
+   */
+  setupReticulumEventListeners() {
+    if (!this.reticulum) return;
+
+    // Handle incoming Reticulum messages
+    this.reticulum.on('message', (packet) => {
+      this.handleReticulumMessage(packet);
+    });
+
+    // Handle Reticulum initialization complete
+    this.reticulum.on('initialized', (data) => {
+      console.log(`[Reticulum] Initialized with identity: ${data.identity.hash}`);
+
+      // Broadcast updated status
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: true,
+          identity: data.identity,
+          destination: data.destination,
+          transports: this.reticulum.getTransports()
+        }
+      });
+    });
+
+    // Handle transport added
+    this.reticulum.on('transport_added', (data) => {
+      console.log(`[Reticulum] Transport added: ${data.type} ${data.port}`);
+
+      // Broadcast transport list update
+      this.broadcast({
+        type: 'reticulum-transports-updated',
+        transports: this.reticulum.getTransports()
+      });
+    });
+
+    // Handle transport removed
+    this.reticulum.on('transport_removed', (data) => {
+      console.log(`[Reticulum] Transport removed: ${data.type} ${data.port}`);
+
+      // Broadcast transport list update
+      this.broadcast({
+        type: 'reticulum-transports-updated',
+        transports: this.reticulum.getTransports()
+      });
+    });
+
+    // Handle transport errors
+    this.reticulum.on('transport_error', (data) => {
+      console.error(`[Reticulum] Transport error on ${data.port}: ${data.error}`);
+
+      // Broadcast error to clients
+      this.broadcast({
+        type: 'reticulum-transport-error',
+        port: data.port,
+        error: data.error
+      });
+    });
+
+    // Handle Reticulum disconnection
+    this.reticulum.on('disconnected', () => {
+      console.log('[Reticulum] Disconnected');
+
+      // Broadcast status update
+      this.broadcast({
+        type: 'reticulum-status',
+        status: {
+          running: false
+        }
+      });
+    });
+
+    // Handle Reticulum errors
+    this.reticulum.on('error', (error) => {
+      console.error('[Reticulum] Error:', error);
+
+      // Broadcast error to clients
+      this.broadcast({
+        type: 'reticulum-error',
+        error: error.message
+      });
+    });
+  }
+
+  /**
+   * Handle incoming message from Reticulum network
+   */
+  handleReticulumMessage(packet) {
+    try {
+      console.log(`📨 Reticulum message from ${packet.from.substring(0, 16)}...: "${packet.text}"`);
+
+      // Check for duplicate message
+      if (this.seenMessageIds.has(packet.id)) {
+        console.log(`🔁 Duplicate Reticulum message ${packet.id} ignored`);
+        return;
+      }
+
+      // Mark message as seen
+      this.seenMessageIds.add(packet.id);
+
+      // Limit size of seen messages set
+      if (this.seenMessageIds.size > this.maxSeenMessages) {
+        const firstId = this.seenMessageIds.values().next().value;
+        this.seenMessageIds.delete(firstId);
+      }
+
+      const message = {
+        id: packet.id,
+        timestamp: packet.timestamp,
+        from: packet.from,
+        to: packet.to,
+        text: packet.text,
+        protocol: 'reticulum',
+        rssi: packet.rssi,
+        snr: packet.snr,
+        radioId: 'reticulum-global',
+        type: 'text'
+      };
+
+      // Add to history
+      this.messageHistory.push(message);
+      if (this.messageHistory.length > this.maxHistorySize) {
+        this.messageHistory.shift();
+      }
+
+      // Broadcast to all connected clients
+      this.broadcast({
+        type: 'message',
+        message: message
+      });
+
+      // TODO: Cross-protocol forwarding to Meshtastic if enabled
+      // Will implement in future when bridging is ready
+
+    } catch (error) {
+      console.error('❌ Error handling Reticulum message:', error);
+    }
   }
 
   /**
@@ -2156,6 +2351,16 @@ class MeshtasticBridgeServer {
    */
   async shutdown() {
     console.log('\n🛑 Shutting down bridge server...');
+
+    // Stop Reticulum Network Stack
+    if (this.reticulum && this.reticulum.running) {
+      try {
+        await this.reticulum.stop();
+        console.log('🌐 Reticulum Network Stack stopped');
+      } catch (error) {
+        console.error('Error stopping Reticulum:', error);
+      }
+    }
 
     // Disconnect all radios
     for (const [radioId, radio] of this.radios.entries()) {
