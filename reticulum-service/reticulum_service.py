@@ -22,6 +22,7 @@ import json
 import time
 import asyncio
 import argparse
+import signal
 from pathlib import Path
 from threading import Thread, Event
 
@@ -392,12 +393,24 @@ loglevel = 4
 
     async def run_websocket_server(self):
         """Run the WebSocket server"""
-        self.log(f"Starting WebSocket server on {self.ws_host}:{self.ws_port}")
-        async with websockets.serve(self.handle_websocket, self.ws_host, self.ws_port):
-            self.log("✓ WebSocket server started")
-            # Wait for shutdown
-            while self.running:
-                await asyncio.sleep(1)
+        try:
+            self.log(f"Starting WebSocket server on {self.ws_host}:{self.ws_port}")
+            async with websockets.serve(self.handle_websocket, self.ws_host, self.ws_port):
+                self.log("✓ WebSocket server started")
+                # Wait for shutdown - keep server alive
+                heartbeat_counter = 0
+                while self.running:
+                    await asyncio.sleep(1)
+                    heartbeat_counter += 1
+                    # Log heartbeat every 5 minutes to confirm service is alive
+                    if heartbeat_counter % 300 == 0:
+                        self.log(f"Service heartbeat - uptime: {heartbeat_counter}s, clients: {len(self.ws_clients)}")
+                self.log("WebSocket server shutting down...")
+        except Exception as e:
+            self.log(f"WebSocket server error: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def run(self):
         """Main run loop"""
