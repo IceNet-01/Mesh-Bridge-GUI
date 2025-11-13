@@ -143,7 +143,7 @@ function ReticulumSettings() {
           </button>
 
           <p className="text-xs text-slate-500 mt-4">
-            Or connect a physical RNode device using "Connect Radio" in the sidebar
+            Physical RNode devices will be auto-detected when plugged in
           </p>
         </div>
       </div>

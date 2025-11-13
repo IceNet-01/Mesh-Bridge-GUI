@@ -91,8 +91,19 @@ export class MeshCoreProtocol extends BaseProtocol {
   async detectProtocol() {
     console.log('[MeshCore] Starting protocol detection...');
 
+    // Determine if this is a physical serial port or virtual
+    const isVirtualPort = this.portPath.includes('virtual') ||
+                         this.portPath.includes('software') ||
+                         this.portPath.startsWith('reticulum-');
+
     // Try each protocol in order of likelihood
-    const protocols = ['meshtastic', 'rnode', 'reticulum'];
+    // Skip Reticulum for physical serial ports (it's software-only or RNode-specific)
+    const protocols = isVirtualPort
+      ? ['reticulum', 'meshtastic', 'rnode']  // For virtual ports, try Reticulum first
+      : ['meshtastic', 'rnode'];               // For physical ports, skip Reticulum
+
+    console.log(`[MeshCore] Port type: ${isVirtualPort ? 'Virtual/Software' : 'Physical Serial'}`);
+    console.log(`[MeshCore] Will try protocols: ${protocols.join(', ')}`);
 
     for (const protocol of protocols) {
       console.log(`[MeshCore] Trying ${protocol}...`);

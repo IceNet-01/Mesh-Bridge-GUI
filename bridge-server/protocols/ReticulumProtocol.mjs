@@ -21,6 +21,7 @@ export class ReticulumProtocol extends BaseProtocol {
     this.identity = null;
     this.destinations = new Map(); // destination_hash -> destination_info
     this.buffer = Buffer.alloc(0);
+    this.jsonBuffer = ''; // Buffer for incomplete JSON lines from Python
   }
 
   getProtocolName() {
@@ -264,14 +265,35 @@ export class ReticulumProtocol extends BaseProtocol {
 
   handlePythonData(data) {
     // Parse JSON messages from Python bridge
+    // Handle partial JSON by buffering incomplete lines
     try {
-      const lines = data.toString().split('\n');
+      if (!this.jsonBuffer) {
+        this.jsonBuffer = '';
+      }
+
+      // Append new data to buffer
+      this.jsonBuffer += data.toString();
+
+      // Split by newlines and process complete lines
+      const lines = this.jsonBuffer.split('\n');
+
+      // Keep the last incomplete line in the buffer
+      this.jsonBuffer = lines.pop() || '';
+
       for (const line of lines) {
-        if (!line.trim()) continue;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-        const message = JSON.parse(line);
+        // Skip non-JSON lines (like RNS initialization messages)
+        if (!trimmed.startsWith('{')) {
+          console.log(`[Reticulum Python] ${trimmed}`);
+          continue;
+        }
 
-        switch (message.type) {
+        try {
+          const message = JSON.parse(trimmed);
+
+          switch (message.type) {
           case 'init':
             this.identity = message.data.identity;
             this.updateNodeInfo({
@@ -313,9 +335,13 @@ export class ReticulumProtocol extends BaseProtocol {
           default:
             console.log(`[Reticulum] Unknown message type: ${message.type}`);
         }
+        } catch (parseError) {
+          console.error('[Reticulum] Error parsing JSON line:', parseError.message);
+          console.error('[Reticulum] Problematic line:', trimmed);
+        }
       }
     } catch (error) {
-      console.error('[Reticulum] Error parsing Python data:', error);
+      console.error('[Reticulum] Error handling Python data:', error);
     }
   }
 
