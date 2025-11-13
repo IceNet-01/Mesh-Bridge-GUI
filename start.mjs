@@ -2,11 +2,12 @@
 /**
  * Mesh Bridge GUI - Unified Startup Script
  *
- * Launches all three ecosystem services and the web GUI:
- * 1. Bridge Server (Meshtastic, LoRa) - Node.js
- * 2. Reticulum Service (LXMF) - Python
- * 3. MeshCore Service (Future) - Python
- * 4. Web GUI - Vite dev server
+ * Launches all three ecosystem services and web interfaces:
+ * 1. Bridge Server (Meshtastic, LoRa) - Node.js - Port 3000
+ * 2. Reticulum Service (LXMF Backend) - Python - Port 4243
+ * 3. Reticulum Web Client (LXMF UI) - Python - Port 5555
+ * 4. MeshCore Service (Future) - Python
+ * 5. Main Web GUI - Vite dev server - Port 5173
  */
 
 import { spawn } from 'child_process';
@@ -202,6 +203,56 @@ class MeshBridgeApp {
   }
 
   /**
+   * Start Reticulum Web Client (Standalone LXMF UI)
+   */
+  startReticulumWebClient() {
+    log('💬', colors.green, 'Starting Reticulum Web Client (Standalone LXMF UI)...');
+
+    const webClientServerPath = join(__dirname, 'reticulum-web-client', 'server.py');
+
+    if (!fs.existsSync(webClientServerPath)) {
+      logError(`Reticulum web client not found: ${webClientServerPath}`);
+      return null;
+    }
+
+    const webClientServer = spawn('python3', ['server.py', '--port', '5555'], {
+      cwd: join(__dirname, 'reticulum-web-client'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    });
+
+    webClientServer.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          console.log(`  ${colors.green}[LXMF Web]${colors.reset} ${line.trim()}`);
+        }
+      });
+    });
+
+    webClientServer.stderr.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          console.log(`  ${colors.green}[LXMF Web]${colors.reset} ${line.trim()}`);
+        }
+      });
+    });
+
+    webClientServer.on('close', (code) => {
+      if (!this.shuttingDown) {
+        logWarning(`Reticulum Web Client exited with code ${code}`);
+      }
+    });
+
+    webClientServer.on('error', (error) => {
+      logError(`Reticulum Web Client error: ${error.message}`);
+    });
+
+    return webClientServer;
+  }
+
+  /**
    * Start Web GUI
    */
   startWebGUI() {
@@ -263,6 +314,10 @@ class MeshBridgeApp {
     if (pythonDepsOk) {
       this.services.reticulumService = this.startReticulumService();
       await this.delay(500);
+
+      // Start standalone Reticulum web client
+      this.services.reticulumWebClient = this.startReticulumWebClient();
+      await this.delay(500);
     } else {
       logWarning('Skipping Reticulum Service (dependencies not installed)');
     }
@@ -292,8 +347,15 @@ class MeshBridgeApp {
 
     console.log(`  ${colors.yellow}🌐 MeshCore Service:${colors.reset}   ${colors.yellow}(future)${colors.reset}`);
     console.log();
-    console.log(`  ${colors.bright}Web Interface:${colors.reset}`);
-    console.log(`  ${colors.cyan}🌐 Web GUI:${colors.reset}            http://localhost:5173`);
+    console.log(`  ${colors.bright}Web Interfaces:${colors.reset}`);
+    console.log(`  ${colors.cyan}🌐 Main Web GUI:${colors.reset}       http://localhost:5173`);
+
+    if (pythonDepsOk) {
+      console.log(`  ${colors.green}💬 LXMF Web Client:${colors.reset}   http://localhost:5555`);
+    } else {
+      console.log(`  ${colors.yellow}💬 LXMF Web Client:${colors.reset}   ${colors.red}(not started)${colors.reset}`);
+    }
+
     console.log();
     console.log(`  ${colors.bright}Press Ctrl+C to stop all services${colors.reset}`);
     console.log('='.repeat(60) + '\n');
