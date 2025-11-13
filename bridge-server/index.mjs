@@ -213,14 +213,16 @@ class MeshtasticBridgeServer {
       });
     });
 
-    // Start HTTP server
-    httpServer.listen(this.wsPort, () => {
-      console.log(`✅ HTTP server listening on http://localhost:${this.wsPort}`);
-      console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
+    // Start HTTP server - bind to 0.0.0.0 for network access
+    httpServer.listen(this.wsPort, '0.0.0.0', () => {
+      console.log(`✅ HTTP server listening on http://0.0.0.0:${this.wsPort}`);
+      console.log(`✅ WebSocket server listening on ws://0.0.0.0:${this.wsPort}`);
+      console.log(`   Accessible from network - use your machine's IP address`);
+      console.log(`   Example: http://<your-ip>:${this.wsPort}`);
 
       if (existsSync(distPath)) {
         console.log(`📂 Serving static files from: ${distPath}`);
-        console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+        console.log(`🌐 Open in browser: http://localhost:${this.wsPort} (or http://<your-ip>:${this.wsPort})`);
       } else {
         console.log(`⚠️  No dist/ folder found - run 'npm run build' first for production mode`);
         console.log(`💡 For development, run 'npm run dev' in a separate terminal`);
