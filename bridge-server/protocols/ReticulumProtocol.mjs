@@ -428,11 +428,15 @@ export class ReticulumProtocol extends EventEmitter {
 
   /**
    * Wait for Python RNS bridge initialization
+   * Default timeout is 180 seconds (3 minutes) to allow for:
+   * - Network interface probing (AutoInterface can be slow)
+   * - RNS initialization and config loading
+   * - Network discovery and transport setup
    */
-  async waitForInit(timeout = 60000) {
+  async waitForInit(timeout = 180000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for Reticulum initialization (network discovery may take time)'));
+        reject(new Error('Timeout waiting for Reticulum initialization after ' + (timeout/1000) + ' seconds. Network discovery may take time. Check RNS config or delete ~/.reticulum/config to regenerate without AutoInterface.'));
       }, timeout);
 
       const onInit = () => {
