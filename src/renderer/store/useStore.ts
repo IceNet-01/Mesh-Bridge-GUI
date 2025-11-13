@@ -14,6 +14,11 @@ interface AppStore {
   messages: Message[];
   bridgeConfig: BridgeConfig | null;
 
+  // Auto-scan state
+  autoScanEnabled: boolean;
+  autoScanInterval: number; // milliseconds
+  lastScan: Date | null;
+
   // AI State
   aiConfig: AIConfig | null;
   aiModels: AIModel[];
@@ -28,6 +33,9 @@ interface AppStore {
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
   connectRadio: (port: string, protocol: string) => Promise<{ success: boolean; error?: string }>;
   scanAndConnectRadio: () => Promise<void>;
+  autoScanForNewRadios: () => Promise<void>;
+  setAutoScanEnabled: (enabled: boolean) => void;
+  setAutoScanInterval: (interval: number) => void;
   disconnectRadio: (radioId: string) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
@@ -48,8 +56,11 @@ interface AppStore {
   testDiscord: () => Promise<void>;
 }
 
-export const useStore = create<AppStore>((set) => {
+export const useStore = create<AppStore>((set, get) => {
   const manager = new WebSocketRadioManager();
+
+  // Auto-scan timer
+  let autoScanTimer: NodeJS.Timeout | null = null;
 
   // Set up event listeners
   manager.on('radio-status-change', (radios: Radio[]) => {
@@ -129,6 +140,9 @@ export const useStore = create<AppStore>((set) => {
     logs: [],
     messages: [],
     bridgeConfig: null,
+    autoScanEnabled: false,
+    autoScanInterval: 30000, // 30 seconds default
+    lastScan: null,
     aiConfig: null,
     aiModels: [],
     aiStatus: null,
@@ -146,6 +160,13 @@ export const useStore = create<AppStore>((set) => {
       const result = await manager.connectToBridge();
       if (result.success) {
         set({ bridgeConnected: true });
+
+        // Auto-enable auto-scan when bridge connects
+        const state = get();
+        if (!state.autoScanEnabled) {
+          get().setAutoScanEnabled(true);
+          console.log('🔍 Auto-scan enabled (30s interval)');
+        }
       }
       return result;
     },
@@ -153,6 +174,91 @@ export const useStore = create<AppStore>((set) => {
     connectRadio: async (port: string, protocol: string) => {
       const result = await manager.connectRadio(port, protocol as any);
       return result;
+    },
+
+    autoScanForNewRadios: async () => {
+      try {
+        const state = get();
+
+        // Don't scan if bridge isn't connected
+        if (!state.bridgeConnected) {
+          return;
+        }
+
+        console.log('🔍 Auto-scanning for new radios...');
+        set({ lastScan: new Date() });
+
+        const ports = await manager.scanForRadios();
+
+        // Get currently connected radio ports
+        const connectedPorts = state.radios
+          .filter(r => r.status === 'connected')
+          .map(r => r.port);
+
+        // Filter for NEW ports not already connected
+        const newPorts = ports.filter(port => !connectedPorts.includes(port.path));
+
+        if (newPorts.length === 0) {
+          console.log('  ℹ️  No new radios found');
+          return;
+        }
+
+        console.log(`  ✨ Found ${newPorts.length} new radio(s), connecting...`);
+
+        // Connect to new ports only
+        const results = await Promise.allSettled(
+          newPorts.map(port => manager.connectRadio(port.path, 'meshcore'))
+        );
+
+        const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
+
+        if (successCount > 0) {
+          console.log(`  ✅ Connected ${successCount} new radio(s)`);
+        }
+      } catch (error) {
+        console.error('Auto-scan error:', error);
+        // Don't throw - we don't want auto-scan errors to crash the app
+      }
+    },
+
+    setAutoScanEnabled: (enabled: boolean) => {
+      set({ autoScanEnabled: enabled });
+
+      // Clear existing timer
+      if (autoScanTimer) {
+        clearInterval(autoScanTimer);
+        autoScanTimer = null;
+      }
+
+      // Start new timer if enabled
+      if (enabled) {
+        const state = get();
+
+        // Initial scan
+        setTimeout(() => {
+          get().autoScanForNewRadios();
+        }, 2000); // 2 second delay after enable
+
+        // Set up recurring scans
+        autoScanTimer = setInterval(() => {
+          get().autoScanForNewRadios();
+        }, state.autoScanInterval);
+
+        console.log(`✅ Auto-scan enabled (${state.autoScanInterval/1000}s interval)`);
+      } else {
+        console.log('⏸️  Auto-scan disabled');
+      }
+    },
+
+    setAutoScanInterval: (interval: number) => {
+      set({ autoScanInterval: interval });
+
+      // If auto-scan is enabled, restart with new interval
+      const state = get();
+      if (state.autoScanEnabled) {
+        get().setAutoScanEnabled(false);
+        get().setAutoScanEnabled(true);
+      }
     },
 
     scanAndConnectRadio: async () => {

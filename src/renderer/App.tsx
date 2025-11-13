@@ -21,9 +21,10 @@ function App() {
   const messages = useStore(state => state.messages);
   const bridgeConfig = useStore(state => state.bridgeConfig);
   const bridgeConnected = useStore(state => state.bridgeConnected);
+  const autoScanEnabled = useStore(state => state.autoScanEnabled);
+  const lastScan = useStore(state => state.lastScan);
   const initialize = useStore(state => state.initialize);
   const connectToBridge = useStore(state => state.connectToBridge);
-  const scanAndConnectRadio = useStore(state => state.scanAndConnectRadio);
   const disconnectRadio = useStore(state => state.disconnectRadio);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
   const clearLogs = useStore(state => state.clearLogs);
@@ -40,22 +41,15 @@ function App() {
     });
   }, [initialize, connectToBridge]);
 
-  const handleConnectRadio = async () => {
-    try {
-      await scanAndConnectRadio();
-    } catch (error) {
-      console.error('Failed to connect radio:', error);
-      const errorMessage = (error as Error).message || 'Unknown error';
-
-      if (errorMessage.includes('cancel') || errorMessage.includes('NotFoundError')) {
-        console.log('User canceled serial port selection');
-      } else {
-        alert(`Failed to connect radio: ${errorMessage}\n\nMake sure:\n- Your radio device is connected via USB\n- You granted permission to access the serial port\n- No other application is using the device`);
-      }
-    }
-  };
-
   const connectedRadios = radios.filter((r) => r.status === 'connected');
+
+  const getTimeSinceLastScan = () => {
+    if (!lastScan) return 'Never';
+    const seconds = Math.floor((Date.now() - lastScan.getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ago`;
+  };
 
   // Check for Web Serial API support
   const isWebSerialSupported = 'serial' in navigator;
@@ -166,20 +160,29 @@ function App() {
             </span>
           </div>
 
-          {/* Connect Radio Button */}
-          <button
-            onClick={handleConnectRadio}
-            disabled={!bridgeConnected}
-            className={`w-full btn-primary flex items-center justify-center gap-2 ${
-              !bridgeConnected ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            title={!bridgeConnected ? 'Bridge server must be connected first' : 'Connect a radio'}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Connect Radio
-          </button>
+          {/* Auto-Scan Status */}
+          {bridgeConnected && (
+            <div className="px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
+              <div className="flex items-center gap-2 mb-1">
+                {autoScanEnabled ? (
+                  <svg className="w-3 h-3 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span className="text-xs font-medium text-blue-300">
+                  {autoScanEnabled ? 'Auto-Scanning' : 'Auto-Scan Paused'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                {autoScanEnabled ? `Last: ${getTimeSinceLastScan()}` : 'Radios detected automatically'}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
