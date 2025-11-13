@@ -1,7 +1,10 @@
 // Radio protocol types
-// Note: 'auto' = automatic protocol detection (Meshtastic/Reticulum/RNode)
+// Note: 'auto' = automatic protocol detection (Meshtastic or RNode)
+// - Meshtastic devices are added as individual radios
+// - RNode devices are automatically added as transports to the global Reticulum Network Stack
+// - Reticulum runs as a single global network with multiple transports (not per-radio)
 // MeshCore (https://meshcore.co.uk/) is a separate mesh product, not yet supported
-export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'auto';
+export type RadioProtocol = 'meshtastic' | 'auto';
 
 export interface Radio {
   id: string;
@@ -37,10 +40,11 @@ export interface Radio {
       txPower?: number;
       channelNum?: number;
     };
-    // Reticulum-specific
+    // Reticulum-specific (global network)
     destinationHash?: string;
     identityHash?: string;
-    // RNode-specific
+    // RNode-specific (used as Reticulum transports)
+    // Note: RNode devices are not standalone radios, they are transports for Reticulum
     frequency?: number;
     bandwidth?: number;
     spreadingFactor?: number;

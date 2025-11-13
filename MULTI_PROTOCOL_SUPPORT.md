@@ -17,11 +17,12 @@ The Mesh Bridge GUI now supports multiple radio protocols, allowing you to bridg
 - Uses destination-based routing instead of channels
 - Identity-based addressing with announce packets
 
-### 3. **RNode**
-- Support for RNode LoRa packet radios
-- Direct serial protocol implementation
+### 3. **RNode** (Reticulum Transport)
+- **Note**: RNode is NOT a standalone protocol - it's hardware that provides transport FOR Reticulum
+- RNode devices are automatically detected and added as transports to the global Reticulum Network Stack
 - Configurable radio parameters (frequency, bandwidth, spreading factor, etc.)
-- Simple packet-based communication
+- Uses KISS protocol for serial communication
+- Multiple RNode devices can be added as transports to a single Reticulum instance
 
 ### 4. **Auto-Detect Protocol**
 - Meta-protocol that can auto-detect and coordinate multiple underlying protocols
@@ -88,13 +89,8 @@ Each protocol handler normalizes incoming messages to a common format:
 // Connect to Meshtastic radio (default)
 await webSocketManager.connectRadio('/dev/ttyUSB0');
 
-// Connect to Reticulum radio
-await webSocketManager.connectRadio('/dev/ttyUSB0', 'reticulum');
-
-// Connect to RNode radio
-await webSocketManager.connectRadio('/dev/ttyUSB0', 'rnode');
-
-// Connect with auto-detection
+// Connect with auto-detection (Meshtastic or RNode)
+// Note: If RNode is detected, it's automatically added to Reticulum as a transport
 await webSocketManager.connectRadio('/dev/ttyUSB0', 'auto');
 ```
 
@@ -107,8 +103,10 @@ The bridge server automatically uses the protocol abstraction:
 {
   "type": "connect",
   "port": "/dev/ttyUSB0",
-  "protocol": "meshtastic"  // or "reticulum", "rnode", "auto"
+  "protocol": "meshtastic"  // or "auto" for auto-detection
 }
+// Note: Reticulum starts automatically on bridge server startup (global network)
+// RNode devices are auto-detected and added as Reticulum transports
 ```
 
 ### Auto-Detect Configuration
@@ -124,11 +122,11 @@ Create a `meshcore.json` file to configure auto-detection behavior:
     "heartbeatInterval": 30000
   },
   "reticulum": {
-    "useDirectSerial": false,
     "pythonBridge": "rns_bridge.py",
     "rnsConfigPath": "/home/user/.reticulum"
   },
   "rnode": {
+    // RNode configuration for detected devices (applied as Reticulum transports)
     "frequency": 915000000,
     "bandwidth": 125000,
     "spreadingFactor": 7,
@@ -173,38 +171,43 @@ Place this file in:
 - Messages use destination hashes instead of channel numbers
 - No built-in encryption (handled by Reticulum layer)
 
-### RNode
+### RNode (Reticulum Transport)
+
+**Important**: RNode is NOT a standalone protocol. It's hardware that provides transport for Reticulum.
+
+**Architecture**:
+- RNode devices are detected and automatically added as transports to Reticulum
+- Multiple RNode devices can be used simultaneously as transports
+- Each RNode becomes a physical transport layer for the global Reticulum network
 
 **Frequency Configuration**:
 - Frequency, bandwidth, spreading factor configurable
 - TX power, coding rate can be set
-- Single "channel" represents frequency/bandwidth combo
-
-**Packet Format**:
-- Simple packet structure: `[from][to][message]`
-- Raw packet radio - minimal protocol overhead
-- UTF-8 text encoding with binary fallback
+- Configuration applied when RNode is added as Reticulum transport
 
 **KISS Protocol**:
-- Uses KISS framing (FEND, FESC, TFEND, TFESC)
-- Commands for configuration (frequency, bandwidth, etc.)
+- Uses KISS framing for serial communication (FEND, FESC, TFEND, TFESC)
+- CMD_DETECT (0x08) used for auto-detection
+- Configuration commands sent by Reticulum stack
 
 ### Auto-Detect Protocol
 
 **Auto-Detection**:
-- Tries each protocol in order: Meshtastic, RNode, Reticulum
-- First successful connection is used
+- Tries protocols in order: Meshtastic, then RNode
+- If Meshtastic detected: Device added as Meshtastic radio
+- If RNode detected: Device automatically added as Reticulum transport (not as standalone radio)
 - Can force specific protocol via configuration
 
 **Protocol Delegation**:
-- All operations delegated to underlying protocol
+- For Meshtastic: All operations delegated to MeshtasticProtocol
+- For RNode: Special handling - throws RNodeDetectedError, bridge server adds to Reticulum
 - Events forwarded from underlying protocol
 - Metadata includes both auto-detect wrapper and underlying protocol info
 
-**Cross-Protocol Translation**:
-- Messages can be translated between protocols
-- Channel matching uses underlying protocol rules
-- Original protocol marked in message metadata
+**RNode Special Handling**:
+- RNodeDetectedError thrown when RNode is detected
+- Bridge server catches error and adds device to global Reticulum instance
+- No protocol handler created for RNode (it's a transport, not a protocol)
 
 ## Message Bridging
 
@@ -336,15 +339,18 @@ MeshCore (https://meshcore.co.uk/) is a separate mesh networking product that co
 - For direct serial, ensure RNode is in Reticulum mode
 
 **RNode device not detected**
-- Send detect command and wait for response
 - Check baud rate (should be 115200)
 - Verify RNode firmware is up to date
+- Ensure Reticulum is running (check bridge server startup logs)
+- Review logs for "RNode detected" message
+- If detected but not added, check Reticulum startup errors
 
 **Auto-detection fails**
-- Try specifying protocol explicitly in config ('meshtastic', 'reticulum', or 'rnode')
+- Try specifying protocol explicitly in config ('meshtastic' or 'auto')
 - Check device responds to serial commands
 - Review bridge server logs for protocol detection details
 - Ensure device is not already in use by another application
+- For RNode: Verify Reticulum started successfully on bridge server startup
 
 ### Message Forwarding Issues
 
@@ -394,7 +400,9 @@ export class MyProtocol extends BaseProtocol {
 3. Update TypeScript types in `src/renderer/types.ts`:
 
 ```typescript
-export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'auto' | 'myprotocol';
+// Note: Only add per-radio protocols here.
+// Reticulum is global (singleton), RNode is a transport (not standalone)
+export type RadioProtocol = 'meshtastic' | 'auto' | 'myprotocol';
 ```
 
 4. Add protocol-specific metadata fields if needed
