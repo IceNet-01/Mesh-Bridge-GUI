@@ -23,11 +23,13 @@ The Mesh Bridge GUI now supports multiple radio protocols, allowing you to bridg
 - Configurable radio parameters (frequency, bandwidth, spreading factor, etc.)
 - Simple packet-based communication
 
-### 4. **Mesh Core**
+### 4. **Auto-Detect Protocol**
 - Meta-protocol that can auto-detect and coordinate multiple underlying protocols
-- Provides cross-protocol routing and message translation
-- Supports switching between protocols dynamically
-- Configuration-driven protocol selection
+- Automatically detects whether a device is running Meshtastic, Reticulum, or RNode
+- Provides seamless cross-protocol routing and message translation
+- Configuration-driven protocol selection or automatic detection
+
+**Note**: This is different from MeshCore (https://meshcore.co.uk/), which is a separate mesh networking product with its own firmware and protocol. See "Future Protocols" below for planned MeshCore support.
 
 ## Architecture
 
@@ -92,8 +94,8 @@ await webSocketManager.connectRadio('/dev/ttyUSB0', 'reticulum');
 // Connect to RNode radio
 await webSocketManager.connectRadio('/dev/ttyUSB0', 'rnode');
 
-// Connect with auto-detection via Mesh Core
-await webSocketManager.connectRadio('/dev/ttyUSB0', 'meshcore');
+// Connect with auto-detection
+await webSocketManager.connectRadio('/dev/ttyUSB0', 'auto');
 ```
 
 #### Via Bridge Server (Backend)
@@ -105,13 +107,13 @@ The bridge server automatically uses the protocol abstraction:
 {
   "type": "connect",
   "port": "/dev/ttyUSB0",
-  "protocol": "meshtastic"  // or "reticulum", "rnode", "meshcore"
+  "protocol": "meshtastic"  // or "reticulum", "rnode", "auto"
 }
 ```
 
-### Mesh Core Configuration
+### Auto-Detect Configuration
 
-Create a `meshcore.json` file to configure Mesh Core behavior:
+Create a `meshcore.json` file to configure auto-detection behavior:
 
 ```json
 {
@@ -187,7 +189,7 @@ Place this file in:
 - Uses KISS framing (FEND, FESC, TFEND, TFESC)
 - Commands for configuration (frequency, bandwidth, etc.)
 
-### Mesh Core
+### Auto-Detect Protocol
 
 **Auto-Detection**:
 - Tries each protocol in order: Meshtastic, RNode, Reticulum
@@ -197,7 +199,7 @@ Place this file in:
 **Protocol Delegation**:
 - All operations delegated to underlying protocol
 - Events forwarded from underlying protocol
-- Metadata includes both Mesh Core and underlying protocol info
+- Metadata includes both auto-detect wrapper and underlying protocol info
 
 **Cross-Protocol Translation**:
 - Messages can be translated between protocols
@@ -254,7 +256,7 @@ Message on Radio A ch0 → forwarded to Radio C ch2
 - `bridge-server/protocols/MeshtasticProtocol.mjs` - Meshtastic implementation
 - `bridge-server/protocols/ReticulumProtocol.mjs` - Reticulum implementation
 - `bridge-server/protocols/RNodeProtocol.mjs` - RNode implementation
-- `bridge-server/protocols/MeshCoreProtocol.mjs` - Mesh Core implementation
+- `bridge-server/protocols/AutoDetectProtocol.mjs` - Auto-detection implementation
 - `bridge-server/protocols/index.mjs` - Protocol factory and exports
 
 ### Type Definitions
@@ -289,7 +291,32 @@ Message on Radio A ch0 → forwarded to Radio C ch2
 4. **Protocol Configuration UI** - GUI for configuring protocol-specific options
 
 ### Potential Protocols
-- **LoRa APRs** - Amateur Radio APRs over LoRa
+
+#### **MeshCore** (High Priority)
+MeshCore (https://meshcore.co.uk/) is a separate mesh networking product that competes with Meshtastic. Adding support would enable bridging between MeshCore and Meshtastic/Reticulum networks.
+
+**Key Features:**
+- Own firmware flashable to LoRa devices
+- Frame-based Companion Radio Protocol (different from Meshtastic's protobuf)
+- Selective path-based routing (lower overhead than Meshtastic flooding)
+- Up to 64 hops (vs Meshtastic's 7 hops)
+- BLE, USB Serial, and WiFi transports
+
+**Implementation Requirements:**
+- Implement CMD_DEVICE_QUERY (code 22) for device detection
+- Frame-based serial communication with `>` (outbound) and `<` (inbound) delimiters
+- Support for MeshCore command/response protocol
+- 2-byte little-endian length prefix for frames
+
+**Resources:**
+- GitHub: https://github.com/meshcore-dev/MeshCore
+- Web Flasher: https://flasher.meshcore.dev/
+- License: MIT (Open Source)
+
+**Estimated Effort:** Medium (4-8 hours) - similar complexity to Meshtastic implementation
+
+#### Other Future Protocols
+- **LoRa APRS** - Amateur Radio APRS over LoRa
 - **Helium** - Helium Network integration
 - **GoTenna** - GoTenna mesh protocol
 - **Custom Protocols** - Easy extension via BaseProtocol
@@ -313,10 +340,11 @@ Message on Radio A ch0 → forwarded to Radio C ch2
 - Check baud rate (should be 115200)
 - Verify RNode firmware is up to date
 
-**Mesh Core auto-detection fails**
-- Try specifying protocol explicitly in config
+**Auto-detection fails**
+- Try specifying protocol explicitly in config ('meshtastic', 'reticulum', or 'rnode')
 - Check device responds to serial commands
-- Review bridge server logs for details
+- Review bridge server logs for protocol detection details
+- Ensure device is not already in use by another application
 
 ### Message Forwarding Issues
 
@@ -366,7 +394,7 @@ export class MyProtocol extends BaseProtocol {
 3. Update TypeScript types in `src/renderer/types.ts`:
 
 ```typescript
-export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'meshcore' | 'myprotocol';
+export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'auto' | 'myprotocol';
 ```
 
 4. Add protocol-specific metadata fields if needed

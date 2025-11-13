@@ -4,7 +4,7 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 
 **Works great with just ONE radio!** While designed for bridging multiple radios, the AI assistant, email/Discord notifications, and command system make it incredibly useful even with a single device.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-Dual%20(Non--Commercial%2FCommercial)-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 ![Version](https://img.shields.io/badge/version-2.0.0--alpha-orange.svg)
 ![Type](https://img.shields.io/badge/type-Web%20App-blue.svg)
@@ -725,7 +725,11 @@ Contributions welcome! This is an alpha release and needs help with:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is available under a **Dual License**:
+- **Non-Commercial License** (free) - for personal, educational, research, and non-profit use
+- **Commercial License** - requires a separate agreement for commercial use
+
+See the [LICENSE](LICENSE) file for complete terms and conditions.
 
 ## Acknowledgments
 
