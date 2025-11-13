@@ -425,24 +425,28 @@ export class MeshtasticProtocol extends BaseProtocol {
           errorMsg = `Meshtastic error code: ${error}`;
         }
       } else if (typeof error === 'object' && error !== null) {
-        // Error object - try various properties
-        const code = error.code || error.errorCode || error.status;
-        const msg = error.message || error.error || error.msg || error.description;
+        // Error object from Meshtastic library: { id: ..., error: 3 }
+        // Check error.error property first (most common format)
+        const errorCode = error.error || error.code || error.errorCode || error.status;
 
-        if (code === 3 || String(error) === '3') {
+        if (errorCode === 3) {
           errorMsg = 'Device not ready. Please wait for device configuration to complete.';
-        } else if (code === 2 || String(error) === '2') {
+        } else if (errorCode === 2) {
           errorMsg = 'Invalid channel. Please check channel number.';
-        } else if (code === 1 || String(error) === '1') {
+        } else if (errorCode === 1) {
           errorMsg = 'Message queue full. Please wait and try again.';
-        } else if (msg) {
-          errorMsg = String(msg);
         } else {
-          // Try to extract meaningful info
-          try {
-            errorMsg = `Send failed: ${JSON.stringify(error)}`;
-          } catch (e) {
-            errorMsg = `Send failed: ${String(error)}`;
+          // Try to get a message from various properties
+          const msg = error.message || error.msg || error.description;
+          if (msg) {
+            errorMsg = String(msg);
+          } else {
+            // No message, show the error object
+            try {
+              errorMsg = `Send failed: ${JSON.stringify(error)}`;
+            } catch (e) {
+              errorMsg = `Send failed: ${String(error)}`;
+            }
           }
         }
       } else {
