@@ -140,13 +140,13 @@ loglevel = 4
 # To enable:
 # 1. Connect your RNode via USB
 # 2. Find the port: ls /dev/ttyUSB* or ls /dev/ttyACM*
-# 3. Set interface_enabled = yes below
+# 3. Set enabled = yes below
 # 4. Configure port and radio settings
 # 5. Restart Reticulum service
 
-[[RNode Interface]]
+[[RNode LoRa Interface]]
   type = RNodeInterface
-  interface_enabled = no  # Change to 'yes' when RNode is connected
+  enabled = no  # Change to 'yes' when RNode is connected
 
   # Port settings - check with: ls /dev/ttyUSB* or ls /dev/ttyACM*
   port = /dev/ttyACM0           # Linux: /dev/ttyACM0 or /dev/ttyUSB0
@@ -170,24 +170,24 @@ loglevel = 4
 
 # AutoInterface - Automatic local network discovery (LAN)
 # Discovers and connects to other Reticulum instances on local networks
-[[AutoInterface]]
+[[Default Interface]]
   type = AutoInterface
-  interface_enabled = yes
+  enabled = yes
   group_id = reticulum
 
 # TCP Server Interface - Accept incoming connections (WAN/LAN)
-# Allows remote nodes to connect via TCP
+# Allows remote nodes to connect via TCP (default port is 4242 per docs)
 [[TCP Server Interface]]
   type = TCPServerInterface
-  interface_enabled = yes
+  enabled = yes
   listen_ip = 0.0.0.0
-  listen_port = 4965
+  listen_port = 4242
 
 # UDP Interface - Local mesh networking
 # Broadcasts to local network for mesh topology
 [[UDP Interface]]
   type = UDPInterface
-  interface_enabled = yes
+  enabled = yes
   listen_ip = 0.0.0.0
   listen_port = 4242
   forward_ip = 255.255.255.255
@@ -201,15 +201,15 @@ loglevel = 4
 # Uncomment to enable I2P networking for anonymous routing
 #[[I2P Interface]]
 #  type = I2PInterface
-#  interface_enabled = no
+#  enabled = no
 
 # TCP Client Interface - Connect to specific Reticulum nodes
 # Uncomment and configure to connect to a specific Reticulum node
 #[[TCP Client Interface]]
 #  type = TCPClientInterface
-#  interface_enabled = no
+#  enabled = no
 #  target_host = reticulum.example.com
-#  target_port = 4965
+#  target_port = 4242
 """
             with open(config_file, 'w') as f:
                 f.write(config_content)
