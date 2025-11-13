@@ -90,7 +90,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-white">Mesh Bridge</h1>
-              <p className="text-xs text-slate-400">Multi-Protocol</p>
+              <p className="text-xs text-slate-400">Relay Station</p>
             </div>
           </div>
         </div>
@@ -176,6 +176,19 @@ function App() {
               </p>
             </div>
           )}
+
+          {/* Version and Copyright Footer */}
+          <div className="px-3 py-2 text-center border-t border-slate-800/50">
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              <span className="font-semibold text-slate-400">Meshtastic-Only Version</span>
+              <br />
+              v2.0.0
+              <br />
+              © 2024 Northern Plains IT, LLC
+              <br />
+              and OnyxVZ, LLC (IceNet-01)
+            </p>
+          </div>
         </div>
       </div>
 
