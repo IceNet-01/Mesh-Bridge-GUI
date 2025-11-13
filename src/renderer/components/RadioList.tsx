@@ -56,15 +56,11 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
 
   const protocolColors = {
     meshtastic: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-    reticulum: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-    rnode: 'bg-green-500/20 text-green-300 border-green-500/30',
     auto: 'bg-orange-500/20 text-orange-300 border-orange-500/30'
   };
 
   const protocolLabels = {
     meshtastic: 'Meshtastic',
-    reticulum: 'Reticulum',
-    rnode: 'RNode',
     auto: 'Auto-Detect'
   };
 

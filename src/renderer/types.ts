@@ -177,6 +177,36 @@ export interface CommunicationConfig {
   discord: DiscordConfig;
 }
 
+// Reticulum Network Stack types
+export interface ReticulumStatus {
+  running: boolean;
+  identity?: {
+    hash: string;
+    publicKey?: string;
+  };
+  destination?: {
+    hash: string;
+    name?: string;
+  };
+  transports: ReticulumTransport[];
+}
+
+export interface ReticulumTransport {
+  type: string; // 'rnode', 'udp', 'tcp', 'auto'
+  port: string;
+  connected: boolean;
+  messages_sent: number;
+  messages_received: number;
+  added_at: Date;
+  config?: {
+    frequency?: number;
+    bandwidth?: number;
+    spreadingFactor?: number;
+    codingRate?: number;
+    txPower?: number;
+  };
+}
+
 // Web Serial API Type Extensions
 declare global {
   interface Navigator {

@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol, ReticulumStatus } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -332,6 +332,37 @@ export class WebSocketRadioManager {
         } else {
           this.log('error', `❌ ${data.service} test failed: ${data.error}`);
         }
+        break;
+
+      case 'reticulum-status':
+        // Reticulum Network Stack status update
+        this.emit('reticulum-status-update', data.status);
+        if (data.status.running) {
+          this.log('info', `🌐 Reticulum Network Stack running (Identity: ${data.status.identity?.hash?.substring(0, 16) || 'pending'}...)`);
+        } else {
+          this.log('warn', '🌐 Reticulum Network Stack offline');
+        }
+        break;
+
+      case 'reticulum-transports-updated':
+        // Reticulum transports updated (RNode devices added/removed)
+        this.emit('reticulum-transports-updated', data.transports);
+        this.log('info', `🌐 Reticulum transports updated: ${data.transports.length} transport(s)`);
+        break;
+
+      case 'reticulum-transport-error':
+        // Reticulum transport error
+        this.log('error', `🌐 Reticulum transport error on ${data.port}: ${data.error}`);
+        break;
+
+      case 'reticulum-error':
+        // Reticulum general error
+        this.log('error', `🌐 Reticulum error: ${data.error}`);
+        break;
+
+      case 'rnode-added-to-reticulum':
+        // RNode device was detected and added to Reticulum as transport
+        this.log('info', `🔷 RNode device on ${data.port} added to Reticulum as transport`);
         break;
 
       default:

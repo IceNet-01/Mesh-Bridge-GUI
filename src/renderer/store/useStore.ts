@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, ReticulumStatus } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -27,6 +27,9 @@ interface AppStore {
 
   // Communication State
   commConfig: CommunicationConfig | null;
+
+  // Reticulum State
+  reticulumStatus: ReticulumStatus | null;
 
   // Actions
   initialize: () => void;
@@ -132,6 +135,25 @@ export const useStore = create<AppStore>((set, get) => {
     set({ commConfig: config });
   });
 
+  // Reticulum event listeners
+  manager.on('reticulum-status-update', (status: ReticulumStatus) => {
+    set({ reticulumStatus: status });
+  });
+
+  manager.on('reticulum-transports-updated', (transports: any[]) => {
+    set(state => {
+      if (state.reticulumStatus) {
+        return {
+          reticulumStatus: {
+            ...state.reticulumStatus,
+            transports: transports
+          }
+        };
+      }
+      return state;
+    });
+  });
+
   return {
     manager,
     bridgeConnected: false,
@@ -148,6 +170,7 @@ export const useStore = create<AppStore>((set, get) => {
     aiStatus: null,
     aiPullProgress: null,
     commConfig: null,
+    reticulumStatus: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();

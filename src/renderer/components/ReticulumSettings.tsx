@@ -1,97 +1,20 @@
-import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 
-interface ReticulumDestination {
-  hash: string;
-  name: string;
-  lastAnnounce?: Date;
-  hops?: number;
-}
-
-interface ReticulumIdentity {
-  hash: string;
-  publicKey?: string;
-  privateKey?: string;
-}
-
+/**
+ * Reticulum Network Stack Dashboard
+ *
+ * Shows the global Reticulum network status (singleton) and all RNode transports.
+ * RNode devices are automatically detected and added as transports to Reticulum.
+ */
 function ReticulumSettings() {
-  const { radios } = useStore();
-  const connectRadio = useStore(state => state.connectRadio);
-  const [selectedRadio, setSelectedRadio] = useState<string>('');
-  const [destinations, setDestinations] = useState<ReticulumDestination[]>([]);
-  const [identity, setIdentity] = useState<ReticulumIdentity | null>(null);
-  const [announceInterval, setAnnounceInterval] = useState<number>(600);
-  const [newDestName, setNewDestName] = useState<string>('');
-  const [connecting, setConnecting] = useState<boolean>(false);
+  const reticulumStatus = useStore(state => state.reticulumStatus);
 
-  // Filter for Reticulum/RNode radios
-  const reticulumRadios = radios.filter(r =>
-    r.protocol === 'reticulum' || r.protocol === 'rnode'
-  );
-
-  useEffect(() => {
-    if (reticulumRadios.length > 0 && !selectedRadio) {
-      setSelectedRadio(reticulumRadios[0].id);
-    }
-  }, [reticulumRadios, selectedRadio]);
-
-  // Mock data for demonstration - in real implementation, this would come from the backend
-  useEffect(() => {
-    if (selectedRadio) {
-      // Simulate loading destinations
-      setDestinations([
-        { hash: 'a3f5c9...', name: 'Public Relay', lastAnnounce: new Date(), hops: 0 },
-        { hash: 'b7e2d1...', name: 'Emergency Net', lastAnnounce: new Date(Date.now() - 300000), hops: 2 },
-      ]);
-
-      // Simulate loading identity
-      setIdentity({
-        hash: '4d8f6a...',
-        publicKey: '0x1234...',
-      });
-    }
-  }, [selectedRadio]);
-
-  const handleAnnounce = () => {
-    console.log('Broadcasting announce packet...');
-    // TODO: Implement announce via bridge server
-  };
-
-  const handleAddDestination = () => {
-    if (newDestName.trim()) {
-      console.log('Adding destination:', newDestName);
-      // TODO: Implement add destination via bridge server
-      setNewDestName('');
-    }
-  };
-
-  const handleGenerateIdentity = () => {
-    console.log('Generating new identity...');
-    // TODO: Implement identity generation via bridge server
-  };
-
-  const handleConnectReticulumSoftware = async () => {
-    setConnecting(true);
-    try {
-      // Connect to Reticulum in software-only mode (no physical port required)
-      const result = await connectRadio('reticulum-virtual', 'reticulum');
-      if (!result.success) {
-        alert(`Failed to connect Reticulum: ${result.error}\n\nMake sure:\n- Python 3 is installed\n- RNS (pip install rns) is installed\n- Bridge server is running`);
-      }
-    } catch (error) {
-      console.error('Failed to connect Reticulum:', error);
-      alert(`Failed to connect Reticulum: ${(error as Error).message}`);
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  if (reticulumRadios.length === 0) {
+  if (!reticulumStatus || !reticulumStatus.running) {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-3xl font-bold text-white mb-2">Reticulum Network</h2>
-          <p className="text-slate-400">Manage Reticulum/RNode radio destinations and identity</p>
+          <h2 className="text-3xl font-bold text-white mb-2">Reticulum Network Stack</h2>
+          <p className="text-slate-400">Cryptographic mesh networking with destination-based addressing</p>
         </div>
 
         {/* Info Banner */}
@@ -101,237 +24,284 @@ function ReticulumSettings() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <p className="text-white font-medium">Software-Only Reticulum</p>
+              <p className="text-white font-medium">About Reticulum</p>
               <p className="text-sm text-purple-200 mt-1">
-                Reticulum can run without physical hardware! Connect in software-only mode to use TCP/UDP networking,
-                bridge with Meshtastic, or test the system. Requires Python 3 and RNS installed (pip install rns).
+                Reticulum is a cryptographic networking stack for building local and wide-area networks with minimal infrastructure.
+                It uses end-to-end encryption and destination-based addressing instead of IP addresses.
               </p>
             </div>
           </div>
         </div>
 
+        {/* Status Card */}
         <div className="card p-12 text-center">
           <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">No Reticulum Network Connected</h3>
-          <p className="text-slate-400 mb-6">Connect Reticulum in software-only mode or connect a physical RNode device</p>
-
-          <button
-            onClick={handleConnectReticulumSoftware}
-            disabled={connecting}
-            className="btn-primary inline-flex items-center gap-2"
-          >
-            {connecting ? (
-              <>
-                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Connecting...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Connect Software-Only Reticulum
-              </>
-            )}
-          </button>
-
-          <p className="text-xs text-slate-500 mt-4">
-            Physical RNode devices will be auto-detected when plugged in
+          <h3 className="text-xl font-bold text-white mb-2">Reticulum Network Stack Starting...</h3>
+          <p className="text-slate-400 mb-2">
+            {!reticulumStatus
+              ? 'Waiting for bridge server connection...'
+              : 'Reticulum is initializing...'}
           </p>
+          <p className="text-xs text-slate-500 mt-4">
+            Reticulum auto-starts when the bridge server starts. Check logs if this takes more than a few seconds.
+          </p>
+        </div>
+
+        {/* Architecture Info */}
+        <div className="card p-6 bg-slate-900/50">
+          <h3 className="text-lg font-bold text-white mb-3">Architecture</h3>
+          <div className="space-y-2 text-sm text-slate-300">
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400">•</span>
+              <p><strong className="text-white">Global Network:</strong> Reticulum runs as a single network instance (not per-radio)</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400">•</span>
+              <p><strong className="text-white">Auto-Start:</strong> Starts automatically when bridge server starts</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400">•</span>
+              <p><strong className="text-white">RNode Transports:</strong> RNode devices are detected and added as transports automatically</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-400">•</span>
+              <p><strong className="text-white">Multiple Transports:</strong> You can have multiple RNode radios as transports for one network</p>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  const radio = reticulumRadios.find(r => r.id === selectedRadio);
+  const transports = reticulumStatus.transports || [];
+  const rnodeTransports = transports.filter(t => t.type === 'rnode');
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold text-white mb-2">Reticulum Network</h2>
-        <p className="text-slate-400">Manage Reticulum/RNode radio destinations and identity</p>
+        <h2 className="text-3xl font-bold text-white mb-2">Reticulum Network Stack</h2>
+        <p className="text-slate-400">Global cryptographic mesh network • {transports.length} transport(s) connected</p>
       </div>
 
-      {/* Info Banner */}
-      <div className="card p-4 bg-purple-500/10 border border-purple-500/30">
-        <div className="flex gap-3">
-          <svg className="w-6 h-6 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div>
-            <p className="text-white font-medium">About Reticulum Network Stack</p>
-            <p className="text-sm text-purple-200 mt-1">
-              Reticulum uses cryptographic identities and destination-based addressing instead of channels.
-              Announce packets broadcast your destinations to the network. Messages are end-to-end encrypted by default.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Radio Selector */}
-      {reticulumRadios.length > 1 && (
-        <div className="card p-6">
-          <h3 className="text-xl font-bold text-white mb-4">Select Radio</h3>
-          <select
-            value={selectedRadio}
-            onChange={(e) => setSelectedRadio(e.target.value)}
-            className="input w-full"
-          >
-            {reticulumRadios.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.port}) - {r.protocol === 'rnode' ? 'RNode' : 'Reticulum'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Identity Section */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-white">Identity</h3>
-          <button onClick={handleGenerateIdentity} className="btn-secondary">
-            Generate New
-          </button>
+      {/* Network Status Card */}
+      <div className="card p-6 border-2 border-green-500/30 bg-green-500/5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="status-dot status-connected"></div>
+          <h3 className="text-xl font-bold text-white">Network Online</h3>
         </div>
 
-        {identity ? (
-          <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Identity */}
+          {reticulumStatus.identity && (
             <div className="p-4 bg-slate-900/50 rounded-lg">
               <p className="text-sm text-slate-400 mb-1">Identity Hash</p>
-              <code className="text-white font-mono text-sm break-all">{identity.hash}</code>
+              <code className="text-white font-mono text-sm break-all">
+                {reticulumStatus.identity.hash}
+              </code>
             </div>
-            {identity.publicKey && (
-              <div className="p-4 bg-slate-900/50 rounded-lg">
-                <p className="text-sm text-slate-400 mb-1">Public Key</p>
-                <code className="text-white font-mono text-xs break-all">{identity.publicKey}</code>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-slate-400 mb-4">No identity configured</p>
-            <button onClick={handleGenerateIdentity} className="btn-primary">
-              Generate Identity
-            </button>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* Announce Settings */}
-      <div className="card p-6">
-        <h3 className="text-xl font-bold text-white mb-4">Announce Settings</h3>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">
-              Announce Interval (seconds)
-            </label>
-            <input
-              type="number"
-              value={announceInterval}
-              onChange={(e) => setAnnounceInterval(parseInt(e.target.value))}
-              className="input w-full"
-              min={60}
-              max={3600}
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              How often to broadcast announce packets (60-3600 seconds)
-            </p>
-          </div>
-
-          <button onClick={handleAnnounce} className="btn-primary w-full">
-            <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-            </svg>
-            Broadcast Announce Now
-          </button>
-        </div>
-      </div>
-
-      {/* Destinations */}
-      <div className="card p-6">
-        <h3 className="text-xl font-bold text-white mb-4">Known Destinations</h3>
-
-        {/* Add New Destination */}
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={newDestName}
-            onChange={(e) => setNewDestName(e.target.value)}
-            placeholder="Destination name..."
-            className="input flex-1"
-          />
-          <button onClick={handleAddDestination} className="btn-primary">
-            Add
-          </button>
-        </div>
-
-        {/* Destination List */}
-        <div className="space-y-2">
-          {destinations.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">No destinations discovered yet</p>
-          ) : (
-            destinations.map((dest) => (
-              <div key={dest.hash} className="p-4 bg-slate-900/50 rounded-lg">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-white font-medium">{dest.name}</p>
-                      {dest.hops !== undefined && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded">
-                          {dest.hops} {dest.hops === 1 ? 'hop' : 'hops'}
-                        </span>
-                      )}
-                    </div>
-                    <code className="text-xs text-slate-400 font-mono">{dest.hash}</code>
-                    {dest.lastAnnounce && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Last announce: {new Date(dest.lastAnnounce).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                  <button className="btn-secondary text-sm">
-                    Send Test
-                  </button>
-                </div>
-              </div>
-            ))
+          {/* Destination */}
+          {reticulumStatus.destination && (
+            <div className="p-4 bg-slate-900/50 rounded-lg">
+              <p className="text-sm text-slate-400 mb-1">Destination Hash</p>
+              <code className="text-white font-mono text-sm break-all">
+                {reticulumStatus.destination.hash}
+              </code>
+              {reticulumStatus.destination.name && (
+                <p className="text-xs text-slate-500 mt-1">Name: {reticulumStatus.destination.name}</p>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* Network Stats */}
-      {radio && (
+      {/* RNode Transports */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-white">RNode Transports</h3>
+          <span className="text-sm px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full">
+            {rnodeTransports.length} device{rnodeTransports.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {rnodeTransports.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0" />
+              </svg>
+            </div>
+            <p className="text-slate-400 text-sm mb-2">No RNode devices connected</p>
+            <p className="text-xs text-slate-500">
+              Plug in an RNode device and it will be auto-detected and added as a transport
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rnodeTransports.map((transport, index) => (
+              <RNodeTransportCard key={transport.port} transport={transport} index={index} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Transport Statistics */}
+      {transports.length > 0 && (
         <div className="card p-6">
           <h3 className="text-xl font-bold text-white mb-4">Network Statistics</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <p className="text-slate-400 text-xs mb-1">Messages Received</p>
-              <p className="text-2xl font-bold text-green-400">{radio.messagesReceived}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-slate-400 text-xs mb-1">Messages Sent</p>
-              <p className="text-2xl font-bold text-blue-400">{radio.messagesSent}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-slate-400 text-xs mb-1">Announces Sent</p>
-              <p className="text-2xl font-bold text-purple-400">24</p>
-            </div>
-            <div className="text-center">
-              <p className="text-slate-400 text-xs mb-1">Destinations</p>
-              <p className="text-2xl font-bold text-orange-400">{destinations.length}</p>
-            </div>
+            <StatItem
+              label="Total Transports"
+              value={transports.length}
+              color="purple"
+            />
+            <StatItem
+              label="RNode Devices"
+              value={rnodeTransports.length}
+              color="blue"
+            />
+            <StatItem
+              label="Messages Sent"
+              value={transports.reduce((sum, t) => sum + t.messages_sent, 0)}
+              color="green"
+            />
+            <StatItem
+              label="Messages Received"
+              value={transports.reduce((sum, t) => sum + t.messages_received, 0)}
+              color="orange"
+            />
           </div>
         </div>
       )}
+
+      {/* Architecture Info */}
+      <div className="card p-4 bg-slate-900/50">
+        <div className="flex gap-3">
+          <svg className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-white text-sm font-medium">Single Network, Multiple Transports</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Reticulum runs as one global network. RNode devices are physical transports that provide connectivity.
+              You can have multiple RNode radios working together as transports for the same network.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface RNodeTransportCardProps {
+  transport: any;
+  index: number;
+}
+
+function RNodeTransportCard({ transport, index }: RNodeTransportCardProps) {
+  return (
+    <div className="p-4 bg-slate-900/50 border border-slate-700/50 rounded-lg hover:border-purple-500/30 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className={`status-dot ${transport.connected ? 'status-connected' : 'status-disconnected'}`}></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-white font-medium">RNode {index + 1}</h4>
+              <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-300 rounded border border-green-500/30">
+                LoRa
+              </span>
+            </div>
+            <code className="text-xs text-slate-400 font-mono">{transport.port}</code>
+          </div>
+        </div>
+        <span className={`badge ${transport.connected ? 'badge-success' : 'badge-error'}`}>
+          {transport.connected ? 'Connected' : 'Disconnected'}
+        </span>
+      </div>
+
+      {/* LoRa Configuration */}
+      {transport.config && (
+        <div className="mb-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded">
+          <p className="text-blue-300 text-xs font-semibold mb-2 uppercase">LoRa Configuration</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {transport.config.frequency && (
+              <div>
+                <p className="text-slate-400">Frequency</p>
+                <p className="text-white font-medium">{(transport.config.frequency / 1000000).toFixed(1)} MHz</p>
+              </div>
+            )}
+            {transport.config.bandwidth && (
+              <div>
+                <p className="text-slate-400">Bandwidth</p>
+                <p className="text-white font-medium">{(transport.config.bandwidth / 1000).toFixed(0)} kHz</p>
+              </div>
+            )}
+            {transport.config.spreadingFactor && (
+              <div>
+                <p className="text-slate-400">Spreading Factor</p>
+                <p className="text-white font-medium">SF{transport.config.spreadingFactor}</p>
+              </div>
+            )}
+            {transport.config.codingRate && (
+              <div>
+                <p className="text-slate-400">Coding Rate</p>
+                <p className="text-white font-medium">4/{transport.config.codingRate}</p>
+              </div>
+            )}
+            {transport.config.txPower !== undefined && (
+              <div>
+                <p className="text-slate-400">TX Power</p>
+                <p className="text-white font-medium">{transport.config.txPower} dBm</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Statistics */}
+      <div className="grid grid-cols-2 gap-4 text-center">
+        <div>
+          <p className="text-xs text-slate-400 mb-1">Sent</p>
+          <p className="text-lg font-bold text-blue-400">{transport.messages_sent}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-400 mb-1">Received</p>
+          <p className="text-lg font-bold text-green-400">{transport.messages_received}</p>
+        </div>
+      </div>
+
+      {transport.added_at && (
+        <p className="text-xs text-slate-500 mt-3 text-center">
+          Added: {new Date(transport.added_at).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface StatItemProps {
+  label: string;
+  value: number;
+  color: 'purple' | 'blue' | 'green' | 'orange';
+}
+
+function StatItem({ label, value, color }: StatItemProps) {
+  const colors = {
+    purple: 'text-purple-400',
+    blue: 'text-blue-400',
+    green: 'text-green-400',
+    orange: 'text-orange-400',
+  };
+
+  return (
+    <div className="text-center p-4 bg-slate-900/30 rounded-lg">
+      <p className="text-slate-400 text-xs mb-1">{label}</p>
+      <p className={`text-3xl font-bold ${colors[color]}`}>{value}</p>
     </div>
   );
 }
