@@ -373,21 +373,61 @@ export class MeshtasticProtocol extends BaseProtocol {
       return true;
     } catch (error) {
       console.error('[Meshtastic] Error sending message:', error);
+      console.error('[Meshtastic] Error type:', typeof error);
+      console.error('[Meshtastic] Error constructor:', error?.constructor?.name);
 
-      // Provide better error messages for common Meshtastic error codes
-      let errorMsg = error.message || String(error);
-
-      // Meshtastic error codes
-      if (error === 3 || error.code === 3 || errorMsg === '3') {
-        errorMsg = 'Device not ready. Please wait for device configuration to complete.';
-      } else if (error === 2 || error.code === 2 || errorMsg === '2') {
-        errorMsg = 'Invalid channel. Please check channel number.';
-      } else if (error === 1 || error.code === 1 || errorMsg === '1') {
-        errorMsg = 'Message queue full. Please wait and try again.';
+      // Try to log error details
+      try {
+        console.error('[Meshtastic] Error JSON:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      } catch (e) {
+        console.error('[Meshtastic] Could not stringify error');
       }
 
-      this.handleError(new Error(errorMsg));
-      throw new Error(errorMsg);
+      // Provide better error messages for common Meshtastic error codes
+      let errorMsg = 'Unknown error';
+
+      // Handle various error formats
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'number') {
+        // Direct error code
+        if (error === 3) {
+          errorMsg = 'Device not ready. Please wait for device configuration to complete.';
+        } else if (error === 2) {
+          errorMsg = 'Invalid channel. Please check channel number.';
+        } else if (error === 1) {
+          errorMsg = 'Message queue full. Please wait and try again.';
+        } else {
+          errorMsg = `Meshtastic error code: ${error}`;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        // Error object - try various properties
+        const code = error.code || error.errorCode || error.status;
+        const msg = error.message || error.error || error.msg || error.description;
+
+        if (code === 3 || String(error) === '3') {
+          errorMsg = 'Device not ready. Please wait for device configuration to complete.';
+        } else if (code === 2 || String(error) === '2') {
+          errorMsg = 'Invalid channel. Please check channel number.';
+        } else if (code === 1 || String(error) === '1') {
+          errorMsg = 'Message queue full. Please wait and try again.';
+        } else if (msg) {
+          errorMsg = String(msg);
+        } else {
+          // Try to extract meaningful info
+          try {
+            errorMsg = `Send failed: ${JSON.stringify(error)}`;
+          } catch (e) {
+            errorMsg = `Send failed: ${String(error)}`;
+          }
+        }
+      } else {
+        errorMsg = String(error);
+      }
+
+      const finalError = new Error(errorMsg);
+      this.handleError(finalError);
+      throw finalError;
     }
   }
 
