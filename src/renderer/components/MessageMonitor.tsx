@@ -247,9 +247,10 @@ function MessageMonitor({ messages, radios }: MessageMonitorProps) {
                     <td className="px-4 py-3 text-sm text-slate-300">{msg.portnum}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        {msg.sent && <span className="badge-primary">Sent</span>}
                         {msg.forwarded && <span className="badge-success">Forwarded</span>}
                         {msg.duplicate && <span className="badge-warning">Duplicate</span>}
-                        {!msg.forwarded && !msg.duplicate && (
+                        {!msg.sent && !msg.forwarded && !msg.duplicate && (
                           <span className="badge-info">Received</span>
                         )}
                       </div>

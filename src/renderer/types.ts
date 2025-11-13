@@ -60,13 +60,14 @@ export interface Message {
   fromRadio: string;
   toRadio?: string;
   protocol: RadioProtocol;
-  from: number;
-  to: number;
+  from: number | string;
+  to: number | string;
   channel: number;
   portnum: number;
   payload: any;
   forwarded: boolean;
   duplicate: boolean;
+  sent?: boolean; // True if this message was sent by us (not received)
   rssi?: number;
   snr?: number;
   hopLimit?: number;

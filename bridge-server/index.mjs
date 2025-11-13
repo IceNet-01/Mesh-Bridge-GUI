@@ -1674,6 +1674,26 @@ class MeshtasticBridgeServer {
 
       console.log(`✅ Text sent successfully on channel ${channel}`);
 
+      // Create a message record for the sent message
+      const sentMessage = {
+        id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        timestamp: new Date().toISOString(),
+        radioId: radioId,
+        protocol: radio.protocolType,
+        from: radio.nodeInfo?.nodeId || radioId,
+        to: 'broadcast',
+        channel: channel,
+        portnum: 1,
+        text: text,
+        sent: true, // Mark as sent (not received)
+      };
+
+      // Broadcast the sent message to all clients so it appears in message log
+      this.broadcast({
+        type: 'message',
+        message: sentMessage
+      });
+
       // Broadcast updated radio stats
       this.broadcast({
         type: 'radio-updated',
@@ -1687,7 +1707,18 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error('❌ Send failed:', error);
-      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Extract meaningful error message
+      let errorMsg = 'Unknown error';
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Try to get a meaningful message from the error object
+        errorMsg = error.message || error.error || JSON.stringify(error);
+      } else {
+        errorMsg = String(error);
+      }
+
       ws.send(JSON.stringify({
         type: 'error',
         error: `Send failed: ${errorMsg}`
