@@ -107,6 +107,16 @@ class MeshtasticBridgeServer {
     this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
     this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
 
+    // ===== CROSS-PROTOCOL BRIDGE CONFIGURATION =====
+    // Bridge messages between different protocol radios (e.g., Meshtastic → Reticulum)
+    this.crossProtocolBridgeEnabled = false;   // Enable/disable cross-protocol bridging
+    this.meshtasticToReticulum = false;        // Forward Meshtastic messages to Reticulum
+    this.reticulumToMeshtastic = false;        // Forward Reticulum messages to Meshtastic
+    // Map Meshtastic channels to Reticulum destination hashes
+    // Example: { 0: "abc123...", 1: "def456..." }
+    // Channel 0 on Meshtastic → destination abc123... on Reticulum
+    this.meshtasticChannelToReticulumMap = {}; // Channel index → destination hash
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -1484,6 +1494,44 @@ class MeshtasticBridgeServer {
       // Forward to each radio that has matching channel configuration
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
         try {
+          // ===== CROSS-PROTOCOL BRIDGING =====
+          // Check if source and target are different protocols
+          const sourceProtocol = sourceRadio.protocolType;
+          const targetProtocol = radio.protocolType;
+
+          if (sourceProtocol !== targetProtocol && this.crossProtocolBridgeEnabled) {
+            console.log(`🌉 Cross-protocol bridge: ${sourceProtocol} → ${targetProtocol}`);
+
+            // Meshtastic → Reticulum
+            if (sourceProtocol === 'meshtastic' && targetProtocol === 'reticulum' && this.meshtasticToReticulum) {
+              const destHash = this.meshtasticChannelToReticulumMap[channel];
+              if (destHash) {
+                console.log(`  🔀 Forwarding Meshtastic ch${channel} → Reticulum dest ${destHash.substring(0, 16)}...`);
+                await radio.protocol.sendMessage(text, destHash, { wantAck: false });
+                console.log(`  ✅ Forwarded to Reticulum destination`);
+                return { radioId: targetRadioId, success: true, crossProtocol: true };
+              } else {
+                console.log(`  ⚠️  No Reticulum destination mapped for Meshtastic channel ${channel}`);
+                return { radioId: targetRadioId, success: false, reason: 'no_destination_mapping' };
+              }
+            }
+
+            // Reticulum → Meshtastic
+            if (sourceProtocol === 'reticulum' && targetProtocol === 'meshtastic' && this.reticulumToMeshtastic) {
+              // For Reticulum → Meshtastic, use channel 0 by default (or could map back)
+              const targetChannel = 0;
+              console.log(`  🔀 Forwarding Reticulum → Meshtastic ch${targetChannel}`);
+              await radio.protocol.sendMessage(text, targetChannel, { wantAck: false });
+              console.log(`  ✅ Forwarded to Meshtastic channel ${targetChannel}`);
+              return { radioId: targetRadioId, success: true, crossProtocol: true };
+            }
+
+            // Other cross-protocol combinations not yet supported
+            console.log(`  ⚠️  Cross-protocol ${sourceProtocol} → ${targetProtocol} not configured`);
+            return { radioId: targetRadioId, success: false, reason: 'cross_protocol_not_configured' };
+          }
+
+          // ===== SAME-PROTOCOL FORWARDING (existing logic) =====
           // Search ALL channels on target radio for matching name+PSK
           let matchingChannelIndex = null;
           let matchingChannel = null;
