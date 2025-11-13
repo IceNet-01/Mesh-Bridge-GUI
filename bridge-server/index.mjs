@@ -1456,8 +1456,23 @@ class MeshtasticBridgeServer {
       }
 
       const sourceChannel = sourceRadio.channels?.get(channel);
+
+      // If we don't have channel config yet, fall back to simple broadcast on same channel number
       if (!sourceChannel) {
-        console.warn(`⚠️  Source radio ${sourceRadioId} has no channel ${channel} configured`);
+        console.log(`⚠️  Channel ${channel} config not yet received, using simple broadcast mode`);
+
+        // Simple broadcast: send to same channel number on all other radios
+        const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
+          try {
+            console.log(`  📤 Forwarding to ${targetRadioId} on channel ${channel}`);
+            await radio.protocol.sendMessage(text, channel);
+            console.log(`  ✅ Forwarded to ${targetRadioId}`);
+          } catch (error) {
+            console.error(`  ❌ Failed to forward to ${targetRadioId}:`, error.message);
+          }
+        });
+
+        await Promise.allSettled(forwardPromises);
         return;
       }
 
