@@ -482,6 +482,15 @@ class MeshtasticBridgeServer {
         }
       });
 
+      protocolHandler.on('config', (config) => {
+        console.log(`⚙️  Radio ${radioId} config updated`);
+        // Broadcast updated radio info to clients (includes protocolMetadata with loraConfig)
+        this.broadcast({
+          type: 'radio-updated',
+          radio: this.getRadioInfo(radioId)
+        });
+      });
+
       protocolHandler.on('error', (error) => {
         console.error(`❌ Radio ${radioId} error:`, error);
         const radio = this.radios.get(radioId);

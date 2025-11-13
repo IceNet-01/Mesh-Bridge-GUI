@@ -144,9 +144,39 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // TODO: Subscribe to LoRa config when the correct event is identified
-    // The onLoraConfigPacket event doesn't exist in current @meshtastic/core
-    // Need to find the correct event name or alternative method to get LoRa config
+    // Subscribe to config packets (includes LoRa config)
+    this.device.events.onConfigPacket.subscribe((configPacket) => {
+      try {
+        // Check if this is a LoRa config packet
+        if (configPacket.lora) {
+          this.loraConfig = {
+            region: configPacket.lora.region,
+            modemPreset: configPacket.lora.modemPreset,
+            hopLimit: configPacket.lora.hopLimit,
+            txEnabled: configPacket.lora.txEnabled,
+            txPower: configPacket.lora.txPower,
+            channelNum: configPacket.lora.channelNum,
+            overrideDutyCycle: configPacket.lora.overrideDutyCycle,
+            sx126xRxBoostedGain: configPacket.lora.sx126xRxBoostedGain,
+            overrideFrequency: configPacket.lora.overrideFrequency,
+            ignoreMqtt: configPacket.lora.ignoreMqtt
+          };
+
+          console.log(`[Meshtastic] LoRa config:`, {
+            region: this.getRegionName(this.loraConfig.region),
+            modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),
+            txPower: this.loraConfig.txPower,
+            hopLimit: this.loraConfig.hopLimit
+          });
+
+          // Emit config event so bridge server can update clients
+          this.emit('config', this.loraConfig);
+        }
+      } catch (error) {
+        console.error('[Meshtastic] Error handling config packet:', error);
+        this.handleError(error);
+      }
+    });
   }
 
   async disconnect() {

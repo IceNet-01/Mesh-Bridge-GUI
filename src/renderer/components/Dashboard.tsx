@@ -18,14 +18,26 @@ function Dashboard({ radios, statistics, messages }: DashboardProps) {
     return `${hours}h ${minutes}m ${secs}s`;
   };
 
-  // Generate chart data for message rate
+  // Generate chart data for message rate using real message timestamps
+  const calculateMessageRate = (minutesAgo: number): number => {
+    const now = Date.now();
+    const oneMinute = 60 * 1000;
+    const startTime = now - (minutesAgo + 1) * oneMinute;
+    const endTime = now - minutesAgo * oneMinute;
+
+    return messages.filter(msg => {
+      const msgTime = msg.timestamp instanceof Date ? msg.timestamp.getTime() : new Date(msg.timestamp).getTime();
+      return msgTime >= startTime && msgTime < endTime;
+    }).length;
+  };
+
   const chartData = [
-    { time: '5m ago', rate: Math.floor(Math.random() * 20) },
-    { time: '4m ago', rate: Math.floor(Math.random() * 20) },
-    { time: '3m ago', rate: Math.floor(Math.random() * 20) },
-    { time: '2m ago', rate: Math.floor(Math.random() * 20) },
-    { time: '1m ago', rate: Math.floor(Math.random() * 20) },
-    { time: 'now', rate: statistics.messageRatePerMinute },
+    { time: '5m ago', rate: calculateMessageRate(5) },
+    { time: '4m ago', rate: calculateMessageRate(4) },
+    { time: '3m ago', rate: calculateMessageRate(3) },
+    { time: '2m ago', rate: calculateMessageRate(2) },
+    { time: '1m ago', rate: calculateMessageRate(1) },
+    { time: 'now', rate: calculateMessageRate(0) },
   ];
 
   return (
