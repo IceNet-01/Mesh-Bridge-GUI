@@ -61,6 +61,12 @@ function MapBounds({ positions }: { positions: [number, number][] }) {
 }
 
 export function MapView({ nodes, radios }: MapViewProps) {
+  // Debug: Log nodes on mount and when they change
+  useEffect(() => {
+    console.log('[MapView] Nodes:', nodes.length, 'with positions:', nodes.filter(n => n.position).length);
+    console.log('[MapView] Radios:', radios.length);
+  }, [nodes, radios]);
+
   // Collect all positions from nodes and radios
   const positions = useMemo(() => {
     const pos: [number, number][] = [];
@@ -132,7 +138,7 @@ export function MapView({ nodes, radios }: MapViewProps) {
           <MapContainer
             center={defaultCenter}
             zoom={13}
-            className="h-full w-full"
+            style={{ height: '100%', width: '100%' }}
             zoomControl={true}
           >
             <TileLayer

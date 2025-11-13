@@ -353,6 +353,11 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error('Device not connected');
       }
 
+      // Check if device is configured
+      if (!this.nodeInfo || !this.nodeInfo.nodeId) {
+        throw new Error('Device not fully configured yet. Please wait a few seconds and try again.');
+      }
+
       const { wantAck = false } = options;
 
       console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel}`);
@@ -360,7 +365,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Send using the device
       // sendText(text, destination, wantAck, channel)
       // Use "broadcast" as destination to broadcast on the specified channel
-      await this.device.sendText(text, "broadcast", wantAck, channel);
+      const result = await this.device.sendText(text, "broadcast", wantAck, channel);
 
       this.stats.messagesSent++;
       console.log(`[Meshtastic] Text broadcast successfully on channel ${channel}`);
@@ -368,8 +373,21 @@ export class MeshtasticProtocol extends BaseProtocol {
       return true;
     } catch (error) {
       console.error('[Meshtastic] Error sending message:', error);
-      this.handleError(error);
-      throw error;
+
+      // Provide better error messages for common Meshtastic error codes
+      let errorMsg = error.message || String(error);
+
+      // Meshtastic error codes
+      if (error === 3 || error.code === 3 || errorMsg === '3') {
+        errorMsg = 'Device not ready. Please wait for device configuration to complete.';
+      } else if (error === 2 || error.code === 2 || errorMsg === '2') {
+        errorMsg = 'Invalid channel. Please check channel number.';
+      } else if (error === 1 || error.code === 1 || errorMsg === '1') {
+        errorMsg = 'Message queue full. Please wait and try again.';
+      }
+
+      this.handleError(new Error(errorMsg));
+      throw new Error(errorMsg);
     }
   }
 

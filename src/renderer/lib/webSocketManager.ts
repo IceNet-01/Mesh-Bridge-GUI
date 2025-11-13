@@ -244,7 +244,7 @@ export class WebSocketRadioManager {
         break;
 
       case 'message':
-        // New message received
+        // New message received (or sent by us)
         const message: Message = {
           id: data.message.id,
           timestamp: new Date(data.message.timestamp),
@@ -260,20 +260,34 @@ export class WebSocketRadioManager {
           },
           forwarded: false,
           duplicate: false,
+          sent: data.message.sent || false,
           rssi: data.message.rssi,
           snr: data.message.snr
         };
 
         this.messages.set(message.id, message);
         this.messageTimestamps.push(message.timestamp);
-        this.statistics.totalMessagesReceived++;
+
+        // Only increment received count if not a sent message
+        if (!message.sent) {
+          this.statistics.totalMessagesReceived++;
+        }
 
         if (this.statistics.radioStats[message.fromRadio]) {
-          this.statistics.radioStats[message.fromRadio].received++;
+          if (message.sent) {
+            this.statistics.radioStats[message.fromRadio].sent++;
+          } else {
+            this.statistics.radioStats[message.fromRadio].received++;
+          }
         }
 
         this.emit('message-received', { radioId: message.fromRadio, message });
-        this.log('info', `💬 Message from ${message.from}: "${message.payload.text}"`);
+
+        if (message.sent) {
+          this.log('info', `📤 Sent: "${message.payload.text}"`);
+        } else {
+          this.log('info', `💬 Message from ${message.from}: "${message.payload.text}"`);
+        }
         break;
 
       case 'ports-list':
