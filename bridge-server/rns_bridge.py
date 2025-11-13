@@ -67,10 +67,51 @@ class RNSBridge:
         # Event for signaling shutdown
         self.shutdown_event = Event()
 
+        # Ensure config directory exists
+        self._ensure_config_dir()
+
     def log(self, message, level="INFO"):
         """Log to stderr (so stdout remains clean for JSON)"""
         sys.stderr.write(f"[RNS-Bridge {level}] {message}\n")
         sys.stderr.flush()
+
+    def _ensure_config_dir(self):
+        """Ensure RNS config directory exists with minimal config"""
+        import os
+
+        # Create config directory if it doesn't exist
+        if not os.path.exists(self.config_path):
+            os.makedirs(self.config_path, exist_ok=True)
+            self.log(f"Created RNS config directory: {self.config_path}")
+
+        # Create minimal config file if it doesn't exist
+        config_file = os.path.join(self.config_path, "config")
+        if not os.path.exists(config_file):
+            minimal_config = """# Minimal Reticulum configuration for Mesh Bridge
+# This config uses only local UDP transport to avoid blocking
+
+[reticulum]
+enable_transport = no
+share_instance = yes
+shared_instance_port = 37428
+instance_control_port = 37429
+
+[logging]
+loglevel = 4
+
+# Local UDP interface for software-only operation
+[[Local Interface]]
+  type = UDPInterface
+  interface_enabled = yes
+  outgoing = true
+  listen_ip = 127.0.0.1
+  listen_port = 4242
+  forward_ip = 127.0.0.1
+  forward_port = 4242
+"""
+            with open(config_file, 'w') as f:
+                f.write(minimal_config)
+            self.log(f"Created minimal RNS config: {config_file}")
 
     def send_message(self, msg_type, data):
         """Send JSON message to Node.js via stdout"""
