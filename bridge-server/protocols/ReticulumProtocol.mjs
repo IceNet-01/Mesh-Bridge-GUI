@@ -1,272 +1,295 @@
 /**
- * Reticulum Protocol Handler
+ * Reticulum Network Stack Manager (Singleton)
  *
- * Implements BaseProtocol for Reticulum Network Stack (RNS)
+ * Manages a single global Reticulum Network Stack instance with multiple transports.
+ * Unlike other protocols, Reticulum is NOT instantiated per-radio. Instead, it's a
+ * single network that can have multiple transports (RNode devices, UDP, TCP, etc.)
  *
- * NOTE: This is a reference implementation. Reticulum is primarily a Python stack,
- * so this implementation uses child_process to interact with a Python RNS instance
- * or uses a serial protocol adapter if available.
+ * Architecture:
+ * - One Python RNS bridge process (started on demand)
+ * - Multiple RNode devices as transports
+ * - Software transports (UDP, TCP) from config
+ * - Destinations and announces across all transports
+ *
+ * Usage:
+ *   const reticulum = ReticulumProtocol.getInstance();
+ *   await reticulum.start();
+ *   await reticulum.addRNodeTransport('/dev/ttyUSB0');
+ *   await reticulum.addRNodeTransport('/dev/ttyUSB1');
  */
 
-import { BaseProtocol } from './BaseProtocol.mjs';
+import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
-import { SerialPort } from 'serialport';
-import { createHash } from 'crypto';
 
-export class ReticulumProtocol extends BaseProtocol {
-  constructor(radioId, portPath, options = {}) {
-    super(radioId, portPath, options);
-    this.serialPort = null;
+// Singleton instance
+let instance = null;
+
+export class ReticulumProtocol extends EventEmitter {
+  static getInstance() {
+    if (!instance) {
+      instance = new ReticulumProtocol();
+    }
+    return instance;
+  }
+
+  constructor() {
+    if (instance) {
+      throw new Error('ReticulumProtocol is a singleton. Use getInstance() instead.');
+    }
+    super();
+
     this.rnsPython = null;
     this.identity = null;
+    this.destination = null;
+    this.running = false;
     this.destinations = new Map(); // destination_hash -> destination_info
-    this.buffer = Buffer.alloc(0);
+    this.rnode_transports = new Map(); // port -> transport_info
     this.jsonBuffer = ''; // Buffer for incomplete JSON lines from Python
+    this.messageStats = {
+      sent: 0,
+      received: 0,
+      announces: 0
+    };
   }
 
-  getProtocolName() {
-    return 'reticulum';
-  }
+  /**
+   * Start the Reticulum Network Stack
+   */
+  async start(options = {}) {
+    if (this.running) {
+      console.log('[Reticulum] Already running');
+      return true;
+    }
 
-  async connect() {
     try {
-      console.log(`[Reticulum] Connecting to ${this.portPath}...`);
+      console.log('[Reticulum] Starting Reticulum Network Stack...');
 
-      // Option 1: Direct serial connection (if using RNode or similar hardware)
-      if (this.options.useDirectSerial) {
-        await this.connectDirectSerial();
-      } else {
-        // Option 2: Use Python RNS bridge (recommended for full Reticulum features)
-        await this.connectViaPython();
+      const { fileURLToPath } = await import('url');
+      const { dirname, join } = await import('path');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+
+      const pythonScript = options.pythonBridge || join(__dirname, '..', 'rns_bridge.py');
+      console.log(`[Reticulum] Python bridge: ${pythonScript}`);
+
+      const args = [];
+      if (options.rnsConfigPath) {
+        args.push('--config', options.rnsConfigPath);
+      }
+      if (options.identityPath) {
+        args.push('--identity', options.identityPath);
       }
 
-      this.connected = true;
-      console.log(`[Reticulum] Connected successfully to ${this.portPath}`);
+      this.rnsPython = spawn('python3', [pythonScript, ...args], {
+        cwd: options.rnsConfigPath || process.cwd(),
+        env: { ...process.env, PYTHONUNBUFFERED: '1' }
+      });
+
+      this.rnsPython.stdout.on('data', (data) => {
+        this.handlePythonData(data);
+      });
+
+      this.rnsPython.stderr.on('data', (data) => {
+        const msg = data.toString();
+        // Don't log normal RNS info messages as errors
+        if (msg.includes('[RNS-Bridge INFO]')) {
+          console.log(`[Reticulum] ${msg.trim()}`);
+        } else if (msg.includes('[RNS-Bridge WARN]')) {
+          console.warn(`[Reticulum] ${msg.trim()}`);
+        } else if (msg.includes('[RNS-Bridge ERROR]')) {
+          console.error(`[Reticulum] ${msg.trim()}`);
+        } else {
+          console.log(`[Reticulum Python] ${msg.trim()}`);
+        }
+      });
+
+      this.rnsPython.on('close', (code) => {
+        console.log(`[Reticulum] Python process exited with code ${code}`);
+        this.running = false;
+        this.emit('disconnected');
+      });
+
+      this.rnsPython.on('error', (error) => {
+        console.error('[Reticulum] Python process error:', error);
+        this.emit('error', error);
+      });
+
+      // Wait for initialization
+      await this.waitForInit();
+
+      this.running = true;
+      console.log('[Reticulum] ✓ Reticulum Network Stack started');
 
       return true;
     } catch (error) {
-      console.error(`[Reticulum] Connection failed:`, error);
-      this.handleError(error);
+      console.error(`[Reticulum] Failed to start:`, error);
       throw error;
     }
   }
 
-  async connectDirectSerial() {
-    // Direct serial connection for RNode hardware running in Reticulum mode
-    this.serialPort = new SerialPort({
-      path: this.portPath,
-      baudRate: 115200,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'none'
+  /**
+   * Stop the Reticulum Network Stack
+   */
+  async stop() {
+    if (!this.running) {
+      return;
+    }
+
+    console.log('[Reticulum] Stopping Reticulum Network Stack...');
+
+    if (this.rnsPython) {
+      this.sendCommand('shutdown', {});
+      this.rnsPython.kill();
+      this.rnsPython = null;
+    }
+
+    this.running = false;
+    this.rnode_transports.clear();
+    console.log('[Reticulum] ✓ Stopped');
+  }
+
+  /**
+   * Add an RNode device as a transport
+   */
+  async addRNodeTransport(portPath, config = {}) {
+    if (!this.running) {
+      throw new Error('Reticulum not started. Call start() first.');
+    }
+
+    if (this.rnode_transports.has(portPath)) {
+      console.warn(`[Reticulum] RNode transport already exists: ${portPath}`);
+      return false;
+    }
+
+    console.log(`[Reticulum] Adding RNode transport: ${portPath}`);
+
+    // Send command to Python bridge to add RNode
+    this.sendCommand('add_rnode', {
+      port: portPath,
+      config: config
     });
 
-    return new Promise((resolve, reject) => {
-      this.serialPort.on('open', () => {
-        console.log('[Reticulum] Serial port opened');
-        this.setupSerialHandlers();
+    // Track locally
+    this.rnode_transports.set(portPath, {
+      port: portPath,
+      config: config,
+      connected: true,
+      messages_sent: 0,
+      messages_received: 0,
+      added_at: new Date()
+    });
 
-        // Generate or load identity
-        this.generateIdentity();
+    this.emit('transport_added', { type: 'rnode', port: portPath });
+    return true;
+  }
 
-        // Set up initial node info
-        this.updateNodeInfo({
-          nodeId: this.identity.hash,
-          longName: `Reticulum Node ${this.identity.hash.substring(0, 8)}`,
-          shortName: 'RNS',
-          hwModel: 'Reticulum'
-        });
+  /**
+   * Remove an RNode transport
+   */
+  async removeRNodeTransport(portPath) {
+    if (!this.rnode_transports.has(portPath)) {
+      console.warn(`[Reticulum] RNode transport not found: ${portPath}`);
+      return false;
+    }
 
-        resolve();
+    console.log(`[Reticulum] Removing RNode transport: ${portPath}`);
+
+    // Send command to Python bridge
+    this.sendCommand('remove_rnode', {
+      port: portPath
+    });
+
+    // Remove from tracking
+    this.rnode_transports.delete(portPath);
+
+    this.emit('transport_removed', { type: 'rnode', port: portPath });
+    return true;
+  }
+
+  /**
+   * Get list of all transports
+   */
+  getTransports() {
+    const transports = [];
+
+    // Add RNode transports
+    for (const [port, info] of this.rnode_transports) {
+      transports.push({
+        type: 'rnode',
+        port: port,
+        connected: info.connected,
+        messages_sent: info.messages_sent,
+        messages_received: info.messages_received,
+        config: info.config,
+        added_at: info.added_at
       });
-
-      this.serialPort.on('error', (error) => {
-        console.error('[Reticulum] Serial port error:', error);
-        reject(error);
-      });
-    });
-  }
-
-  async connectViaPython() {
-    // Spawn Python process to run RNS bridge
-    // This requires a Python script (rns_bridge.py) that communicates via stdio
-    const { fileURLToPath } = await import('url');
-    const { dirname, join } = await import('path');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-
-    const pythonScript = this.options.pythonBridge || join(__dirname, '..', 'rns_bridge.py');
-
-    console.log(`[Reticulum] Starting Python RNS bridge: ${pythonScript}`);
-
-    const args = [];
-    if (this.options.rnsConfigPath) {
-      args.push('--config', this.options.rnsConfigPath);
-    }
-    if (this.options.identityPath) {
-      args.push('--identity', this.options.identityPath);
     }
 
-    this.rnsPython = spawn('python3', [pythonScript, ...args], {
-      cwd: this.options.rnsConfigPath || process.cwd(),
-      env: { ...process.env, PYTHONUNBUFFERED: '1' }
-    });
+    // TODO: Add software transports (UDP, TCP, etc.) from RNS config
 
-    this.rnsPython.stdout.on('data', (data) => {
-      this.handlePythonData(data);
-    });
-
-    this.rnsPython.stderr.on('data', (data) => {
-      const msg = data.toString();
-      // Don't log normal RNS info messages as errors
-      if (msg.includes('[RNS-Bridge INFO]')) {
-        console.log(`[Reticulum] ${msg.trim()}`);
-      } else if (msg.includes('[RNS-Bridge WARN]')) {
-        console.warn(`[Reticulum] ${msg.trim()}`);
-      } else if (msg.includes('[RNS-Bridge ERROR]')) {
-        console.error(`[Reticulum] ${msg.trim()}`);
-      } else {
-        console.log(`[Reticulum Python] ${msg.trim()}`);
-      }
-    });
-
-    this.rnsPython.on('close', (code) => {
-      console.log(`[Reticulum] Python process exited with code ${code}`);
-      this.connected = false;
-      this.emit('disconnected');
-    });
-
-    this.rnsPython.on('error', (error) => {
-      console.error(`[Reticulum] Failed to start Python bridge:`, error);
-      this.handleError(error);
-    });
-
-    // Wait for initialization
-    await this.waitForPythonInit();
+    return transports;
   }
 
-  setupSerialHandlers() {
-    this.serialPort.on('data', (data) => {
-      this.buffer = Buffer.concat([this.buffer, data]);
-      this.processBuffer();
-    });
-  }
-
-  processBuffer() {
-    // Process Reticulum/RNode packets from serial buffer
-    // Reticulum packets have a specific format
-    while (this.buffer.length > 0) {
-      // Look for packet header (example format)
-      if (this.buffer[0] !== 0xC0) { // FEND character
-        this.buffer = this.buffer.slice(1);
-        continue;
-      }
-
-      // Find end of packet
-      const endIndex = this.buffer.indexOf(0xC0, 1);
-      if (endIndex === -1) break;
-
-      // Extract packet
-      const packetData = this.buffer.slice(1, endIndex);
-      this.buffer = this.buffer.slice(endIndex + 1);
-
-      // Process packet
-      this.processPacket(packetData);
+  /**
+   * Send a message to a Reticulum destination
+   */
+  async sendMessage(text, destinationHash, options = {}) {
+    if (!this.running) {
+      throw new Error('Reticulum not running');
     }
+
+    console.log(`[Reticulum] Sending message to ${destinationHash.substring(0, 16)}...`);
+
+    this.sendCommand('send', {
+      destination_hash: destinationHash,
+      text: text,
+      want_ack: options.wantAck || false
+    });
+
+    this.messageStats.sent++;
   }
 
-  processPacket(data) {
-    try {
-      // Decode Reticulum packet
-      // This is a simplified example - actual Reticulum protocol is more complex
-      if (data.length < 2) return;
-
-      const packetType = data[0];
-      const payload = data.slice(1);
-
-      switch (packetType) {
-        case 0x01: // Announce packet
-          this.handleAnnounce(payload);
-          break;
-        case 0x02: // Data packet (message)
-          this.handleDataPacket(payload);
-          break;
-        case 0x03: // Link request
-          this.handleLinkRequest(payload);
-          break;
-        default:
-          console.log(`[Reticulum] Unknown packet type: 0x${packetType.toString(16)}`);
-      }
-    } catch (error) {
-      console.error('[Reticulum] Error processing packet:', error);
-      this.handleError(error);
+  /**
+   * Announce our destination to the network
+   */
+  async announce() {
+    if (!this.running) {
+      return;
     }
+
+    console.log('[Reticulum] Announcing destination...');
+    this.sendCommand('announce', {});
+    this.messageStats.announces++;
   }
 
-  handleAnnounce(data) {
-    // Handle announce packets (nodes announcing their identity)
-    try {
-      const destHash = data.slice(0, 16).toString('hex');
-      const name = data.slice(16).toString('utf8');
-
-      this.destinations.set(destHash, {
-        hash: destHash,
-        name: name,
-        lastSeen: new Date()
-      });
-
-      // Update channels (destinations in Reticulum)
-      this.updateChannels(Array.from(this.destinations.values()).map((dest, idx) => ({
-        index: idx,
-        name: dest.name,
-        psk: dest.hash, // Use hash as "PSK" for matching
-        destinationHash: dest.hash
-      })));
-
-      console.log(`[Reticulum] New destination announced: ${name} (${destHash})`);
-    } catch (error) {
-      console.error('[Reticulum] Error handling announce:', error);
+  /**
+   * Request list of transports from Python bridge
+   */
+  async requestTransportsList() {
+    if (!this.running) {
+      return [];
     }
+
+    this.sendCommand('list_transports', {});
   }
 
-  handleDataPacket(data) {
-    try {
-      // Extract message from data packet
-      if (data.length < 32) return;
-
-      const fromHash = data.slice(0, 16).toString('hex');
-      const toHash = data.slice(16, 32).toString('hex');
-      const messageData = data.slice(32);
-      const text = messageData.toString('utf8');
-
-      const packet = {
-        id: createHash('sha256').update(data).digest('hex').substring(0, 16),
-        timestamp: new Date(),
-        from: parseInt(fromHash.substring(0, 8), 16),
-        to: parseInt(toHash.substring(0, 8), 16),
-        channel: this.findDestinationChannel(toHash),
-        portnum: 1,
-        text: text,
-        fromHash: fromHash,
-        toHash: toHash
-      };
-
-      this.emitMessage(packet);
-    } catch (error) {
-      console.error('[Reticulum] Error handling data packet:', error);
-      this.handleError(error);
+  /**
+   * Send command to Python RNS bridge
+   */
+  sendCommand(type, data) {
+    if (!this.rnsPython || !this.running) {
+      console.warn('[Reticulum] Cannot send command: Python bridge not running');
+      return;
     }
+
+    const command = JSON.stringify({ type, data }) + '\n';
+    this.rnsPython.stdin.write(command);
   }
 
-  handleLinkRequest(data) {
-    // Handle link establishment requests
-    console.log('[Reticulum] Link request received');
-    // Implement link handling if needed
-  }
-
+  /**
+   * Handle data from Python RNS bridge
+   */
   handlePythonData(data) {
-    // Parse JSON messages from Python bridge
-    // Handle partial JSON by buffering incomplete lines
     try {
       if (!this.jsonBuffer) {
         this.jsonBuffer = '';
@@ -293,52 +316,10 @@ export class ReticulumProtocol extends BaseProtocol {
 
         try {
           const message = JSON.parse(trimmed);
-
-          switch (message.type) {
-          case 'init':
-            this.identity = message.data.identity;
-            this.updateNodeInfo({
-              nodeId: message.data.identity.hash,
-              longName: message.data.identity.name || 'Reticulum Node',
-              shortName: 'RNS',
-              hwModel: 'Reticulum'
-            });
-            console.log(`[Reticulum] Initialized with identity: ${message.data.identity.hash.substring(0, 16)}...`);
-            console.log(`[Reticulum] Destination: ${message.data.destination.name} (${message.data.destination.hash.substring(0, 16)}...)`);
-            break;
-
-          case 'message':
-            // Handle received message
-            this.handleReticulumMessage(message.data);
-            break;
-
-          case 'announce_sent':
-            console.log(`[Reticulum] Announce sent for destination: ${message.data.destination_hash.substring(0, 16)}...`);
-            break;
-
-          case 'link_established':
-            console.log(`[Reticulum] Link established: ${message.data.destination_hash.substring(0, 16)}...`);
-            break;
-
-          case 'send_success':
-            console.log(`[Reticulum] Message sent successfully to ${message.data.destination_hash.substring(0, 16)}...`);
-            break;
-
-          case 'send_failed':
-            console.error(`[Reticulum] Send failed: ${message.data.error}`);
-            this.handleError(new Error(message.data.error));
-            break;
-
-          case 'pong':
-            // Response to ping
-            break;
-
-          default:
-            console.log(`[Reticulum] Unknown message type: ${message.type}`);
-        }
+          this.handlePythonMessage(message);
         } catch (parseError) {
           console.error('[Reticulum] Error parsing JSON line:', parseError.message);
-          console.error('[Reticulum] Problematic line:', trimmed);
+          console.error('[Reticulum] Problematic line:', trimmed.substring(0, 100));
         }
       }
     } catch (error) {
@@ -346,189 +327,140 @@ export class ReticulumProtocol extends BaseProtocol {
     }
   }
 
-  handleReticulumMessage(data) {
-    try {
-      // Convert hash strings to numeric IDs for compatibility with bridge
-      const fromId = parseInt(data.from_hash.substring(0, 8), 16);
-      const toId = parseInt(data.to_hash.substring(0, 8), 16);
+  /**
+   * Handle parsed message from Python RNS bridge
+   */
+  handlePythonMessage(message) {
+    const { type, data } = message;
 
-      const packet = {
-        id: `rns-${Date.now()}-${fromId}`,
-        timestamp: new Date(),
-        from: fromId,
-        to: toId,
-        channel: 0, // Reticulum doesn't use channels, use 0
-        portnum: 1,
-        text: data.text,
-        fromHash: data.from_hash,
-        toHash: data.to_hash,
-        rssi: data.rssi,
-        snr: data.snr
-      };
+    switch (type) {
+      case 'init':
+        this.handleInit(data);
+        break;
+
+      case 'message':
+        this.handleMessage(data);
+        break;
+
+      case 'announce_sent':
+        console.log(`[Reticulum] Announce sent for destination: ${data.destination_hash}`);
+        break;
+
+      case 'link_established':
+        console.log(`[Reticulum] Link established: ${data.destination_hash}`);
+        this.emit('link_established', data);
+        break;
+
+      case 'transport_added':
+        console.log(`[Reticulum] Transport added: ${data.type} ${data.port}`);
+        break;
+
+      case 'transport_removed':
+        console.log(`[Reticulum] Transport removed: ${data.type} ${data.port}`);
+        break;
+
+      case 'transport_error':
+        console.error(`[Reticulum] Transport error: ${data.port} - ${data.error}`);
+        this.emit('transport_error', data);
+        break;
+
+      case 'transports_list':
+        this.emit('transports_list', data.transports);
+        break;
+
+      case 'send_success':
+        console.log(`[Reticulum] Message sent successfully to ${data.destination_hash.substring(0, 16)}...`);
+        break;
+
+      case 'send_failed':
+        console.error(`[Reticulum] Message send failed: ${data.error}`);
+        break;
+
+      case 'pong':
+        // Heartbeat response
+        break;
+
+      default:
+        console.warn(`[Reticulum] Unknown message type: ${type}`);
+    }
+  }
+
+  /**
+   * Handle initialization message from Python
+   */
+  handleInit(data) {
+    this.identity = data.identity;
+    this.destination = data.destination;
+
+    console.log(`[Reticulum] Identity: ${this.identity.hash}`);
+    console.log(`[Reticulum] Destination: ${this.destination.hash}`);
+
+    this.emit('initialized', {
+      identity: this.identity,
+      destination: this.destination
+    });
+  }
+
+  /**
+   * Handle incoming message from Reticulum network
+   */
+  handleMessage(data) {
+    try {
+      this.messageStats.received++;
 
       console.log(`[Reticulum] Message received from ${data.from_hash.substring(0, 16)}...: "${data.text}"`);
-      this.emitMessage(packet);
+
+      // Emit message event
+      this.emit('message', {
+        id: `rns-${Date.now()}-${data.from_hash.substring(0, 8)}`,
+        timestamp: new Date(),
+        from: data.from_hash,
+        to: data.to_hash,
+        text: data.text,
+        rssi: data.rssi,
+        snr: data.snr,
+        protocol: 'reticulum'
+      });
     } catch (error) {
-      console.error('[Reticulum] Error handling Reticulum message:', error);
-      this.handleError(error);
+      console.error('[Reticulum] Error handling message:', error);
     }
   }
 
-  async waitForPythonInit(timeout = 60000) {
+  /**
+   * Wait for Python RNS bridge initialization
+   */
+  async waitForInit(timeout = 60000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for Python RNS initialization (network discovery may take time)'));
+        reject(new Error('Timeout waiting for Reticulum initialization (network discovery may take time)'));
       }, timeout);
 
-      const checkInit = () => {
-        if (this.identity) {
-          clearTimeout(timer);
-          resolve();
-        } else {
-          setTimeout(checkInit, 100);
-        }
+      const onInit = () => {
+        clearTimeout(timer);
+        this.removeListener('initialized', onInit);
+        resolve();
       };
 
-      checkInit();
+      this.once('initialized', onInit);
     });
   }
 
-  generateIdentity() {
-    // Generate a simple identity hash for this node
-    const randomData = crypto.randomBytes(32);
-    this.identity = {
-      hash: createHash('sha256').update(randomData).digest('hex').substring(0, 32),
-      name: `RNS-${randomData.toString('hex').substring(0, 8)}`
-    };
-  }
-
-  findDestinationChannel(destHash) {
-    const destinations = Array.from(this.destinations.values());
-    const index = destinations.findIndex(d => d.hash === destHash);
-    return index >= 0 ? index : 0;
-  }
-
-  async disconnect() {
-    try {
-      console.log(`[Reticulum] Disconnecting from ${this.portPath}...`);
-
-      if (this.serialPort && this.serialPort.isOpen) {
-        await new Promise((resolve) => {
-          this.serialPort.close(() => resolve());
-        });
-        this.serialPort = null;
-      }
-
-      if (this.rnsPython) {
-        this.rnsPython.kill();
-        this.rnsPython = null;
-      }
-
-      this.connected = false;
-      console.log(`[Reticulum] Disconnected successfully`);
-    } catch (error) {
-      console.error('[Reticulum] Error during disconnect:', error);
-      this.handleError(error);
-      throw error;
-    }
-  }
-
-  async sendMessage(text, channel, options = {}) {
-    try {
-      if (!this.connected) {
-        throw new Error('Device not connected');
-      }
-
-      // For Reticulum, channel parameter can be either:
-      // - A numeric index (for compatibility)
-      // - A destination hash string (for direct addressing)
-      let destinationHash;
-
-      if (typeof channel === 'string') {
-        // Direct destination hash provided
-        destinationHash = channel;
-      } else {
-        // Find destination for this channel index
-        const destinations = Array.from(this.destinations.values());
-        const destination = destinations[channel];
-
-        if (!destination) {
-          // For Reticulum, we can broadcast to our own destination
-          // This is useful for testing and local network communication
-          destinationHash = this.identity?.hash;
-          console.log(`[Reticulum] No destination for channel ${channel}, using own hash`);
-        } else {
-          destinationHash = destination.hash;
-        }
-      }
-
-      if (!destinationHash) {
-        throw new Error(`No destination available for sending`);
-      }
-
-      // Build and send packet
-      if (this.serialPort) {
-        await this.sendDirectSerial(text, destinationHash);
-      } else if (this.rnsPython) {
-        await this.sendViaPython(text, destinationHash);
-      } else {
-        throw new Error('No transport available (neither serial nor Python bridge)');
-      }
-
-      this.stats.messagesSent++;
-      console.log(`[Reticulum] Message sent to ${destinationHash.substring(0, 16)}...: ${text.substring(0, 50)}...`);
-
-      return true;
-    } catch (error) {
-      console.error('[Reticulum] Error sending message:', error);
-      this.handleError(error);
-      throw error;
-    }
-  }
-
-  async sendDirectSerial(text, destHash) {
-    // Build Reticulum data packet
-    const fromHashBuf = Buffer.from(this.identity.hash, 'hex');
-    const toHashBuf = Buffer.from(destHash, 'hex');
-    const textBuf = Buffer.from(text, 'utf8');
-
-    const packet = Buffer.concat([
-      Buffer.from([0xC0, 0x02]), // FEND + DATA packet type
-      fromHashBuf.slice(0, 16),
-      toHashBuf.slice(0, 16),
-      textBuf,
-      Buffer.from([0xC0]) // FEND end
-    ]);
-
-    return new Promise((resolve, reject) => {
-      this.serialPort.write(packet, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  }
-
-  async sendViaPython(text, destHash) {
-    const message = JSON.stringify({
-      type: 'send',
-      data: {
-        destination_hash: destHash,
-        text: text
-      }
-    }) + '\n';
-
-    this.rnsPython.stdin.write(message);
-  }
-
-  channelsMatch(channel1, channel2) {
-    // In Reticulum, channels match if destination hashes match
-    return channel1.destinationHash === channel2.destinationHash;
-  }
-
-  getProtocolMetadata() {
+  /**
+   * Get statistics
+   */
+  getStats() {
     return {
-      identityHash: this.identity?.hash,
-      destinations: this.destinations.size
+      running: this.running,
+      identity: this.identity,
+      destination: this.destination,
+      transports: this.getTransports().length,
+      rnode_transports: this.rnode_transports.size,
+      messages_sent: this.messageStats.sent,
+      messages_received: this.messageStats.received,
+      announces: this.messageStats.announces
     };
   }
 }
+
+// Export singleton instance getter
+export default ReticulumProtocol;
