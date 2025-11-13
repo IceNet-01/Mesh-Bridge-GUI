@@ -427,6 +427,14 @@ class MeshtasticBridgeServer {
     try {
       console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
+      // Check if a radio already exists for this port
+      for (const [existingId, existingRadio] of this.radios.entries()) {
+        if (existingRadio.port === portPath) {
+          console.log(`ℹ️  Radio already connected to ${portPath} (${existingId})`);
+          return; // Don't create duplicate
+        }
+      }
+
       const radioId = `radio-${Date.now()}`;
 
       // Create protocol handler
@@ -559,6 +567,22 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error(`❌ Failed to connect to ${portPath}:`, error);
+
+      // Clean up any radio entry that was created before the failure
+      // Find radio with this port and remove it
+      for (const [id, radio] of this.radios.entries()) {
+        if (radio.port === portPath) {
+          console.log(`🧹 Cleaning up failed radio ${id}`);
+          this.radios.delete(id);
+
+          // Notify clients of failure/disconnection
+          this.broadcast({
+            type: 'radio-disconnected',
+            radioId: id
+          });
+        }
+      }
+
       ws.send(JSON.stringify({
         type: 'error',
         error: `Connection failed: ${error.message}`
