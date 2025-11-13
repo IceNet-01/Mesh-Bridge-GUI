@@ -131,9 +131,22 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to other node info
+    // Subscribe to node info packets (includes our own node with full user details)
     this.device.events.onNodeInfoPacket.subscribe((node) => {
       console.log(`[Meshtastic] Node info packet:`, node);
+
+      // Check if this is our own node - update our node info with full details
+      if (this.myNodeNum && node.num === this.myNodeNum && node.user) {
+        console.log(`[Meshtastic] Received full node info for our own radio!`);
+        const nodeInfo = {
+          nodeId: node.num.toString(),
+          longName: node.user.longName || 'Unknown',
+          shortName: node.user.shortName || '????',
+          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown'
+        };
+        this.updateNodeInfo(nodeInfo);
+        console.log(`[Meshtastic] Updated our node info:`, nodeInfo);
+      }
     });
 
     // Subscribe to channel configuration packets
@@ -210,18 +223,18 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Get node info from device
       if (this.device && this.device.nodes) {
         const myNode = this.device.nodes.get(this.device.nodeNum);
-        if (myNode) {
+        if (myNode && myNode.user) {
           this.myNodeNum = this.device.nodeNum;
           const nodeInfo = {
             nodeId: this.device.nodeNum?.toString() || 'unknown',
-            longName: myNode.user?.longName || 'Unknown',
-            shortName: myNode.user?.shortName || '????',
-            hwModel: myNode.user?.hwModel || 'Unknown'
+            longName: myNode.user.longName || 'Unknown',
+            shortName: myNode.user.shortName || '????',
+            hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
           };
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] Node info fetched:`, nodeInfo);
+          console.log(`[Meshtastic] Node info fetched from device.nodes:`, nodeInfo);
         } else {
-          console.log(`[Meshtastic] My node not found in device.nodes`);
+          console.log(`[Meshtastic] My node not found in device.nodes or missing user data`);
         }
       }
 
@@ -395,5 +408,120 @@ export class MeshtasticProtocol extends BaseProtocol {
       7: 'Long Moderate'
     };
     return presets[preset] || `Unknown (${preset})`;
+  }
+
+  getHwModelName(model) {
+    const models = {
+      0: 'Unset',
+      1: 'TLORA_V2',
+      2: 'TLORA_V1',
+      3: 'TLORA_V2_1_1p6',
+      4: 'TBEAM',
+      5: 'HELTEC_V2_0',
+      6: 'TBEAM_V0p7',
+      7: 'T_ECHO',
+      8: 'TLORA_V1_1p3',
+      9: 'RAK4631',
+      10: 'HELTEC_V2_1',
+      11: 'HELTEC_V1',
+      12: 'LILYGO_TBEAM_S3_CORE',
+      13: 'RAK11200',
+      14: 'NANO_G1',
+      15: 'TLORA_V2_1_1p8',
+      16: 'TLORA_T3_S3',
+      17: 'NANO_G1_EXPLORER',
+      18: 'NANO_G2_ULTRA',
+      19: 'LORA_TYPE',
+      20: 'WIPHONE',
+      21: 'WIO_WM1110',
+      22: 'RAK2560',
+      23: 'HELTEC_HRU_3601',
+      24: 'STATION_G1',
+      25: 'RAK11310',
+      26: 'SENSELORA_RP2040',
+      27: 'SENSELORA_S3',
+      28: 'CANARYONE',
+      29: 'RP2040_LORA',
+      30: 'STATION_G2',
+      31: 'LORA_RELAY_V1',
+      32: 'NRF52840DK',
+      33: 'PPR',
+      34: 'GENIEBLOCKS',
+      35: 'NRF52_UNKNOWN',
+      36: 'PORTDUINO',
+      37: 'ANDROID_SIM',
+      38: 'DIY_V1',
+      39: 'NRF52840_PCA10059',
+      40: 'DR_DEV',
+      41: 'M5STACK',
+      42: 'HELTEC_V3',
+      43: 'HELTEC_WSL_V3',
+      44: 'BETAFPV_2400_TX',
+      45: 'BETAFPV_900_NANO_TX',
+      46: 'RPI_PICO',
+      47: 'HELTEC_WIRELESS_TRACKER',
+      48: 'HELTEC_WIRELESS_PAPER',
+      49: 'T_DECK',
+      50: 'T_WATCH_S3',
+      51: 'PICOMPUTER_S3',
+      52: 'HELTEC_HT62',
+      53: 'EBYTE_ESP32_S3',
+      54: 'ESP32_S3_PICO',
+      55: 'CHATTER_2',
+      56: 'HELTEC_WIRELESS_PAPER_V1_0',
+      57: 'HELTEC_CAPSULE_SENSOR_V3',
+      58: 'T_BEAM_SUPREME',
+      59: 'UNPHONE',
+      60: 'TD_LORAC',
+      61: 'CDEBYTE_EORA_S3',
+      62: 'TWC_MESH_V4',
+      63: 'NRF52_PROMICRO_DIY',
+      64: 'RADIOMASTER_900_BANDIT_NANO',
+      65: 'HELTEC_VISION_MASTER_T190',
+      66: 'HELTEC_VISION_MASTER_E213',
+      67: 'HELTEC_VISION_MASTER_E290',
+      68: 'HELTEC_MESH_NODE_T114',
+      69: 'SENSECAP_INDICATOR',
+      70: 'TRACKER_T1000_E',
+      71: 'RAK3172',
+      72: 'WIO_E5',
+      73: 'RADIOMASTER_900_BANDIT',
+      74: 'ME25LS01_4Y10TD',
+      75: 'RP2040_FEATHER_RFM95',
+      76: 'M5STACK_COREBASIC',
+      77: 'M5STACK_CORE2',
+      78: 'RPI_PICO2',
+      79: 'M5STACK_CORES3',
+      80: 'SEEED_XIAO_S3',
+      81: 'BETAFPV_ELRS_MICRO_TX',
+      82: 'PICOMPUTER_S3_WAVESHARE',
+      83: 'RADIOMASTER_900_BANDIT_MICRO',
+      84: 'HELTEC_CAPSULE_SENSOR_V3_NO_GPS',
+      85: 'SWAN_R5',
+      86: 'RP2350_LORA',
+      87: 'WIPHONE2',
+      88: 'HELTEC_ESP32C6',
+      89: 'RAK3172_E22',
+      90: 'RAK3172_E220',
+      91: 'KIWIMESH',
+      92: 'TD_LOWIFI',
+      93: 'E22_900M30S_JP',
+      94: 'NOMAD_STAR_METEOR_PRO',
+      95: 'E22_400M30S',
+      96: 'ICECHAT',
+      97: 'DIY_V1_EU865',
+      98: 'DIY_V1_JP_TX',
+      99: 'DIY_V1_JP_RX',
+      100: 'DIY_V1_NZ865',
+      101: 'DIY_V1_EU433',
+      102: 'DIY_V1_SE',
+      103: 'DIY_V1_TW',
+      104: 'DIY_V1_UK',
+      105: 'EBYTE_E22_400M30S',
+      106: 'FEATHER_OLED_BLE',
+      107: 'FEATHER_OLED_WIFI',
+      255: 'PRIVATE_HW'
+    };
+    return models[model] || `Unknown (${model})`;
   }
 }
