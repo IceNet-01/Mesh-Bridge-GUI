@@ -25,6 +25,7 @@ import { dirname, join } from 'path';
 import nodemailer from 'nodemailer';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 import { ReticulumProtocol } from './protocols/ReticulumProtocol.mjs';
+import { RNodeDetectedError } from './protocols/AutoDetectProtocol.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -761,6 +762,51 @@ class MeshtasticBridgeServer {
       });
 
     } catch (error) {
+      // Special handling for RNode devices
+      if (error instanceof RNodeDetectedError) {
+        console.log(`🔷 RNode detected on ${portPath}, adding as Reticulum transport...`);
+
+        // Check if Reticulum is running
+        if (!this.reticulum || !this.reticulum.running) {
+          console.error('❌ Reticulum not running, cannot add RNode transport');
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: 'RNode detected but Reticulum is not running. Please ensure Reticulum starts successfully.'
+          }));
+          return;
+        }
+
+        try {
+          // Add RNode as transport to Reticulum
+          await this.reticulum.addRNodeTransport(error.portPath, error.config);
+
+          console.log(`✅ RNode on ${portPath} added to Reticulum as transport`);
+
+          // Notify client that RNode was added
+          ws.send(JSON.stringify({
+            type: 'rnode-added-to-reticulum',
+            port: error.portPath,
+            message: 'RNode device detected and added to Reticulum Network Stack'
+          }));
+
+          // Broadcast updated Reticulum status
+          this.broadcast({
+            type: 'reticulum-transports-updated',
+            transports: this.reticulum.getTransports()
+          });
+
+        } catch (addError) {
+          console.error(`❌ Failed to add RNode to Reticulum:`, addError);
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: `RNode detected but failed to add to Reticulum: ${addError.message}`
+          }));
+        }
+
+        return; // Don't continue with normal error handling
+      }
+
+      // Normal error handling for non-RNode errors
       console.error(`❌ Failed to connect to ${portPath}:`, error);
 
       // Clean up any radio entry that was created before the failure

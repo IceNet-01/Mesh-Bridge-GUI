@@ -14,10 +14,23 @@
 
 import { BaseProtocol } from './BaseProtocol.mjs';
 import { MeshtasticProtocol } from './MeshtasticProtocol.mjs';
-import { ReticulumProtocol } from './ReticulumProtocol.mjs';
-import { RNodeProtocol } from './RNodeProtocol.mjs';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
+import { SerialPort } from 'serialport';
+
+/**
+ * Special error thrown when an RNode device is detected
+ * This signals the bridge server to add it as a Reticulum transport instead
+ */
+export class RNodeDetectedError extends Error {
+  constructor(portPath, config = {}) {
+    super(`RNode device detected on ${portPath}`);
+    this.name = 'RNodeDetectedError';
+    this.portPath = portPath;
+    this.config = config;
+    this.isRNodeDevice = true;
+  }
+}
 
 export class AutoDetectProtocol extends BaseProtocol {
   constructor(radioId, portPath, options = {}) {
@@ -95,38 +108,95 @@ export class AutoDetectProtocol extends BaseProtocol {
   async detectProtocol() {
     console.log('[AutoDetect] Starting protocol detection...');
 
-    // Determine if this is a physical serial port or virtual
-    const isVirtualPort = this.portPath.includes('virtual') ||
-                         this.portPath.includes('software') ||
-                         this.portPath.startsWith('reticulum-');
+    // Try Meshtastic first (most common)
+    console.log(`[AutoDetect] Trying Meshtastic...`);
+    try {
+      const testProtocol = new MeshtasticProtocol(this.radioId, this.portPath, this.config.meshtastic || {});
+      await testProtocol.connect();
 
-    // Try each protocol in order of likelihood
-    // Skip Reticulum for physical serial ports (it's software-only or RNode-specific)
-    const protocols = isVirtualPort
-      ? ['reticulum', 'meshtastic', 'rnode']  // For virtual ports, try Reticulum first
-      : ['meshtastic', 'rnode'];               // For physical ports, skip Reticulum
+      // Success! Keep this connection and use it
+      console.log(`[AutoDetect] Detected Meshtastic protocol`);
+      this.underlyingProtocol = testProtocol;
+      return 'meshtastic';
+    } catch (error) {
+      console.log(`[AutoDetect] Meshtastic detection failed:`, error.message);
+    }
 
-    console.log(`[AutoDetect] Port type: ${isVirtualPort ? 'Virtual/Software' : 'Physical Serial'}`);
-    console.log(`[AutoDetect] Will try protocols: ${protocols.join(', ')}`);
-
-    for (const protocol of protocols) {
-      console.log(`[AutoDetect] Trying ${protocol}...`);
-
-      try {
-        const testProtocol = this.createProtocolHandler(protocol);
-        await testProtocol.connect();
-
-        // Success! Keep this connection and use it
-        console.log(`[AutoDetect] Detected ${protocol} protocol`);
-        this.underlyingProtocol = testProtocol;
-        return protocol;
-      } catch (error) {
-        console.log(`[AutoDetect] ${protocol} detection failed:`, error.message);
-        // Continue to next protocol
+    // Try RNode detection
+    console.log(`[AutoDetect] Trying RNode...`);
+    try {
+      const isRNode = await this.detectRNode();
+      if (isRNode) {
+        // RNode detected! Throw special error so bridge server can add it to Reticulum
+        console.log(`[AutoDetect] Detected RNode device`);
+        throw new RNodeDetectedError(this.portPath, this.config.rnode || {});
       }
+    } catch (error) {
+      // If it's our RNodeDetectedError, re-throw it
+      if (error instanceof RNodeDetectedError) {
+        throw error;
+      }
+      console.log(`[AutoDetect] RNode detection failed:`, error.message);
     }
 
     throw new Error('Unable to detect compatible protocol');
+  }
+
+  /**
+   * Detect if device is an RNode by sending detection command
+   */
+  async detectRNode() {
+    return new Promise((resolve, reject) => {
+      const port = new SerialPort({
+        path: this.portPath,
+        baudRate: 115200,
+        autoOpen: false
+      });
+
+      const timeout = setTimeout(() => {
+        port.close();
+        reject(new Error('RNode detection timeout'));
+      }, 3000);
+
+      let buffer = Buffer.alloc(0);
+
+      port.on('data', (data) => {
+        buffer = Buffer.concat([buffer, data]);
+
+        // Check for RNode response signature
+        // RNode devices respond with specific byte patterns
+        // KISS_FEND (0xC0) followed by detection response
+        if (buffer.includes(Buffer.from([0xC0, 0x08]))) {
+          clearTimeout(timeout);
+          port.close();
+          resolve(true);
+        }
+      });
+
+      port.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+
+      port.open((err) => {
+        if (err) {
+          clearTimeout(timeout);
+          reject(err);
+          return;
+        }
+
+        // Send RNode detection command
+        // KISS_FEND (0xC0) + CMD_DETECT (0x08) + KISS_FEND
+        const detectCmd = Buffer.from([0xC0, 0x08, 0xC0]);
+        port.write(detectCmd, (writeErr) => {
+          if (writeErr) {
+            clearTimeout(timeout);
+            port.close();
+            reject(writeErr);
+          }
+        });
+      });
+    });
   }
 
   createProtocolHandler(protocolType) {
@@ -136,14 +206,8 @@ export class AutoDetectProtocol extends BaseProtocol {
       case 'meshtastic':
         return new MeshtasticProtocol(this.radioId, this.portPath, protocolOptions);
 
-      case 'reticulum':
-        return new ReticulumProtocol(this.radioId, this.portPath, protocolOptions);
-
-      case 'rnode':
-        return new RNodeProtocol(this.radioId, this.portPath, protocolOptions);
-
       default:
-        throw new Error(`Unknown protocol type: ${protocolType}`);
+        throw new Error(`Unknown protocol type: ${protocolType}. Only 'meshtastic' is supported per-radio.`);
     }
   }
 
@@ -263,9 +327,10 @@ export class AutoDetectProtocol extends BaseProtocol {
 
   /**
    * Get list of supported protocols
+   * Note: RNode devices are detected and added as Reticulum transports, not as standalone protocols
    */
   getSupportedProtocols() {
-    return ['meshtastic', 'reticulum', 'rnode'];
+    return ['meshtastic'];
   }
 
   /**
