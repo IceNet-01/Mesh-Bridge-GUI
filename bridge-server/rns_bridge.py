@@ -76,7 +76,7 @@ class RNSBridge:
         sys.stderr.flush()
 
     def _ensure_config_dir(self):
-        """Ensure RNS config directory exists with minimal config"""
+        """Ensure RNS config directory exists with network-capable config"""
         import os
 
         # Create config directory if it doesn't exist
@@ -84,14 +84,14 @@ class RNSBridge:
             os.makedirs(self.config_path, exist_ok=True)
             self.log(f"Created RNS config directory: {self.config_path}")
 
-        # Create minimal config file if it doesn't exist
+        # Create config file if it doesn't exist
         config_file = os.path.join(self.config_path, "config")
         if not os.path.exists(config_file):
-            minimal_config = """# Minimal Reticulum configuration for Mesh Bridge
-# This config uses only local UDP transport to avoid blocking
+            network_config = """# Reticulum configuration for Mesh Bridge
+# Full network-capable configuration for mesh networking
 
 [reticulum]
-enable_transport = no
+enable_transport = yes
 share_instance = yes
 shared_instance_port = 37428
 instance_control_port = 37429
@@ -99,19 +99,23 @@ instance_control_port = 37429
 [logging]
 loglevel = 4
 
-# Local UDP interface for software-only operation
-[[Local Interface]]
+# AutoInterface - automatically discovers other Reticulum instances on local network
+[[Default Interface]]
+  type = AutoInterface
+  interface_enabled = yes
+
+# UDP Interface for broader network reach
+[[UDP Interface]]
   type = UDPInterface
   interface_enabled = yes
-  outgoing = true
-  listen_ip = 127.0.0.1
+  listen_ip = 0.0.0.0
   listen_port = 4242
-  forward_ip = 127.0.0.1
+  forward_ip = 255.255.255.255
   forward_port = 4242
 """
             with open(config_file, 'w') as f:
-                f.write(minimal_config)
-            self.log(f"Created minimal RNS config: {config_file}")
+                f.write(network_config)
+            self.log(f"Created network-capable RNS config: {config_file}")
 
     def send_message(self, msg_type, data):
         """Send JSON message to Node.js via stdout"""

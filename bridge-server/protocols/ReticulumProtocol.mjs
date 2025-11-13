@@ -373,10 +373,10 @@ export class ReticulumProtocol extends BaseProtocol {
     }
   }
 
-  async waitForPythonInit(timeout = 10000) {
+  async waitForPythonInit(timeout = 60000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error('Timeout waiting for Python RNS initialization'));
+        reject(new Error('Timeout waiting for Python RNS initialization (network discovery may take time)'));
       }, timeout);
 
       const checkInit = () => {
