@@ -15,6 +15,7 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device = null;
     this.channelMap = new Map();
     this.loraConfig = null;
+    this.myNodeNum = null; // Store our own node number for loop prevention
   }
 
   getProtocolName() {
@@ -86,6 +87,14 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device.events.onMessagePacket.subscribe((packet) => {
       console.log(`[Meshtastic] onMessagePacket fired!`);
       try {
+        // CRITICAL: Filter out our own outgoing messages to prevent forwarding loops
+        // The Meshtastic library triggers onMessagePacket for BOTH incoming and outgoing messages
+        // We only want to process/forward messages from OTHER nodes
+        if (this.myNodeNum && packet.from === this.myNodeNum) {
+          console.log(`[Meshtastic] Ignoring own outgoing message from node ${packet.from}`);
+          return;
+        }
+
         const normalized = this.normalizeMessagePacket(packet);
         this.emitMessage(normalized);
       } catch (error) {
@@ -98,6 +107,9 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
       console.log(`[Meshtastic] My node info:`, myNodeInfo);
       try {
+        // Store raw node number for loop prevention
+        this.myNodeNum = myNodeInfo.myNodeNum;
+
         const nodeInfo = {
           nodeId: myNodeInfo.myNodeNum?.toString() || 'unknown',
           longName: myNodeInfo.user?.longName || 'Unknown',
