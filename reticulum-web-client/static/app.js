@@ -23,6 +23,12 @@ class ReticulumClient {
         document.getElementById('wsUrlInput').value = wsUrl;
 
         this.log('Ready to connect', 'info');
+
+        // Auto-connect on page load
+        setTimeout(() => {
+            this.log('Auto-connecting to Reticulum service...', 'info');
+            this.connect();
+        }, 500);
     }
 
     initializeUI() {
