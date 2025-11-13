@@ -85,21 +85,30 @@ class RNSBridge:
         """Initialize Reticulum Network Stack"""
         try:
             self.log("Initializing Reticulum Network Stack...")
+            sys.stderr.flush()
 
             # Initialize RNS with config
+            self.log("Creating RNS.Reticulum instance...")
+            sys.stderr.flush()
             self.rns = RNS.Reticulum(configdir=self.config_path)
-            self.log(f"RNS initialized with config from: {self.config_path}")
+            self.log(f"✓ RNS initialized with config from: {self.config_path}")
+            sys.stderr.flush()
 
             # Load or create identity
+            self.log("Loading or creating identity...")
+            sys.stderr.flush()
             if RNS.Identity.from_file(self.identity_path):
                 self.identity = RNS.Identity.from_file(self.identity_path)
-                self.log(f"Loaded existing identity from: {self.identity_path}")
+                self.log(f"✓ Loaded existing identity from: {self.identity_path}")
             else:
                 self.identity = RNS.Identity()
                 self.identity.to_file(self.identity_path)
-                self.log(f"Created new identity and saved to: {self.identity_path}")
+                self.log(f"✓ Created new identity and saved to: {self.identity_path}")
+            sys.stderr.flush()
 
             # Create a destination for receiving messages
+            self.log("Creating destination...")
+            sys.stderr.flush()
             self.destination = RNS.Destination(
                 self.identity,
                 RNS.Destination.IN,
@@ -107,14 +116,20 @@ class RNSBridge:
                 "meshbridge",
                 "messages"
             )
+            self.log(f"✓ Destination created: {RNS.prettyhexrep(self.destination.hash)}")
+            sys.stderr.flush()
 
             # Set up callbacks
+            self.log("Setting up callbacks...")
+            sys.stderr.flush()
             self.destination.set_packet_callback(self.packet_received)
             self.destination.set_link_established_callback(self.link_established)
-
-            self.log(f"Destination created: {RNS.prettyhexrep(self.destination.hash)}")
+            self.log("✓ Callbacks configured")
+            sys.stderr.flush()
 
             # Send initialization complete message
+            self.log("Sending init message to Node.js...")
+            sys.stderr.flush()
             self.send_message("init", {
                 "identity": {
                     "hash": RNS.hexrep(self.identity.hash, delimit=False),
@@ -126,6 +141,8 @@ class RNSBridge:
                     "name": "meshbridge.messages"
                 }
             })
+            self.log("✓ Init message sent")
+            sys.stderr.flush()
 
             self.log("RNS bridge initialized successfully")
             self.running = True
@@ -135,6 +152,7 @@ class RNSBridge:
             self.log(f"Failed to initialize RNS: {e}", "ERROR")
             import traceback
             traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
             return False
 
     def packet_received(self, data, packet):
