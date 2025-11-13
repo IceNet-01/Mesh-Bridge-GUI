@@ -68,6 +68,7 @@ class RNSBridge:
 
         self.destinations = {}  # Track discovered destinations
         self.links = {}  # Track established links
+        self.rnode_interfaces = {}  # Track RNode transports by port path
 
         # Event for signaling shutdown
         self.shutdown_event = Event()
@@ -305,6 +306,128 @@ loglevel = 4
         except Exception as e:
             self.log(f"Error announcing: {e}", "ERROR")
 
+    def add_rnode_transport(self, port_path, config=None):
+        """Add an RNode device as a transport for RNS"""
+        try:
+            if port_path in self.rnode_interfaces:
+                self.log(f"RNode transport already exists: {port_path}", "WARN")
+                return False
+
+            self.log(f"Adding RNode transport: {port_path}")
+
+            # Create RNode interface configuration
+            # Default RNode settings
+            interface_config = {
+                "port": port_path,
+                "speed": config.get("baudRate", 115200) if config else 115200,
+                "frequency": config.get("frequency", 915000000) if config else 915000000,
+                "bandwidth": config.get("bandwidth", 125000) if config else 125000,
+                "txpower": config.get("txPower", 17) if config else 17,
+                "spreadingfactor": config.get("spreadingFactor", 7) if config else 7,
+                "codingrate": config.get("codingRate", 5) if config else 5,
+            }
+
+            # Create RNodeInterface
+            rnode_interface = RNS.Interfaces.RNodeInterface.RNodeInterface(
+                RNS.Transport,
+                f"RNode_{port_path.replace('/', '_')}",
+                port=interface_config["port"],
+                frequency=interface_config["frequency"],
+                bandwidth=interface_config["bandwidth"],
+                txpower=interface_config["txpower"],
+                sf=interface_config["spreadingfactor"],
+                cr=interface_config["codingrate"],
+                flow_control=False,
+                id_interval=None,
+                id_callsign=None
+            )
+
+            # Store interface
+            self.rnode_interfaces[port_path] = {
+                "interface": rnode_interface,
+                "config": interface_config,
+                "messages_sent": 0,
+                "messages_received": 0,
+                "connected": True
+            }
+
+            self.log(f"✓ RNode transport added: {port_path}")
+            self.send_message("transport_added", {
+                "type": "rnode",
+                "port": port_path,
+                "config": interface_config
+            })
+            return True
+
+        except Exception as e:
+            self.log(f"Error adding RNode transport {port_path}: {e}", "ERROR")
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            self.send_message("transport_error", {
+                "port": port_path,
+                "error": str(e)
+            })
+            return False
+
+    def remove_rnode_transport(self, port_path):
+        """Remove an RNode transport"""
+        try:
+            if port_path not in self.rnode_interfaces:
+                self.log(f"RNode transport not found: {port_path}", "WARN")
+                return False
+
+            self.log(f"Removing RNode transport: {port_path}")
+
+            # Get interface
+            transport_info = self.rnode_interfaces[port_path]
+            interface = transport_info["interface"]
+
+            # Detach from RNS
+            if hasattr(interface, 'detach'):
+                interface.detach()
+
+            # Remove from tracking
+            del self.rnode_interfaces[port_path]
+
+            self.log(f"✓ RNode transport removed: {port_path}")
+            self.send_message("transport_removed", {
+                "type": "rnode",
+                "port": port_path
+            })
+            return True
+
+        except Exception as e:
+            self.log(f"Error removing RNode transport {port_path}: {e}", "ERROR")
+            return False
+
+    def list_transports(self):
+        """List all active transports"""
+        try:
+            transports = []
+
+            # Add RNode transports
+            for port_path, info in self.rnode_interfaces.items():
+                transports.append({
+                    "type": "rnode",
+                    "port": port_path,
+                    "connected": info["connected"],
+                    "messages_sent": info["messages_sent"],
+                    "messages_received": info["messages_received"],
+                    "config": info["config"]
+                })
+
+            # Add software transports (UDP, TCP, etc.) - from RNS Transport
+            # This would require querying RNS.Transport for configured interfaces
+            # For now, we'll report what we know from config
+
+            self.send_message("transports_list", {
+                "transports": transports,
+                "total": len(transports)
+            })
+
+        except Exception as e:
+            self.log(f"Error listing transports: {e}", "ERROR")
+
     def handle_command(self, command):
         """Handle a command from Node.js"""
         try:
@@ -333,6 +456,27 @@ loglevel = 4
                 self.log("Shutdown requested")
                 self.running = False
                 self.shutdown_event.set()
+
+            elif cmd_type == "add_rnode":
+                # Add RNode as transport
+                port_path = data.get("port")
+                config = data.get("config", {})
+                if port_path:
+                    self.add_rnode_transport(port_path, config)
+                else:
+                    self.log("Invalid add_rnode command: missing port", "ERROR")
+
+            elif cmd_type == "remove_rnode":
+                # Remove RNode transport
+                port_path = data.get("port")
+                if port_path:
+                    self.remove_rnode_transport(port_path)
+                else:
+                    self.log("Invalid remove_rnode command: missing port", "ERROR")
+
+            elif cmd_type == "list_transports":
+                # List all transports
+                self.list_transports()
 
             else:
                 self.log(f"Unknown command type: {cmd_type}", "WARN")
