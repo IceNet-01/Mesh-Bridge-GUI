@@ -7,7 +7,7 @@ import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
 import AISettings from './components/AISettings';
 import CommunicationSettings from './components/CommunicationSettings';
-import ReticulumSettings from './components/ReticulumSettings';
+import ReticulumNetwork from './components/ReticulumNetwork';
 
 type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'reticulum' | 'ai' | 'communication' | 'logs';
 
@@ -207,7 +207,7 @@ function App() {
               />
             )}
             {activeTab === 'reticulum' && (
-              <ReticulumSettings />
+              <ReticulumNetwork />
             )}
             {activeTab === 'ai' && (
               <AISettings />
