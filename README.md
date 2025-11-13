@@ -1,6 +1,8 @@
-# Meshtastic Bridge GUI
+# Mesh Bridge - Meshtastic Relay Station
 
 A powerful **web-based communication gateway** for Meshtastic radios. Features message bridging (2+ radios), AI assistant, email/Discord notifications, interactive commands, and real-time monitoring. Built with React, TypeScript, and Node.js with official Meshtastic libraries.
+
+**Meshtastic-Only Version** - Focused exclusively on Meshtastic protocol support for optimal performance and reliability.
 
 **Works great with just ONE radio!** While designed for bridging multiple radios, the AI assistant, email/Discord notifications, and command system make it incredibly useful even with a single device.
 

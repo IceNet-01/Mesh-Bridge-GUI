@@ -1,14 +1,11 @@
 # Radio Protocol Handlers
 
-This directory contains protocol implementations for different radio types supported by the Mesh Bridge.
+This directory contains protocol implementations for Meshtastic radios supported by the Mesh Bridge.
 
 ## Files
 
 - **BaseProtocol.mjs** - Abstract base class that all protocol handlers extend
 - **MeshtasticProtocol.mjs** - Meshtastic 2.0+ protocol handler
-- **ReticulumProtocol.mjs** - Reticulum Network Stack protocol handler
-- **RNodeProtocol.mjs** - RNode LoRa packet radio protocol handler
-- **MeshCoreProtocol.mjs** - Meta-protocol with auto-detection and cross-protocol support
 - **index.mjs** - Protocol factory and exports
 
 ## Usage
@@ -51,7 +48,7 @@ All protocols implement the same interface:
 - `getChannels()` - Get list of channels/destinations
 - `getStats()` - Get protocol statistics
 - `getProtocolMetadata()` - Get protocol-specific metadata
-- `getProtocolName()` - Get protocol name ('meshtastic', 'reticulum', etc.)
+- `getProtocolName()` - Get protocol name ('meshtastic')
 
 ### Events
 
@@ -142,7 +139,7 @@ export function createProtocol(protocol, radioId, portPath, options = {}) {
 
 ```javascript
 export function getSupportedProtocols() {
-  return ['meshtastic', 'reticulum', 'rnode', 'meshcore', 'myprotocol'];
+  return ['meshtastic', 'myprotocol'];
 }
 ```
 
@@ -153,23 +150,7 @@ export function getSupportedProtocols() {
 - Fully implements all Meshtastic features
 - PSK-based channel encryption
 - Supports device telemetry and statistics
-
-### Reticulum
-- Can use direct serial or Python bridge mode
-- Identity-based addressing (destinations instead of channels)
-- Announce packets for network discovery
-- Python RNS package recommended for full feature support
-
-### RNode
-- Simple KISS serial protocol
-- Configurable LoRa parameters (frequency, bandwidth, SF, etc.)
-- Raw packet radio with minimal overhead
-- No built-in encryption
-
-### Mesh Core
-- Auto-detects underlying protocol
-- Delegates to appropriate protocol handler
-- Supports protocol switching
+- Channel-based message routing with smart PSK matching
 - Configuration-driven protocol selection
 
 ## Testing
