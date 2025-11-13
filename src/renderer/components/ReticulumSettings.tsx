@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
+import { bridgeManager } from '../lib/bridgeManager';
 
 interface ReticulumDestination {
   hash: string;
@@ -21,6 +22,7 @@ function ReticulumSettings() {
   const [identity, setIdentity] = useState<ReticulumIdentity | null>(null);
   const [announceInterval, setAnnounceInterval] = useState<number>(600);
   const [newDestName, setNewDestName] = useState<string>('');
+  const [connecting, setConnecting] = useState<boolean>(false);
 
   // Filter for Reticulum/RNode radios
   const reticulumRadios = radios.filter(r =>
@@ -68,6 +70,22 @@ function ReticulumSettings() {
     // TODO: Implement identity generation via bridge server
   };
 
+  const handleConnectReticulumSoftware = async () => {
+    setConnecting(true);
+    try {
+      // Connect to Reticulum in software-only mode (no physical port required)
+      const result = await bridgeManager.connectRadio('reticulum-virtual', 'reticulum');
+      if (!result.success) {
+        alert(`Failed to connect Reticulum: ${result.error}\n\nMake sure:\n- Python 3 is installed\n- RNS (pip install rns) is installed\n- Bridge server is running`);
+      }
+    } catch (error) {
+      console.error('Failed to connect Reticulum:', error);
+      alert(`Failed to connect Reticulum: ${(error as Error).message}`);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   if (reticulumRadios.length === 0) {
     return (
       <div className="space-y-6">
@@ -76,14 +94,57 @@ function ReticulumSettings() {
           <p className="text-slate-400">Manage Reticulum/RNode radio destinations and identity</p>
         </div>
 
+        {/* Info Banner */}
+        <div className="card p-4 bg-purple-500/10 border border-purple-500/30">
+          <div className="flex gap-3">
+            <svg className="w-6 h-6 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <p className="text-white font-medium">Software-Only Reticulum</p>
+              <p className="text-sm text-purple-200 mt-1">
+                Reticulum can run without physical hardware! Connect in software-only mode to use TCP/UDP networking,
+                bridge with Meshtastic, or test the system. Requires Python 3 and RNS installed (pip install rns).
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="card p-12 text-center">
-          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+          <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">No Reticulum Radios Connected</h3>
-          <p className="text-slate-400">Connect an RNode or Reticulum radio to manage destinations</p>
+          <h3 className="text-xl font-bold text-white mb-2">No Reticulum Network Connected</h3>
+          <p className="text-slate-400 mb-6">Connect Reticulum in software-only mode or connect a physical RNode device</p>
+
+          <button
+            onClick={handleConnectReticulumSoftware}
+            disabled={connecting}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            {connecting ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Connecting...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Connect Software-Only Reticulum
+              </>
+            )}
+          </button>
+
+          <p className="text-xs text-slate-500 mt-4">
+            Or connect a physical RNode device using "Connect Radio" in the sidebar
+          </p>
         </div>
       </div>
     );

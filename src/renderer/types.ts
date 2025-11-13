@@ -57,6 +57,11 @@ export interface BridgeConfig {
   autoReconnect: boolean;
   reconnectDelay: number;
   maxReconnectAttempts: number;
+  // Cross-protocol bridging
+  crossProtocolBridgeEnabled?: boolean;
+  meshtasticToReticulum?: boolean;
+  reticulumToMeshtastic?: boolean;
+  meshtasticChannelToReticulumMap?: { [channel: number]: string }; // channel index → destination hash
 }
 
 export interface BridgeRoute {
