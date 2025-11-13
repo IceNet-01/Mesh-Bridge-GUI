@@ -108,7 +108,8 @@ export class ReticulumProtocol extends BaseProtocol {
     }
 
     this.rnsPython = spawn('python3', [pythonScript, ...args], {
-      cwd: this.options.rnsConfigPath || process.cwd()
+      cwd: this.options.rnsConfigPath || process.cwd(),
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
     });
 
     this.rnsPython.stdout.on('data', (data) => {

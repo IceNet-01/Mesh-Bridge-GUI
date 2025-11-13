@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
 Reticulum Network Stack Bridge for Mesh Bridge GUI
 
@@ -89,9 +89,13 @@ class RNSBridge:
 
         # Create config file if it doesn't exist
         config_file = os.path.join(self.config_path, "config")
-        if not os.path.exists(config_file):
+        if os.path.exists(config_file):
+            self.log(f"Using existing RNS config: {config_file}")
+            self.log("NOTE: If experiencing slow initialization, delete config to regenerate without AutoInterface")
+        else:
             network_config = """# Reticulum configuration for Mesh Bridge
-# Full network-capable configuration for mesh networking
+# Network-capable configuration using UDP for mesh networking
+# AutoInterface is disabled to prevent slow interface probing
 
 [reticulum]
 enable_transport = yes
@@ -102,12 +106,7 @@ instance_control_port = 37429
 [logging]
 loglevel = 4
 
-# AutoInterface - automatically discovers other Reticulum instances on local network
-[[Default Interface]]
-  type = AutoInterface
-  interface_enabled = yes
-
-# UDP Interface for broader network reach
+# UDP Interface for network mesh communication
 [[UDP Interface]]
   type = UDPInterface
   interface_enabled = yes
@@ -115,6 +114,13 @@ loglevel = 4
   listen_port = 4242
   forward_ip = 255.255.255.255
   forward_port = 4242
+
+# Optionally connect to public testnet
+# [[TCP Client]]
+#   type = TCPClientInterface
+#   interface_enabled = no
+#   target_host = reticulum.betweentheborders.com
+#   target_port = 4242
 """
             with open(config_file, 'w') as f:
                 f.write(network_config)
@@ -142,16 +148,18 @@ loglevel = 4
             self.log(f"✓ RNS initialized with config from: {self.config_path}")
             sys.stderr.flush()
 
-            # Load or create identity
+            # Load or create identity (following NomadNet pattern)
             self.log("Loading or creating identity...")
             sys.stderr.flush()
-            if RNS.Identity.from_file(self.identity_path):
-                self.identity = RNS.Identity.from_file(self.identity_path)
-                self.log(f"✓ Loaded existing identity from: {self.identity_path}")
-            else:
+            self.identity = RNS.Identity.from_file(self.identity_path)
+            if self.identity is None:
+                self.log("No existing identity found, creating new one...")
+                sys.stderr.flush()
                 self.identity = RNS.Identity()
                 self.identity.to_file(self.identity_path)
-                self.log(f"✓ Created new identity and saved to: {self.identity_path}")
+                self.log(f"✓ Created new identity: {self.identity_path}")
+            else:
+                self.log(f"✓ Loaded existing identity: {self.identity_path}")
             sys.stderr.flush()
 
             # Create a destination for receiving messages
@@ -385,6 +393,10 @@ loglevel = 4
             # Start stdin listener thread
             stdin_thread = Thread(target=self.listen_stdin, daemon=True)
             stdin_thread.start()
+
+            # Wait for interfaces to stabilize before first announce (NomadNet pattern)
+            self.log("Waiting 3 seconds for interfaces to stabilize...")
+            time.sleep(3)
 
             # Initial announce
             self.announce()
