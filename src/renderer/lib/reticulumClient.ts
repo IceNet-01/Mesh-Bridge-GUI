@@ -76,9 +76,18 @@ export class ReticulumClient extends EventEmitter {
   private messages: LXMFMessage[] = [];
   private peers: Map<string, ReticulumPeer> = new Map();
 
-  constructor(wsUrl = 'ws://localhost:4243') {
+  constructor(wsUrl?: string) {
     super();
-    this.wsUrl = wsUrl;
+    // Auto-detect WebSocket URL based on current page location
+    // This allows the UI to work whether accessed via localhost, LAN IP, or hostname
+    if (!wsUrl) {
+      const hostname = window.location.hostname || 'localhost';
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.wsUrl = `${protocol}//${hostname}:4243`;
+    } else {
+      this.wsUrl = wsUrl;
+    }
+    console.log(`[Reticulum] WebSocket URL: ${this.wsUrl}`);
   }
 
   /**

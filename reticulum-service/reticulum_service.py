@@ -75,7 +75,7 @@ class ReticulumService:
     WebSocket server for the web interface to send/receive messages.
     """
 
-    def __init__(self, config_dir=None, identity_path=None, ws_host="localhost", ws_port=4243):
+    def __init__(self, config_dir=None, identity_path=None, ws_host="0.0.0.0", ws_port=4243):
         """Initialize the Reticulum service"""
         self.config_dir = config_dir or os.path.expanduser("~/.reticulum")
         self.identity_path = identity_path or os.path.join(self.config_dir, "identities", "meshbridge")
@@ -114,12 +114,12 @@ class ReticulumService:
         os.makedirs(self.config_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.identity_path), exist_ok=True)
 
-        # Create minimal RNS config if it doesn't exist
+        # Create full RNS config if it doesn't exist
         config_file = os.path.join(self.config_dir, "config")
         if not os.path.exists(config_file):
-            self.log("Creating minimal RNS config...")
+            self.log("Creating RNS config with full interface support...")
             config_content = """# Reticulum configuration for Mesh Bridge GUI
-# Minimal network-capable configuration
+# Full production configuration with LAN/WAN support
 
 [reticulum]
 enable_transport = yes
@@ -130,7 +130,23 @@ instance_control_port = 37429
 [logging]
 loglevel = 4
 
-# UDP Interface for local mesh
+# AutoInterface - Automatic local network discovery (LAN)
+# Discovers and connects to other Reticulum instances on local networks
+[[AutoInterface]]
+  type = AutoInterface
+  interface_enabled = yes
+  group_id = reticulum
+
+# TCP Server Interface - Accept incoming connections (WAN/LAN)
+# Allows remote nodes to connect via TCP
+[[TCP Server Interface]]
+  type = TCPServerInterface
+  interface_enabled = yes
+  listen_ip = 0.0.0.0
+  listen_port = 4965
+
+# UDP Interface - Local mesh networking
+# Broadcasts to local network for mesh topology
 [[UDP Interface]]
   type = UDPInterface
   interface_enabled = yes
@@ -138,6 +154,20 @@ loglevel = 4
   listen_port = 4242
   forward_ip = 255.255.255.255
   forward_port = 4242
+
+# I2P Interface (optional, disabled by default)
+# Uncomment to enable I2P networking for anonymous routing
+#[[I2P Interface]]
+#  type = I2PInterface
+#  interface_enabled = no
+
+# TCP Client Interface (optional)
+# Uncomment and configure to connect to a specific Reticulum node
+#[[TCP Client Interface]]
+#  type = TCPClientInterface
+#  interface_enabled = no
+#  target_host = reticulum.example.com
+#  target_port = 4965
 """
             with open(config_file, 'w') as f:
                 f.write(config_content)
@@ -440,8 +470,8 @@ Examples:
 
     parser.add_argument(
         "--ws-host",
-        help="WebSocket host (default: localhost)",
-        default="localhost"
+        help="WebSocket host (default: 0.0.0.0 for LAN access, use 127.0.0.1 for localhost only)",
+        default="0.0.0.0"
     )
 
     parser.add_argument(
