@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reticulum LXMF Client</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🔐 Reticulum LXMF Client</h1>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Disconnected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="identity-card">
+                    <h3>Your Identity</h3>
+                    <div class="identity-info">
+                        <div class="info-row">
+                            <span class="label">Identity:</span>
+                            <span class="value" id="identityHash">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Destination:</span>
+                            <span class="value" id="destinationHash">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Display Name:</span>
+                            <span class="value" id="displayName">-</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="announceBtn" disabled>
+                        📢 Announce
+                    </button>
+                </div>
+
+                <div class="peers-section">
+                    <h3>Known Peers</h3>
+                    <div id="peersList" class="peers-list">
+                        <div class="empty-state">No peers discovered yet</div>
+                    </div>
+                </div>
+
+                <div class="destination-input">
+                    <h3>Send to Custom Destination</h3>
+                    <input
+                        type="text"
+                        id="customDest"
+                        placeholder="Enter destination hash..."
+                        disabled
+                    >
+                    <button class="btn btn-secondary" id="useCustomDestBtn" disabled>
+                        Use This Destination
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Chat Area -->
+            <main class="chat-area">
+                <div class="chat-header">
+                    <h3 id="chatTitle">Select a peer or enter a destination</h3>
+                    <div class="chat-actions">
+                        <button class="btn btn-sm" id="clearChatBtn">Clear</button>
+                    </div>
+                </div>
+
+                <div class="messages-container" id="messagesContainer">
+                    <div class="welcome-message">
+                        <h2>Welcome to Reticulum LXMF</h2>
+                        <p>Select a peer from the list or enter a custom destination to start messaging.</p>
+                        <p>Your messages are end-to-end encrypted using the Reticulum Network Stack.</p>
+                    </div>
+                </div>
+
+                <div class="message-input-container">
+                    <textarea
+                        id="messageInput"
+                        placeholder="Type your message here..."
+                        disabled
+                        rows="3"
+                    ></textarea>
+                    <button class="btn btn-primary btn-send" id="sendBtn" disabled>
+                        📤 Send Message
+                    </button>
+                </div>
+            </main>
+        </div>
+
+        <!-- Connection Settings -->
+        <div class="settings-panel" id="settingsPanel">
+            <h3>Connection Settings</h3>
+            <div class="settings-content">
+                <label>
+                    WebSocket URL:
+                    <input type="text" id="wsUrlInput" value="ws://localhost:4243">
+                </label>
+                <button class="btn btn-primary" id="connectBtn">Connect</button>
+                <button class="btn btn-secondary" id="disconnectBtn" disabled>Disconnect</button>
+            </div>
+        </div>
+
+        <!-- Debug Console -->
+        <div class="debug-console">
+            <div class="debug-header">
+                <h4>Debug Console</h4>
+                <button class="btn btn-sm" id="clearLogBtn">Clear</button>
+            </div>
+            <div class="debug-log" id="debugLog"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
