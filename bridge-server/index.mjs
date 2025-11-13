@@ -27,8 +27,11 @@ import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 
-// Make crypto available globally for @meshtastic libraries
-globalThis.crypto = crypto;
+// Make crypto available globally for @meshtastic libraries (if not already available)
+// Node.js v20+ already has crypto on globalThis, so only set if undefined
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
