@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reticulum WebSocket Connection Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        h1 { color: #a78bfa; }
+        .status {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 2px solid #4c1d95;
+            background: #1e1b4b;
+        }
+        .log {
+            background: #1e293b;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #3b82f6;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        .log-entry.info { color: #60a5fa; }
+        .log-entry.success { color: #34d399; }
+        .log-entry.error { color: #f87171; }
+        .log-entry.warn { color: #fbbf24; }
+        button {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #6d28d9; }
+        button:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+        .connected { border-color: #10b981; background: #064e3b; }
+        .disconnected { border-color: #ef4444; background: #7f1d1d; }
+        input {
+            background: #1e293b;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            width: 400px;
+            font-size: 14px;
+        }
+        .data-display {
+            background: #0f172a;
+            border: 1px solid #334155;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .data-display pre {
+            margin: 0;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔐 Reticulum WebSocket Connection Test</h1>
+
+    <div class="status" id="status">
+        <h2>Connection Status: <span id="statusText">Not Connected</span></h2>
+        <p>WebSocket URL: <strong id="wsUrl">-</strong></p>
+        <p>State: <span id="wsState">CLOSED</span></p>
+    </div>
+
+    <div>
+        <label>WebSocket URL:</label><br>
+        <input type="text" id="urlInput" value="ws://localhost:4243" placeholder="ws://localhost:4243">
+        <br><br>
+        <button onclick="connect()" id="connectBtn">Connect</button>
+        <button onclick="disconnect()" id="disconnectBtn" disabled>Disconnect</button>
+        <button onclick="sendTestMessage()" id="sendBtn" disabled>Send Test Message</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="data-display" id="statusData" style="display:none;">
+        <h3>Reticulum Status</h3>
+        <pre id="statusJson"></pre>
+    </div>
+
+    <div class="log" id="log">
+        <div class="log-entry info">Ready to connect. Click "Connect" button.</div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 3;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateStatus(connected, state) {
+            const statusDiv = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            const wsState = document.getElementById('wsState');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+
+            statusText.textContent = connected ? 'Connected ✓' : 'Disconnected';
+            wsState.textContent = state || 'UNKNOWN';
+            statusDiv.className = connected ? 'status connected' : 'status disconnected';
+
+            connectBtn.disabled = connected;
+            disconnectBtn.disabled = !connected;
+            sendBtn.disabled = !connected;
+        }
+
+        function connect() {
+            const url = document.getElementById('urlInput').value;
+            document.getElementById('wsUrl').textContent = url;
+
+            log(`Attempting to connect to: ${url}`, 'info');
+            updateStatus(false, 'CONNECTING');
+
+            try {
+                ws = new WebSocket(url);
+
+                ws.onopen = function(event) {
+                    log('✅ WebSocket connection opened!', 'success');
+                    updateStatus(true, 'OPEN');
+                    reconnectAttempts = 0;
+                };
+
+                ws.onmessage = function(event) {
+                    log(`📨 Received message (${event.data.length} bytes)`, 'info');
+
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Message type: ${data.type}`, 'info');
+
+                        if (data.type === 'status') {
+                            log(`✅ Received status message!`, 'success');
+                            log(`   Running: ${data.data.running}`, 'info');
+                            log(`   Identity: ${data.data.identity}`, 'info');
+                            log(`   Destination: ${data.data.destination}`, 'info');
+                            log(`   Display Name: ${data.data.display_name}`, 'info');
+
+                            // Display formatted JSON
+                            document.getElementById('statusData').style.display = 'block';
+                            document.getElementById('statusJson').textContent = JSON.stringify(data, null, 2);
+                        } else {
+                            log(`Data: ${JSON.stringify(data)}`, 'info');
+                        }
+                    } catch (e) {
+                        log(`Raw data: ${event.data}`, 'warn');
+                    }
+                };
+
+                ws.onerror = function(event) {
+                    log(`❌ WebSocket error occurred`, 'error');
+                    console.error('WebSocket error:', event);
+                    updateStatus(false, 'ERROR');
+                };
+
+                ws.onclose = function(event) {
+                    log(`🔌 WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'None'}`, 'warn');
+                    updateStatus(false, 'CLOSED');
+
+                    if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = reconnectAttempts * 2000;
+                        log(`Will retry connection in ${delay/1000}s (attempt ${reconnectAttempts}/${maxReconnectAttempts})`, 'warn');
+                        setTimeout(() => connect(), delay);
+                    }
+                };
+
+            } catch (error) {
+                log(`❌ Failed to create WebSocket: ${error.message}`, 'error');
+                console.error('Connection error:', error);
+                updateStatus(false, 'ERROR');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                log('Closing WebSocket connection...', 'info');
+                reconnectAttempts = maxReconnectAttempts; // Prevent auto-reconnect
+                ws.close(1000, 'User requested disconnect');
+                ws = null;
+            }
+        }
+
+        function sendTestMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('❌ Cannot send - not connected', 'error');
+                return;
+            }
+
+            const testMsg = {
+                type: 'get_peers',
+                data: {}
+            };
+
+            log(`📤 Sending test message: ${JSON.stringify(testMsg)}`, 'info');
+            ws.send(JSON.stringify(testMsg));
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            log('Log cleared', 'info');
+        }
+
+        // Auto-detect hostname and update URL
+        window.addEventListener('load', function() {
+            const hostname = window.location.hostname || 'localhost';
+            const autoUrl = `ws://${hostname}:4243`;
+            document.getElementById('urlInput').value = autoUrl;
+            log(`Auto-detected WebSocket URL: ${autoUrl}`, 'info');
+            log(`Host: ${window.location.hostname}`, 'info');
+            log(`Protocol: ${window.location.protocol}`, 'info');
+            log(`Port: ${window.location.port}`, 'info');
+        });
+
+        // Add keyboard shortcut
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'c' && e.ctrlKey) {
+                if (!document.getElementById('connectBtn').disabled) {
+                    connect();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
