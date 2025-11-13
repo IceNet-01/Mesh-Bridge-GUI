@@ -113,30 +113,48 @@ Open your browser to **http://localhost:5173**
 Install as a permanent service that starts on boot:
 
 ```bash
+# Build the application first
+npm run build
+
 # Install and enable the service (requires sudo)
-sudo npm run service:install
-
-# Start the service
-npm run service:start
-
-# Access at http://localhost:8080
+sudo ./install-service.sh
 ```
+
+The installation script will:
+- ✅ Create systemd service file
+- ✅ Enable auto-start on boot
+- ✅ Start the service immediately
+- ✅ Display service status and logs
+
+**Access the Interface:**
+- **Locally**: http://localhost:8080
+- **On LAN**: http://YOUR_LOCAL_IP:8080 (shown during startup)
+- **Example**: http://192.168.1.100:8080
+
+The server automatically binds to `0.0.0.0`, making it accessible from any device on your local network!
 
 **Service Management:**
 ```bash
-npm run service:start      # Start service
-npm run service:stop       # Stop service
-npm run service:restart    # Restart service
-npm run service:status     # Check status
-npm run service:logs       # View logs
+sudo systemctl start mesh-bridge      # Start service
+sudo systemctl stop mesh-bridge       # Stop service
+sudo systemctl restart mesh-bridge    # Restart service
+sudo systemctl status mesh-bridge     # Check status
+sudo journalctl -u mesh-bridge -f     # View live logs
+```
+
+**Uninstall Service:**
+```bash
+sudo ./uninstall-service.sh
 ```
 
 Benefits:
 - ✅ Starts automatically on system boot
-- ✅ Auto-restarts if it crashes
+- ✅ Auto-restarts if it crashes (10 second delay)
 - ✅ Radio connections persist even when browser is closed
 - ✅ Single port (8080) for both WebSocket and web UI
+- ✅ Accessible on LAN for remote access
 - ✅ Automatic port cleanup on startup
+- ✅ Security hardening (NoNewPrivileges, PrivateTmp)
 
 ### Production Build (Manual)
 
@@ -146,6 +164,43 @@ npm run build
 
 # Run in production mode (serves both on port 8080)
 npm run production
+```
+
+## Network Access
+
+### LAN/Remote Access
+
+**The bridge server automatically binds to `0.0.0.0`**, making it accessible from any device on your local network!
+
+**Access from other devices:**
+1. Find your server's local IP address (shown on bridge startup)
+2. Open browser on any device on the same network
+3. Navigate to `http://YOUR_SERVER_IP:8080`
+4. Full functionality works remotely!
+
+**Example:**
+```
+Bridge Server running on: 192.168.1.100
+Access from phone:        http://192.168.1.100:8080
+Access from tablet:       http://192.168.1.100:8080
+Access from laptop:       http://192.168.1.100:8080
+Access locally:           http://localhost:8080
+```
+
+**Security Considerations:**
+- The server is accessible to anyone on your LAN
+- For internet access, use a reverse proxy (nginx, Caddy) with authentication
+- Consider firewall rules if exposing to WAN
+- HTTPS recommended for remote access (use reverse proxy)
+
+**Finding Your IP Address:**
+```bash
+# Linux/macOS
+hostname -I | awk '{print $1}'
+
+# Or look for it in the bridge startup logs
+npm run bridge
+# Shows: 🌐 Access on LAN: http://192.168.1.100:8080 (eth0)
 ```
 
 ## How It Works
@@ -564,11 +619,9 @@ See [Issues](https://github.com/IceNet-01/Mesh-Bridge-GUI/issues) for status and
 ```
 Mesh-Bridge-GUI/
 ├── bridge-server/
-│   └── index.mjs              # Node.js bridge (HTTP + WebSocket + Serial)
-├── scripts/
-│   ├── install-service.sh     # Service installation script
-│   ├── uninstall-service.sh   # Service removal script
-│   └── cleanup-ports.sh       # Port cleanup utility
+│   ├── index.mjs              # Node.js bridge (HTTP + WebSocket + Serial)
+│   └── protocols/             # Protocol handlers
+│       └── MeshtasticProtocol.mjs
 ├── src/
 │   └── renderer/
 │       ├── components/        # React UI components
@@ -577,7 +630,9 @@ Mesh-Bridge-GUI/
 │       ├── App.tsx            # Main app component
 │       └── types.ts           # TypeScript types
 ├── dist/                      # Built frontend (after npm run build)
-├── meshtastic-bridge.service  # Systemd service template
+├── install-service.sh         # Service installation script
+├── uninstall-service.sh       # Service removal script
+├── mesh-bridge.service        # Systemd service template
 ├── package.json
 └── vite.config.ts
 ```
@@ -588,26 +643,21 @@ Mesh-Bridge-GUI/
 # Development
 npm run start           # Start bridge + dev server (localhost:5173)
 npm run dev             # Run web UI dev server only
-npm run bridge          # Run bridge server only
+npm run bridge          # Run bridge server only (localhost:8080, LAN accessible)
 
 # Building & Production
 npm run build           # Build production frontend
-npm run production      # Build + run in production mode (localhost:8080)
+npm run production      # Build + run in production mode (port 8080, LAN accessible)
 npm run preview         # Preview production build (Vite)
 
 # Service Management (Linux)
-npm run service:install     # Install systemd service (requires sudo)
-npm run service:uninstall   # Remove systemd service (requires sudo)
-npm run service:start       # Start the service
-npm run service:stop        # Stop the service
-npm run service:restart     # Restart the service
-npm run service:status      # Check service status
-npm run service:logs        # View live service logs
-npm run service:enable      # Enable auto-start on boot
-npm run service:disable     # Disable auto-start
-
-# Utilities
-npm run cleanup-ports   # Kill processes using port 8080
+sudo ./install-service.sh       # Install systemd service and start it
+sudo ./uninstall-service.sh     # Remove systemd service
+sudo systemctl start mesh-bridge     # Start the service
+sudo systemctl stop mesh-bridge      # Stop the service
+sudo systemctl restart mesh-bridge   # Restart the service
+sudo systemctl status mesh-bridge    # Check service status
+sudo journalctl -u mesh-bridge -f    # View live service logs
 ```
 
 ### Tech Stack

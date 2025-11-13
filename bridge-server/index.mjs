@@ -22,6 +22,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 
@@ -30,8 +31,9 @@ const __dirname = dirname(__filename);
 const distPath = join(__dirname, '..', 'dist');
 
 class MeshtasticBridgeServer {
-  constructor(port = 8080) {
+  constructor(port = 8080, host = '0.0.0.0') {
     this.wsPort = port;
+    this.wsHost = host; // Bind address: '0.0.0.0' for LAN access, 'localhost' for local only
     this.wss = null;
     this.radios = new Map(); // radioId -> { device, transport, port, info }
     this.clients = new Set(); // WebSocket clients
@@ -196,13 +198,28 @@ class MeshtasticBridgeServer {
     });
 
     // Start HTTP server
-    httpServer.listen(this.wsPort, () => {
-      console.log(`✅ HTTP server listening on http://localhost:${this.wsPort}`);
-      console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
+    httpServer.listen(this.wsPort, this.wsHost, () => {
+      const isLanMode = this.wsHost === '0.0.0.0';
+
+      console.log(`✅ HTTP server listening on http://${this.wsHost}:${this.wsPort}`);
+      console.log(`✅ WebSocket server listening on ws://${this.wsHost}:${this.wsPort}`);
 
       if (existsSync(distPath)) {
         console.log(`📂 Serving static files from: ${distPath}`);
-        console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+
+        if (isLanMode) {
+          // Get local IP addresses for LAN access
+          const networkInterfaces = this.getNetworkInterfaces();
+          console.log(`🌐 Access locally: http://localhost:${this.wsPort}`);
+          if (networkInterfaces.length > 0) {
+            console.log(`🌐 Access on LAN:`);
+            networkInterfaces.forEach(iface => {
+              console.log(`   http://${iface.address}:${this.wsPort} (${iface.name})`);
+            });
+          }
+        } else {
+          console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+        }
       } else {
         console.log(`⚠️  No dist/ folder found - run 'npm run build' first for production mode`);
         console.log(`💡 For development, run 'npm run dev' in a separate terminal`);
@@ -274,6 +291,28 @@ class MeshtasticBridgeServer {
       console.error(`❌ Error serving ${filePath}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Get network interfaces for LAN access information
+   */
+  getNetworkInterfaces() {
+    const interfaces = [];
+    const nets = networkInterfaces();
+
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        // Skip internal (loopback) and non-IPv4 addresses
+        if (net.family === 'IPv4' && !net.internal) {
+          interfaces.push({
+            name: name,
+            address: net.address
+          });
+        }
+      }
+    }
+
+    return interfaces;
   }
 
   /**
