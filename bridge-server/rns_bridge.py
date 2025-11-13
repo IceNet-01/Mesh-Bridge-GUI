@@ -6,6 +6,16 @@ This script provides a bridge between the Node.js bridge server and the
 Reticulum Network Stack (RNS). It allows the Mesh Bridge to use full
 Reticulum capabilities without requiring physical RNode hardware.
 
+INSTALLATION:
+    Install Reticulum Network Stack:
+        pip install rns
+
+    Or using pip3:
+        pip3 install rns
+
+    For system-wide installation:
+        sudo pip3 install rns
+
 Communication Protocol:
 - Input (stdin): JSON messages from Node.js
 - Output (stdout): JSON messages to Node.js
@@ -24,9 +34,23 @@ Capabilities:
 import sys
 import json
 import time
-import RNS
 from threading import Thread, Event
 import argparse
+
+# Check if RNS is installed and provide helpful error message
+try:
+    import RNS
+except ImportError as e:
+    print("\n" + "="*70, file=sys.stderr)
+    print("ERROR: Reticulum Network Stack (RNS) is not installed!", file=sys.stderr)
+    print("="*70, file=sys.stderr)
+    print("\nTo install RNS, run one of the following commands:", file=sys.stderr)
+    print("  pip install rns", file=sys.stderr)
+    print("  pip3 install rns", file=sys.stderr)
+    print("  sudo pip3 install rns  (for system-wide installation)", file=sys.stderr)
+    print("\nFor more information, visit: https://reticulum.network/", file=sys.stderr)
+    print("="*70 + "\n", file=sys.stderr)
+    sys.exit(1)
 
 class RNSBridge:
     def __init__(self, config_path=None, identity_path=None):
