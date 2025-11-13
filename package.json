@@ -1,7 +1,7 @@
 {
   "name": "meshtastic-bridge-gui",
   "version": "2.0.0",
-  "description": "Modern PWA for managing Meshtastic radio bridge relay stations",
+  "description": "Modern PWA for managing Meshtastic-only radio bridge relay stations",
   "type": "module",
   "author": "Northern Plains IT, LLC and OnyxVZ, LLC (IceNet-01)",
   "license": "SEE LICENSE IN LICENSE",

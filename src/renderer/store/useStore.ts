@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, ReticulumStatus } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -27,9 +27,6 @@ interface AppStore {
 
   // Communication State
   commConfig: CommunicationConfig | null;
-
-  // Reticulum State
-  reticulumStatus: ReticulumStatus | null;
 
   // Actions
   initialize: () => void;
@@ -135,25 +132,6 @@ export const useStore = create<AppStore>((set, get) => {
     set({ commConfig: config });
   });
 
-  // Reticulum event listeners
-  manager.on('reticulum-status-update', (status: ReticulumStatus) => {
-    set({ reticulumStatus: status });
-  });
-
-  manager.on('reticulum-transports-updated', (transports: any[]) => {
-    set(state => {
-      if (state.reticulumStatus) {
-        return {
-          reticulumStatus: {
-            ...state.reticulumStatus,
-            transports: transports
-          }
-        };
-      }
-      return state;
-    });
-  });
-
   return {
     manager,
     bridgeConnected: false,
@@ -170,7 +148,6 @@ export const useStore = create<AppStore>((set, get) => {
     aiStatus: null,
     aiPullProgress: null,
     commConfig: null,
-    reticulumStatus: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();
@@ -228,9 +205,9 @@ export const useStore = create<AppStore>((set, get) => {
 
         console.log(`  ✨ Found ${newPorts.length} new radio(s), connecting...`);
 
-        // Connect to new ports only using auto-detection
+        // Connect to new ports only using Meshtastic protocol
         const results = await Promise.allSettled(
-          newPorts.map(port => manager.connectRadio(port.path, 'auto'))
+          newPorts.map(port => manager.connectRadio(port.path, 'meshtastic'))
         );
 
         const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
@@ -292,11 +269,11 @@ export const useStore = create<AppStore>((set, get) => {
         throw new Error('No serial ports found. Make sure your radio is connected via USB and the bridge server is running.');
       }
 
-      // Connect to ALL available ports using auto-detection
-      console.log(`Connecting to ${ports.length} radio(s) with auto-detection...`);
+      // Connect to ALL available ports using Meshtastic protocol
+      console.log(`Connecting to ${ports.length} radio(s) with Meshtastic protocol...`);
 
       const results = await Promise.allSettled(
-        ports.map(port => manager.connectRadio(port.path, 'auto'))
+        ports.map(port => manager.connectRadio(port.path, 'meshtastic'))
       );
 
       // Check if at least one succeeded

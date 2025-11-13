@@ -1,10 +1,5 @@
 // Radio protocol types
-// Note: 'auto' = automatic protocol detection (Meshtastic or RNode)
-// - Meshtastic devices are added as individual radios
-// - RNode devices are automatically added as transports to the global Reticulum Network Stack
-// - Reticulum runs as a single global network with multiple transports (not per-radio)
-// MeshCore (https://meshcore.co.uk/) is a separate mesh product, not yet supported
-export type RadioProtocol = 'meshtastic' | 'auto';
+export type RadioProtocol = 'meshtastic';
 
 export interface Radio {
   id: string;
@@ -40,19 +35,6 @@ export interface Radio {
       txPower?: number;
       channelNum?: number;
     };
-    // Reticulum-specific (global network)
-    destinationHash?: string;
-    identityHash?: string;
-    // RNode-specific (used as Reticulum transports)
-    // Note: RNode devices are not standalone radios, they are transports for Reticulum
-    frequency?: number;
-    bandwidth?: number;
-    spreadingFactor?: number;
-    codingRate?: number;
-    txPower?: number;
-    // Mesh Core-specific
-    activeProtocols?: string[];
-    routingTable?: any;
   };
 }
 
@@ -63,11 +45,6 @@ export interface BridgeConfig {
   autoReconnect: boolean;
   reconnectDelay: number;
   maxReconnectAttempts: number;
-  // Cross-protocol bridging
-  crossProtocolBridgeEnabled?: boolean;
-  meshtasticToReticulum?: boolean;
-  reticulumToMeshtastic?: boolean;
-  meshtasticChannelToReticulumMap?: { [channel: number]: string }; // channel index → destination hash
 }
 
 export interface BridgeRoute {
@@ -175,36 +152,6 @@ export interface DiscordConfig {
 export interface CommunicationConfig {
   email: EmailConfig;
   discord: DiscordConfig;
-}
-
-// Reticulum Network Stack types
-export interface ReticulumStatus {
-  running: boolean;
-  identity?: {
-    hash: string;
-    publicKey?: string;
-  };
-  destination?: {
-    hash: string;
-    name?: string;
-  };
-  transports: ReticulumTransport[];
-}
-
-export interface ReticulumTransport {
-  type: string; // 'rnode', 'udp', 'tcp', 'auto'
-  port: string;
-  connected: boolean;
-  messages_sent: number;
-  messages_received: number;
-  added_at: Date;
-  config?: {
-    frequency?: number;
-    bandwidth?: number;
-    spreadingFactor?: number;
-    codingRate?: number;
-    txPower?: number;
-  };
 }
 
 // Web Serial API Type Extensions
