@@ -43,8 +43,9 @@ class MeshtasticBridgeServer {
     this.maxSeenMessages = 1000; // Limit size of seen messages set
 
     // Reticulum Network Stack (singleton, auto-started)
+    // DISABLED: Reticulum now runs as a standalone service (reticulum-service/)
     this.reticulum = null; // Will be initialized in start()
-    this.reticulumEnabled = true; // Auto-start Reticulum on server startup
+    this.reticulumEnabled = false; // Standalone service handles Reticulum now
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
