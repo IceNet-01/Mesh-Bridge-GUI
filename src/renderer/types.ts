@@ -1,5 +1,7 @@
 // Radio protocol types
-export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'meshcore';
+// Note: 'auto' = automatic protocol detection (Meshtastic/Reticulum/RNode)
+// MeshCore (https://meshcore.co.uk/) is a separate mesh product, not yet supported
+export type RadioProtocol = 'meshtastic' | 'reticulum' | 'rnode' | 'auto';
 
 export interface Radio {
   id: string;

@@ -205,9 +205,9 @@ export const useStore = create<AppStore>((set, get) => {
 
         console.log(`  ✨ Found ${newPorts.length} new radio(s), connecting...`);
 
-        // Connect to new ports only
+        // Connect to new ports only using auto-detection
         const results = await Promise.allSettled(
-          newPorts.map(port => manager.connectRadio(port.path, 'meshcore'))
+          newPorts.map(port => manager.connectRadio(port.path, 'auto'))
         );
 
         const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
@@ -269,11 +269,11 @@ export const useStore = create<AppStore>((set, get) => {
         throw new Error('No serial ports found. Make sure your radio is connected via USB and the bridge server is running.');
       }
 
-      // Connect to ALL available ports using meshcore for auto-detection
+      // Connect to ALL available ports using auto-detection
       console.log(`Connecting to ${ports.length} radio(s) with auto-detection...`);
 
       const results = await Promise.allSettled(
-        ports.map(port => manager.connectRadio(port.path, 'meshcore'))
+        ports.map(port => manager.connectRadio(port.path, 'auto'))
       );
 
       // Check if at least one succeeded

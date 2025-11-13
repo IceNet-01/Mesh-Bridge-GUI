@@ -1,11 +1,15 @@
 /**
- * Mesh Core Protocol Handler
+ * Auto-Detect Protocol Handler
  *
- * Implements BaseProtocol for Mesh Core - a protocol abstraction layer
- * that can coordinate multiple underlying radio protocols
+ * Implements BaseProtocol with automatic protocol detection and adaptation.
+ * This is NOT an implementation of the MeshCore mesh networking product.
  *
- * Mesh Core can auto-detect and use Meshtastic, Reticulum, or RNode protocols
- * and provide cross-protocol routing and translation
+ * Auto-detects and uses Meshtastic, Reticulum, or RNode protocols
+ * and provides a unified interface for the bridge server.
+ *
+ * Note: MeshCore is a separate mesh networking product (https://meshcore.co.uk/)
+ * with its own firmware and protocol. Support for actual MeshCore devices
+ * would require a separate MeshCoreProtocol implementation.
  */
 
 import { BaseProtocol } from './BaseProtocol.mjs';
@@ -15,7 +19,7 @@ import { RNodeProtocol } from './RNodeProtocol.mjs';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 
-export class MeshCoreProtocol extends BaseProtocol {
+export class AutoDetectProtocol extends BaseProtocol {
   constructor(radioId, portPath, options = {}) {
     super(radioId, portPath, options);
     this.underlyingProtocol = null;
@@ -24,26 +28,26 @@ export class MeshCoreProtocol extends BaseProtocol {
   }
 
   getProtocolName() {
-    // Return the actual detected protocol, not 'meshcore'
-    // MeshCore is just the auto-detection layer
-    return this.protocolType || 'meshcore';
+    // Return the actual detected protocol, not 'auto'
+    // AutoDetect is just the detection layer
+    return this.protocolType || 'auto';
   }
 
   async connect() {
     try {
-      console.log(`[MeshCore] Connecting to ${this.portPath}...`);
+      console.log(`[AutoDetect] Connecting to ${this.portPath}...`);
 
       // Try to load Mesh Core configuration
       await this.loadConfiguration();
 
       // Auto-detect or use configured protocol
       if (this.config && this.config.protocol) {
-        console.log(`[MeshCore] Using configured protocol: ${this.config.protocol}`);
+        console.log(`[AutoDetect] Using configured protocol: ${this.config.protocol}`);
         this.protocolType = this.config.protocol;
         // Create and connect underlying protocol handler
         await this.connectUnderlyingProtocol();
       } else {
-        console.log(`[MeshCore] Auto-detecting protocol...`);
+        console.log(`[AutoDetect] Auto-detecting protocol...`);
         this.protocolType = await this.detectProtocol();
         // detectProtocol() already connected and set this.underlyingProtocol
         // Just set up event forwarding
@@ -51,11 +55,11 @@ export class MeshCoreProtocol extends BaseProtocol {
       }
 
       this.connected = true;
-      console.log(`[MeshCore] Connected successfully using ${this.protocolType} protocol`);
+      console.log(`[AutoDetect] Connected successfully using ${this.protocolType} protocol`);
 
       return true;
     } catch (error) {
-      console.error(`[MeshCore] Connection failed:`, error);
+      console.error(`[AutoDetect] Connection failed:`, error);
       this.handleError(error);
       throw error;
     }
@@ -73,23 +77,23 @@ export class MeshCoreProtocol extends BaseProtocol {
 
       for (const configPath of configPaths) {
         if (existsSync(configPath)) {
-          console.log(`[MeshCore] Loading configuration from ${configPath}`);
+          console.log(`[AutoDetect] Loading configuration from ${configPath}`);
           const configData = readFileSync(configPath, 'utf8');
           this.config = JSON.parse(configData);
           return;
         }
       }
 
-      console.log(`[MeshCore] No configuration file found, using defaults`);
+      console.log(`[AutoDetect] No configuration file found, using defaults`);
       this.config = {};
     } catch (error) {
-      console.warn(`[MeshCore] Error loading configuration:`, error);
+      console.warn(`[AutoDetect] Error loading configuration:`, error);
       this.config = {};
     }
   }
 
   async detectProtocol() {
-    console.log('[MeshCore] Starting protocol detection...');
+    console.log('[AutoDetect] Starting protocol detection...');
 
     // Determine if this is a physical serial port or virtual
     const isVirtualPort = this.portPath.includes('virtual') ||
@@ -102,22 +106,22 @@ export class MeshCoreProtocol extends BaseProtocol {
       ? ['reticulum', 'meshtastic', 'rnode']  // For virtual ports, try Reticulum first
       : ['meshtastic', 'rnode'];               // For physical ports, skip Reticulum
 
-    console.log(`[MeshCore] Port type: ${isVirtualPort ? 'Virtual/Software' : 'Physical Serial'}`);
-    console.log(`[MeshCore] Will try protocols: ${protocols.join(', ')}`);
+    console.log(`[AutoDetect] Port type: ${isVirtualPort ? 'Virtual/Software' : 'Physical Serial'}`);
+    console.log(`[AutoDetect] Will try protocols: ${protocols.join(', ')}`);
 
     for (const protocol of protocols) {
-      console.log(`[MeshCore] Trying ${protocol}...`);
+      console.log(`[AutoDetect] Trying ${protocol}...`);
 
       try {
         const testProtocol = this.createProtocolHandler(protocol);
         await testProtocol.connect();
 
         // Success! Keep this connection and use it
-        console.log(`[MeshCore] Detected ${protocol} protocol`);
+        console.log(`[AutoDetect] Detected ${protocol} protocol`);
         this.underlyingProtocol = testProtocol;
         return protocol;
       } catch (error) {
-        console.log(`[MeshCore] ${protocol} detection failed:`, error.message);
+        console.log(`[AutoDetect] ${protocol} detection failed:`, error.message);
         // Continue to next protocol
       }
     }
@@ -178,7 +182,7 @@ export class MeshCoreProtocol extends BaseProtocol {
 
   async disconnect() {
     try {
-      console.log(`[MeshCore] Disconnecting from ${this.portPath}...`);
+      console.log(`[AutoDetect] Disconnecting from ${this.portPath}...`);
 
       if (this.underlyingProtocol) {
         await this.underlyingProtocol.disconnect();
@@ -186,9 +190,9 @@ export class MeshCoreProtocol extends BaseProtocol {
       }
 
       this.connected = false;
-      console.log(`[MeshCore] Disconnected successfully`);
+      console.log(`[AutoDetect] Disconnected successfully`);
     } catch (error) {
-      console.error('[MeshCore] Error during disconnect:', error);
+      console.error('[AutoDetect] Error during disconnect:', error);
       this.handleError(error);
       throw error;
     }
@@ -204,11 +208,11 @@ export class MeshCoreProtocol extends BaseProtocol {
       const result = await this.underlyingProtocol.sendMessage(text, channel, options);
 
       this.stats.messagesSent++;
-      console.log(`[MeshCore] Message sent via ${this.protocolType}: ${text.substring(0, 50)}...`);
+      console.log(`[AutoDetect] Message sent via ${this.protocolType}: ${text.substring(0, 50)}...`);
 
       return result;
     } catch (error) {
-      console.error('[MeshCore] Error sending message:', error);
+      console.error('[AutoDetect] Error sending message:', error);
       this.handleError(error);
       throw error;
     }
@@ -268,7 +272,7 @@ export class MeshCoreProtocol extends BaseProtocol {
    * Switch to a different protocol (requires reconnection)
    */
   async switchProtocol(newProtocol) {
-    console.log(`[MeshCore] Switching protocol from ${this.protocolType} to ${newProtocol}`);
+    console.log(`[AutoDetect] Switching protocol from ${this.protocolType} to ${newProtocol}`);
 
     if (this.connected) {
       await this.disconnect();
