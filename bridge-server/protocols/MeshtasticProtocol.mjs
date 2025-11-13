@@ -59,6 +59,21 @@ export class MeshtasticProtocol extends BaseProtocol {
       return true;
     } catch (error) {
       console.error(`[Meshtastic] Connection failed:`, error);
+
+      // Clean up any partial connection on error
+      try {
+        if (this.device) {
+          await this.device.disconnect();
+          this.device = null;
+        }
+        if (this.transport) {
+          this.transport = null;
+        }
+        this.connected = false;
+      } catch (cleanupError) {
+        console.error(`[Meshtastic] Error during cleanup:`, cleanupError);
+      }
+
       this.handleError(error);
       throw error;
     }

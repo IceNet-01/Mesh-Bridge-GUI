@@ -14,6 +14,7 @@
  * - Serves static frontend files from dist/ directory in production
  */
 
+import crypto from 'crypto';
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
@@ -25,6 +26,9 @@ import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
+
+// Make crypto available globally for @meshtastic libraries
+globalThis.crypto = crypto;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
