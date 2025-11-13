@@ -1687,9 +1687,10 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error('❌ Send failed:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       ws.send(JSON.stringify({
         type: 'error',
-        error: `Send failed: ${error.message}`
+        error: `Send failed: ${errorMsg}`
       }));
     }
   }
