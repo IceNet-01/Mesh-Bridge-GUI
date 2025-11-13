@@ -34,6 +34,7 @@ Capabilities:
 import sys
 import json
 import time
+import os
 from threading import Thread, Event
 import argparse
 
@@ -59,8 +60,12 @@ class RNSBridge:
         self.identity = None
         self.destination = None
         self.running = False
-        self.config_path = config_path or RNS.Reticulum.configdir
-        self.identity_path = identity_path or f"{RNS.Reticulum.configdir}/bridge_identity"
+
+        # Use provided paths or default to ~/.reticulum
+        default_config_dir = os.path.expanduser("~/.reticulum")
+        self.config_path = config_path or default_config_dir
+        self.identity_path = identity_path or os.path.join(self.config_path, "bridge_identity")
+
         self.destinations = {}  # Track discovered destinations
         self.links = {}  # Track established links
 
@@ -77,8 +82,6 @@ class RNSBridge:
 
     def _ensure_config_dir(self):
         """Ensure RNS config directory exists with network-capable config"""
-        import os
-
         # Create config directory if it doesn't exist
         if not os.path.exists(self.config_path):
             os.makedirs(self.config_path, exist_ok=True)
