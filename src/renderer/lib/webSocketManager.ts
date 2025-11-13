@@ -203,6 +203,27 @@ export class WebSocketRadioManager {
         this.log('warn', `Radio disconnected: ${data.radioId}`);
         break;
 
+      case 'radio-updated':
+        // Radio information updated (nodeInfo, channels, config, stats)
+        if (data.radio) {
+          this.radios.set(data.radio.id, data.radio);
+          this.emit('radio-status-change', Array.from(this.radios.values()));
+          this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');
+        }
+        break;
+
+      case 'radio-telemetry':
+        // Radio telemetry data updated
+        const radio = this.radios.get(data.radioId);
+        if (radio && data.telemetry) {
+          // Merge telemetry data into radio object
+          Object.assign(radio, data.telemetry);
+          this.radios.set(data.radioId, radio);
+          this.emit('radio-status-change', Array.from(this.radios.values()));
+          this.log('debug', `Radio telemetry updated: ${data.radioId}`, 'telemetry');
+        }
+        break;
+
       case 'message':
         // New message received
         const message: Message = {

@@ -504,6 +504,11 @@ class MeshtasticBridgeServer {
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.errors = (radio.errors || 0) + 1;
+          // Broadcast updated radio stats
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
         }
       });
 
@@ -642,6 +647,12 @@ class MeshtasticBridgeServer {
         text: packet.text
       });
 
+      // Increment message received counter for this radio
+      const radio = this.radios.get(radioId);
+      if (radio) {
+        radio.messagesReceived = (radio.messagesReceived || 0) + 1;
+      }
+
       // Extract text from normalized packet
       const text = packet.text;
 
@@ -706,6 +717,14 @@ class MeshtasticBridgeServer {
           type: 'message',
           message: message
         });
+
+        // Broadcast updated radio stats
+        if (radio) {
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
+        }
 
         // BRIDGE: Forward to all OTHER radios ONLY if message is NOT from our bridge
         if (!isFromOurBridgeRadio) {
@@ -1592,6 +1611,12 @@ class MeshtasticBridgeServer {
       radio.messagesSent = (radio.messagesSent || 0) + 1;
 
       console.log(`✅ Text sent successfully on channel ${channel}`);
+
+      // Broadcast updated radio stats
+      this.broadcast({
+        type: 'radio-updated',
+        radio: this.getRadioInfo(radioId)
+      });
 
       ws.send(JSON.stringify({
         type: 'send-success',
