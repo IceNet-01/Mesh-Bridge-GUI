@@ -821,7 +821,10 @@ class MeshtasticBridgeServer {
 
         // BRIDGE: Forward to all OTHER radios ONLY if message is NOT from our bridge
         if (!isFromOurBridgeRadio) {
+          console.log(`🌉 Forwarding message to other radios (source channel: ${packet.channel})`);
           this.forwardToOtherRadios(radioId, text, packet.channel);
+        } else {
+          console.log(`🔁 Not forwarding - message from our bridge radio`);
         }
       } else {
         console.log(`📦 Non-text packet or empty data:`, packet.data);
@@ -1598,8 +1601,15 @@ class MeshtasticBridgeServer {
       // or to wrong channels. Smart matching requires PSK+name from channel config.
       if (!sourceChannel) {
         console.warn(`⚠️  Cannot forward: Channel ${channel} config not yet received from ${sourceRadioId}`);
-        console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
-        console.warn(`   Waiting for channel config... (radio may still be initializing)`);
+        console.warn(`   Source radio has ${sourceRadio.channels?.size || 0} channel configs loaded`);
+        if (sourceRadio.channels && sourceRadio.channels.size > 0) {
+          const availableChannels = Array.from(sourceRadio.channels.keys());
+          console.warn(`   Available channel indices: [${availableChannels.join(', ')}]`);
+          console.warn(`   ⚠️  You tried to send on channel ${channel} but it doesn't exist!`);
+        } else {
+          console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
+          console.warn(`   Waiting for channel config... (radio may still be initializing)`);
+        }
         return;
       }
 
