@@ -167,13 +167,32 @@ class MeshtasticBridgeServer {
         messages: this.messageHistory
       }));
 
-      // Send current radio status
+      // Send current radio status with complete state
       const radiosStatus = Array.from(this.radios.entries()).map(([id, radio]) => ({
         id,
         port: radio.port,
         status: 'connected',
+        protocol: radio.protocolType || 'meshtastic',
+        nodeInfo: radio.nodeInfo,
+        channels: Array.from(radio.channels.entries()).map(([idx, ch]) => ({
+          index: idx,
+          name: ch.name,
+          role: ch.role,
+          psk: ch.psk
+        })),
+        batteryLevel: radio.telemetry?.batteryLevel,
+        voltage: radio.telemetry?.voltage,
+        channelUtilization: radio.telemetry?.channelUtilization,
+        airUtilTx: radio.telemetry?.airUtilTx,
+        messagesReceived: radio.messagesReceived || 0,
+        messagesSent: radio.messagesSent || 0,
+        errors: radio.errors || 0,
         info: radio.info
       }));
+
+      if (radiosStatus.length > 0) {
+        console.log(`📡 Sending ${radiosStatus.length} persisted radio(s) to new client`);
+      }
 
       ws.send(JSON.stringify({
         type: 'radios',
