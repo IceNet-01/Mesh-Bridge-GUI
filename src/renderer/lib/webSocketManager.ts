@@ -24,6 +24,8 @@ export class WebSocketRadioManager {
   private maxReconnectAttempts = 10;
   private reconnectDelay = 2000;
   private bridgeUrl: string;
+  private readonly MESSAGE_STORAGE_KEY = 'mesh-bridge-messages';
+  private readonly MESSAGE_RETENTION_DAYS = 7;
 
   constructor(bridgeUrl: string = 'ws://localhost:8080') {
     this.bridgeUrl = bridgeUrl;
@@ -47,8 +49,14 @@ export class WebSocketRadioManager {
       maxReconnectAttempts: 10,
     };
 
+    // Load persisted messages from localStorage
+    this.loadMessagesFromStorage();
+
     // Update statistics every second
     setInterval(() => this.updateStatistics(), 1000);
+
+    // Clean up old messages every hour
+    setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
   }
 
   // Event emitter pattern
@@ -266,6 +274,7 @@ export class WebSocketRadioManager {
         };
 
         this.messages.set(message.id, message);
+        this.saveMessagesToStorage(); // Persist to localStorage
         this.messageTimestamps.push(message.timestamp);
 
         // Only increment received count if not a sent message
@@ -579,6 +588,61 @@ export class WebSocketRadioManager {
     this.statistics.messageRatePerMinute = this.messageTimestamps.length;
 
     this.emit('statistics-update', this.statistics);
+  }
+
+  /**
+   * Load messages from localStorage
+   */
+  private loadMessagesFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(this.MESSAGE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.forEach((msg: any) => {
+          // Restore Date objects from ISO strings
+          this.messages.set(msg.id, {
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          });
+        });
+        this.log('info', `📦 Loaded ${this.messages.size} messages from storage`);
+      }
+    } catch (error) {
+      this.log('error', 'Failed to load messages from storage', undefined, error);
+    }
+  }
+
+  /**
+   * Save messages to localStorage
+   */
+  private saveMessagesToStorage(): void {
+    try {
+      const messages = Array.from(this.messages.values());
+      localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messages));
+    } catch (error) {
+      this.log('error', 'Failed to save messages to storage', undefined, error);
+    }
+  }
+
+  /**
+   * Clean up old messages (older than MESSAGE_RETENTION_DAYS)
+   */
+  private cleanupOldMessages(): void {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - this.MESSAGE_RETENTION_DAYS);
+
+    let removedCount = 0;
+    for (const [id, message] of this.messages.entries()) {
+      if (message.timestamp < cutoffDate) {
+        this.messages.delete(id);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.log('info', `🗑️ Cleaned up ${removedCount} old messages (older than ${this.MESSAGE_RETENTION_DAYS} days)`);
+      this.saveMessagesToStorage();
+    }
   }
 
   /**
