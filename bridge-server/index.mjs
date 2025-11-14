@@ -49,6 +49,12 @@ class MeshtasticBridgeServer {
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
 
+    // ===== MESSAGE QUEUE CONFIGURATION =====
+    // Queue messages when radio isn't ready and send when initialized
+    this.messageQueues = new Map(); // radioId -> array of queued messages
+    this.maxQueueSize = 50; // Max messages to queue per radio
+    this.queueTimeout = 300000; // 5 minutes timeout for queued messages
+
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
     //
@@ -643,6 +649,9 @@ class MeshtasticBridgeServer {
         type: 'radio-connected',
         radio: this.getRadioInfo(radioId)
       });
+
+      // Process any queued messages now that radio is ready
+      await this.processMessageQueue(radioId);
 
     } catch (error) {
       console.error(`❌ Failed to connect to ${portPath}:`, error);
@@ -1728,7 +1737,20 @@ class MeshtasticBridgeServer {
         }));
       }).catch((error) => {
         console.error('❌ Send completion error:', error);
-        // Message was already logged, so just log the error
+
+        // Check if this is error code 3 (device not ready) - queue the message
+        const errorCode = error?.error || error?.code || error?.errorCode;
+        if (errorCode === 3) {
+          console.log(`⏸️  Radio not ready, queueing message for later...`);
+          this.queueMessage(radioId, text, channel);
+          ws.send(JSON.stringify({
+            type: 'info',
+            message: 'Message queued - radio is initializing. Will send when ready.'
+          }));
+        } else {
+          // For other errors, just log - message was already shown to user
+          console.error('❌ Failed to send:', errorCode ? `Error ${errorCode}` : error);
+        }
       });
 
     } catch (error) {
@@ -1753,6 +1775,107 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Queue a message for sending when radio becomes ready
+   */
+  queueMessage(radioId, text, channel) {
+    if (!this.messageQueues.has(radioId)) {
+      this.messageQueues.set(radioId, []);
+    }
+
+    const queue = this.messageQueues.get(radioId);
+
+    // Check queue size limit
+    if (queue.length >= this.maxQueueSize) {
+      console.warn(`⚠️  Message queue full for ${radioId}, dropping oldest message`);
+      queue.shift(); // Remove oldest message
+    }
+
+    queue.push({
+      text,
+      channel,
+      queuedAt: Date.now()
+    });
+
+    console.log(`📬 Message queued for ${radioId} (${queue.length} in queue)`);
+  }
+
+  /**
+   * Process queued messages for a radio
+   */
+  async processMessageQueue(radioId) {
+    const queue = this.messageQueues.get(radioId);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+
+    console.log(`📤 Processing ${queue.length} queued message(s) for ${radioId}...`);
+
+    const radio = this.radios.get(radioId);
+    if (!radio) {
+      console.error(`❌ Radio ${radioId} not found, clearing queue`);
+      this.messageQueues.delete(radioId);
+      return;
+    }
+
+    // Process all queued messages
+    const messages = [...queue]; // Copy array
+    this.messageQueues.set(radioId, []); // Clear queue
+
+    for (const msg of messages) {
+      // Check if message has timed out
+      const age = Date.now() - msg.queuedAt;
+      if (age > this.queueTimeout) {
+        console.warn(`⚠️  Skipping expired queued message (${Math.floor(age / 1000)}s old)`);
+        continue;
+      }
+
+      console.log(`📨 Sending queued message: "${msg.text}" on channel ${msg.channel}`);
+
+      try {
+        // Create message record
+        const sentMessage = {
+          id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          timestamp: new Date().toISOString(),
+          radioId: radioId,
+          protocol: radio.protocolType,
+          from: radio.nodeInfo?.nodeId || radioId,
+          to: 'broadcast',
+          channel: msg.channel,
+          portnum: 1,
+          text: msg.text,
+          sent: true,
+        };
+
+        // Broadcast to clients
+        this.broadcast({
+          type: 'message',
+          message: sentMessage
+        });
+
+        // Send the message
+        await radio.protocol.sendMessage(msg.text, msg.channel, { wantAck: false });
+        console.log(`✅ Queued message sent successfully`);
+
+        // Increment counter
+        radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+      } catch (error) {
+        console.error(`❌ Failed to send queued message:`, error);
+        // Don't re-queue - move on to next message
+      }
+
+      // Small delay between messages to avoid overwhelming the radio
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Broadcast updated stats
+    this.broadcast({
+      type: 'radio-updated',
+      radio: this.getRadioInfo(radioId)
+    });
+  }
+
+  /**
    * Disconnect a radio (protocol-agnostic)
    */
   async disconnectRadio(ws, radioId) {
@@ -1774,6 +1897,15 @@ class MeshtasticBridgeServer {
       }
 
       this.radios.delete(radioId);
+
+      // Clear any queued messages for this radio
+      if (this.messageQueues.has(radioId)) {
+        const queueLength = this.messageQueues.get(radioId).length;
+        if (queueLength > 0) {
+          console.log(`🗑️  Clearing ${queueLength} queued message(s) for disconnected radio`);
+        }
+        this.messageQueues.delete(radioId);
+      }
 
       console.log(`✅ Disconnected radio ${radioId}`);
 
