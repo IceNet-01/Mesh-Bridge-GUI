@@ -171,6 +171,17 @@ export interface DiscordConfig {
   avatarUrl: string;
 }
 
+export interface MQTTConfig {
+  enabled: boolean;
+  brokerUrl: string;
+  username: string;
+  password: string;
+  topicPrefix: string;
+  qos: number;
+  retain: boolean;
+  connected?: boolean;
+}
+
 export interface CommunicationConfig {
   email: EmailConfig;
   discord: DiscordConfig;

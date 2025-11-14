@@ -25,6 +25,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
+import mqtt from 'mqtt';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 
 // Make crypto available globally for @meshtastic libraries (if not already available)
@@ -122,6 +123,17 @@ class MeshtasticBridgeServer {
     this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
     this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
 
+    // ===== MQTT CONFIGURATION =====
+    this.mqttEnabled = false;                  // Enable/disable MQTT bridge
+    this.mqttBrokerUrl = '';                   // MQTT broker URL (e.g., mqtt://broker.hivemq.com:1883)
+    this.mqttUsername = '';                    // MQTT username (if required)
+    this.mqttPassword = '';                    // MQTT password (if required)
+    this.mqttTopicPrefix = 'meshtastic';       // Topic prefix (e.g., meshtastic/channel0)
+    this.mqttClientId = `mesh-bridge-${Date.now()}`; // Unique client ID
+    this.mqttQos = 0;                          // QoS level (0, 1, or 2)
+    this.mqttRetain = false;                   // Retain messages
+    this.mqttClient = null;                    // MQTT client instance
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -140,6 +152,11 @@ class MeshtasticBridgeServer {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
     console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   MQTT bridge: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.mqttEnabled) {
+      console.log(`   MQTT broker: ${this.mqttBrokerUrl}`);
+      console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
+    }
     console.log('');
   }
 
@@ -259,6 +276,11 @@ class MeshtasticBridgeServer {
 
       console.log('📻 Ready to connect radios...');
       console.log('');
+
+      // Connect to MQTT if enabled
+      if (this.mqttEnabled && this.mqttBrokerUrl) {
+        this.connectMQTT();
+      }
     });
   }
 
@@ -417,6 +439,23 @@ class MeshtasticBridgeServer {
 
         case 'comm-test-discord':
           await this.commTestDiscord(ws);
+          break;
+
+        // MQTT Management
+        case 'mqtt-get-config':
+          await this.mqttGetConfig(ws);
+          break;
+
+        case 'mqtt-set-config':
+          await this.mqttSetConfig(ws, message.config);
+          break;
+
+        case 'mqtt-test':
+          await this.testMQTT(ws);
+          break;
+
+        case 'mqtt-enable':
+          await this.mqttSetEnabled(ws, message.enabled);
           break;
 
         default:
@@ -816,6 +855,16 @@ class MeshtasticBridgeServer {
           this.broadcast({
             type: 'radio-updated',
             radio: this.getRadioInfo(radioId)
+          });
+        }
+
+        // Publish to MQTT if enabled (only for received messages, not our own)
+        if (!isFromOurBridgeRadio && this.mqttEnabled) {
+          this.publishToMQTT(packet.channel, {
+            from: packet.from,
+            text: text,
+            rssi: packet.rssi,
+            snr: packet.snr
           });
         }
 
@@ -2386,6 +2435,362 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'comm-test-result',
         service: 'discord',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Connect to MQTT broker
+   */
+  async connectMQTT() {
+    if (!this.mqttEnabled || !this.mqttBrokerUrl) {
+      console.log('MQTT not enabled or broker URL not configured');
+      return;
+    }
+
+    if (this.mqttClient) {
+      console.log('MQTT client already connected');
+      return;
+    }
+
+    try {
+      console.log(`🌐 Connecting to MQTT broker: ${this.mqttBrokerUrl}`);
+
+      const options = {
+        clientId: this.mqttClientId,
+        clean: true,
+        reconnectPeriod: 5000,
+      };
+
+      // Add credentials if provided
+      if (this.mqttUsername) {
+        options.username = this.mqttUsername;
+      }
+      if (this.mqttPassword) {
+        options.password = this.mqttPassword;
+      }
+
+      this.mqttClient = mqtt.connect(this.mqttBrokerUrl, options);
+
+      this.mqttClient.on('connect', () => {
+        console.log('✅ Connected to MQTT broker');
+
+        // Subscribe to incoming messages topic
+        const incomingTopic = `${this.mqttTopicPrefix}/+/rx`;
+        this.mqttClient.subscribe(incomingTopic, { qos: this.mqttQos }, (err) => {
+          if (err) {
+            console.error('❌ Failed to subscribe to MQTT topic:', err);
+          } else {
+            console.log(`📥 Subscribed to MQTT topic: ${incomingTopic}`);
+          }
+        });
+
+        // Broadcast MQTT status to clients
+        this.broadcast({
+          type: 'mqtt-status',
+          connected: true,
+          broker: this.mqttBrokerUrl
+        });
+      });
+
+      this.mqttClient.on('message', (topic, message) => {
+        this.handleMQTTMessage(topic, message);
+      });
+
+      this.mqttClient.on('error', (error) => {
+        console.error('❌ MQTT error:', error);
+        this.broadcast({
+          type: 'mqtt-error',
+          error: error.message
+        });
+      });
+
+      this.mqttClient.on('close', () => {
+        console.log('📡 MQTT connection closed');
+        this.broadcast({
+          type: 'mqtt-status',
+          connected: false
+        });
+      });
+
+      this.mqttClient.on('reconnect', () => {
+        console.log('🔄 Reconnecting to MQTT broker...');
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to connect to MQTT broker:', error);
+      this.mqttClient = null;
+    }
+  }
+
+  /**
+   * Disconnect from MQTT broker
+   */
+  async disconnectMQTT() {
+    if (this.mqttClient) {
+      console.log('📡 Disconnecting from MQTT broker...');
+      this.mqttClient.end();
+      this.mqttClient = null;
+      console.log('✅ Disconnected from MQTT broker');
+    }
+  }
+
+  /**
+   * Publish message to MQTT
+   */
+  async publishToMQTT(channelIndex, message) {
+    if (!this.mqttClient || !this.mqttClient.connected) {
+      console.log('⚠️  MQTT not connected, skipping publish');
+      return;
+    }
+
+    try {
+      const topic = `${this.mqttTopicPrefix}/channel${channelIndex}/tx`;
+      const payload = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        channel: channelIndex,
+        from: message.from,
+        text: message.text,
+        rssi: message.rssi,
+        snr: message.snr
+      });
+
+      this.mqttClient.publish(topic, payload, {
+        qos: this.mqttQos,
+        retain: this.mqttRetain
+      }, (err) => {
+        if (err) {
+          console.error('❌ Failed to publish to MQTT:', err);
+        } else {
+          console.log(`📤 Published to MQTT topic: ${topic}`);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error publishing to MQTT:', error);
+    }
+  }
+
+  /**
+   * Handle incoming MQTT messages
+   */
+  async handleMQTTMessage(topic, messageBuffer) {
+    try {
+      const message = JSON.parse(messageBuffer.toString());
+      console.log(`📥 MQTT message from ${topic}:`, message);
+
+      // Extract channel from topic (format: prefix/channel0/rx)
+      const topicParts = topic.split('/');
+      const channelPart = topicParts[topicParts.length - 2]; // Get "channel0"
+      const channelIndex = parseInt(channelPart.replace('channel', ''));
+
+      if (isNaN(channelIndex)) {
+        console.error('❌ Invalid channel in MQTT topic:', topic);
+        return;
+      }
+
+      // Forward MQTT message to all radios on the appropriate channel
+      const text = message.text || message.message || '';
+      if (!text) {
+        console.warn('⚠️  MQTT message has no text content');
+        return;
+      }
+
+      console.log(`🌉 Forwarding MQTT message to radios on channel ${channelIndex}: "${text}"`);
+
+      // Send to all connected radios
+      for (const [radioId, radio] of this.radios.entries()) {
+        try {
+          await this.sendMessageWithQueue(radioId, text, channelIndex);
+          console.log(`✅ Forwarded MQTT message to ${radioId}`);
+        } catch (error) {
+          console.error(`❌ Failed to forward MQTT message to ${radioId}:`, error);
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling MQTT message:', error);
+    }
+  }
+
+  /**
+   * Test MQTT connection
+   */
+  async testMQTT(ws) {
+    try {
+      if (!this.mqttBrokerUrl) {
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: false,
+          error: 'MQTT broker URL not configured'
+        }));
+        return;
+      }
+
+      // Try to connect temporarily
+      const testClient = mqtt.connect(this.mqttBrokerUrl, {
+        clientId: `mesh-bridge-test-${Date.now()}`,
+        username: this.mqttUsername || undefined,
+        password: this.mqttPassword || undefined,
+        connectTimeout: 10000
+      });
+
+      testClient.on('connect', () => {
+        console.log('✅ MQTT test connection successful');
+        testClient.end();
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: true
+        }));
+      });
+
+      testClient.on('error', (error) => {
+        console.error('❌ MQTT test connection failed:', error);
+        testClient.end();
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: false,
+          error: error.message
+        }));
+      });
+
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        if (testClient.connected) {
+          testClient.end();
+        } else {
+          ws.send(JSON.stringify({
+            type: 'mqtt-test-result',
+            success: false,
+            error: 'Connection timeout'
+          }));
+        }
+      }, 10000);
+
+    } catch (error) {
+      console.error('❌ MQTT test error:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-test-result',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Get MQTT configuration
+   */
+  async mqttGetConfig(ws) {
+    ws.send(JSON.stringify({
+      type: 'mqtt-config',
+      config: {
+        enabled: this.mqttEnabled,
+        brokerUrl: this.mqttBrokerUrl,
+        username: this.mqttUsername,
+        password: this.mqttPassword ? '********' : '', // Mask password
+        topicPrefix: this.mqttTopicPrefix,
+        qos: this.mqttQos,
+        retain: this.mqttRetain,
+        connected: this.mqttClient ? this.mqttClient.connected : false
+      }
+    }));
+  }
+
+  /**
+   * Set MQTT configuration
+   */
+  async mqttSetConfig(ws, config) {
+    try {
+      // Disconnect existing connection if any
+      await this.disconnectMQTT();
+
+      // Update configuration
+      if (config.brokerUrl !== undefined) this.mqttBrokerUrl = config.brokerUrl;
+      if (config.username !== undefined) this.mqttUsername = config.username;
+      if (config.password !== undefined && config.password !== '********') {
+        this.mqttPassword = config.password;
+      }
+      if (config.topicPrefix !== undefined) this.mqttTopicPrefix = config.topicPrefix;
+      if (config.qos !== undefined) this.mqttQos = config.qos;
+      if (config.retain !== undefined) this.mqttRetain = config.retain;
+
+      console.log('✅ MQTT configuration updated');
+
+      // Send confirmation
+      ws.send(JSON.stringify({
+        type: 'mqtt-config-updated',
+        success: true
+      }));
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'mqtt-config-changed',
+        config: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword ? '********' : '',
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain
+        }
+      });
+
+      // Reconnect if enabled
+      if (this.mqttEnabled) {
+        await this.connectMQTT();
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to update MQTT config:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-config-updated',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Enable/disable MQTT
+   */
+  async mqttSetEnabled(ws, enabled) {
+    try {
+      this.mqttEnabled = enabled;
+      console.log(`MQTT ${enabled ? 'enabled' : 'disabled'}`);
+
+      if (enabled) {
+        await this.connectMQTT();
+      } else {
+        await this.disconnectMQTT();
+      }
+
+      ws.send(JSON.stringify({
+        type: 'mqtt-enabled-updated',
+        success: true,
+        enabled: this.mqttEnabled
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'mqtt-config-changed',
+        config: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword ? '********' : '',
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain,
+          connected: this.mqttClient ? this.mqttClient.connected : false
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to toggle MQTT:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-enabled-updated',
         success: false,
         error: error.message
       }));

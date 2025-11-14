@@ -397,6 +397,40 @@ export class WebSocketRadioManager {
         }
         break;
 
+      case 'mqtt-config':
+        // MQTT configuration
+        this.emit('mqtt-config-update', data.config);
+        break;
+
+      case 'mqtt-config-changed':
+        // MQTT configuration changed (broadcast from server)
+        this.emit('mqtt-config-changed', data.config);
+        this.log('info', 'MQTT configuration updated');
+        break;
+
+      case 'mqtt-config-updated':
+        this.log('info', data.success ? 'MQTT configuration saved' : `MQTT config error: ${data.error}`);
+        break;
+
+      case 'mqtt-test-result':
+        // Test result for MQTT
+        if (data.success) {
+          this.log('info', '✅ MQTT test successful');
+        } else {
+          this.log('error', `❌ MQTT test failed: ${data.error}`);
+        }
+        break;
+
+      case 'mqtt-status':
+        // MQTT connection status
+        this.log('info', `MQTT ${data.connected ? 'connected' : 'disconnected'}`);
+        break;
+
+      case 'mqtt-error':
+        // MQTT error
+        this.log('error', `MQTT error: ${data.error}`);
+        break;
+
       case 'reticulum-status':
         // Reticulum Network Stack status update
         this.emit('reticulum-status-update', data.status);
@@ -842,6 +876,73 @@ export class WebSocketRadioManager {
     }
 
     this.ws.send(JSON.stringify({ type: 'comm-test-discord' }));
+  }
+
+  /**
+   * Get MQTT configuration
+   */
+  async getMQTTConfig(): Promise<any | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: any) => {
+        this.off('mqtt-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('mqtt-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'mqtt-get-config' }));
+
+      setTimeout(() => {
+        this.off('mqtt-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set MQTT configuration
+   */
+  async setMQTTConfig(config: any): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'mqtt-set-config',
+      config
+    }));
+  }
+
+  /**
+   * Enable/disable MQTT
+   */
+  async setMQTTEnabled(enabled: boolean): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'mqtt-enable',
+      enabled
+    }));
+  }
+
+  /**
+   * Test MQTT connection
+   */
+  async testMQTT(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'mqtt-test' }));
   }
 
   /**

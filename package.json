@@ -30,6 +30,7 @@
     "@types/leaflet": "^1.9.21",
     "buffer": "^6.0.3",
     "leaflet": "^1.9.4",
+    "mqtt": "^5.14.1",
     "nodemailer": "^7.0.10",
     "react-leaflet": "^4.2.1",
     "recharts": "^2.13.3",

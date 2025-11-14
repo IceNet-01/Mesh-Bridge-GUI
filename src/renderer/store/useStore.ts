@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MeshNode } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MQTTConfig, MeshNode } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -29,6 +29,9 @@ interface AppStore {
   // Communication State
   commConfig: CommunicationConfig | null;
 
+  // MQTT State
+  mqttConfig: MQTTConfig | null;
+
   // Actions
   initialize: () => void;
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
@@ -56,6 +59,12 @@ interface AppStore {
   setDiscordConfig: (config: DiscordConfig) => Promise<void>;
   testEmail: () => Promise<void>;
   testDiscord: () => Promise<void>;
+
+  // MQTT Actions
+  getMQTTConfig: () => Promise<void>;
+  setMQTTConfig: (config: MQTTConfig) => Promise<void>;
+  setMQTTEnabled: (enabled: boolean) => Promise<void>;
+  testMQTT: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set, get) => {
@@ -148,6 +157,11 @@ export const useStore = create<AppStore>((set, get) => {
     set({ commConfig: config });
   });
 
+  // MQTT event listeners
+  manager.on('mqtt-config-changed', (config: MQTTConfig) => {
+    set({ mqttConfig: config });
+  });
+
   return {
     manager,
     bridgeConnected: false,
@@ -165,6 +179,7 @@ export const useStore = create<AppStore>((set, get) => {
     aiStatus: null,
     aiPullProgress: null,
     commConfig: null,
+    mqttConfig: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();
@@ -381,6 +396,26 @@ export const useStore = create<AppStore>((set, get) => {
 
     testDiscord: async () => {
       await manager.testDiscord();
+    },
+
+    // MQTT Actions
+    getMQTTConfig: async () => {
+      const config = await manager.getMQTTConfig();
+      if (config) {
+        set({ mqttConfig: config });
+      }
+    },
+
+    setMQTTConfig: async (config: MQTTConfig) => {
+      await manager.setMQTTConfig(config);
+    },
+
+    setMQTTEnabled: async (enabled: boolean) => {
+      await manager.setMQTTEnabled(enabled);
+    },
+
+    testMQTT: async () => {
+      await manager.testMQTT();
     },
   };
 });
