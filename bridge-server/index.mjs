@@ -1594,22 +1594,12 @@ class MeshtasticBridgeServer {
 
       const sourceChannel = sourceRadio.channels?.get(channel);
 
-      // If we don't have channel config yet, fall back to simple broadcast on same channel number
+      // If we don't have channel config yet, SKIP forwarding to prevent sending unencrypted
+      // or to wrong channels. Smart matching requires PSK+name from channel config.
       if (!sourceChannel) {
-        console.log(`⚠️  Channel ${channel} config not yet received, using simple broadcast mode`);
-
-        // Simple broadcast: send to same channel number on all other radios
-        const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
-          try {
-            console.log(`  📤 Forwarding to ${targetRadioId} on channel ${channel}`);
-            await radio.protocol.sendMessage(text, channel);
-            console.log(`  ✅ Forwarded to ${targetRadioId}`);
-          } catch (error) {
-            console.error(`  ❌ Failed to forward to ${targetRadioId}:`, error.message);
-          }
-        });
-
-        await Promise.allSettled(forwardPromises);
+        console.warn(`⚠️  Cannot forward: Channel ${channel} config not yet received from ${sourceRadioId}`);
+        console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
+        console.warn(`   Waiting for channel config... (radio may still be initializing)`);
         return;
       }
 
