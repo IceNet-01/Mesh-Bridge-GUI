@@ -1531,19 +1531,13 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // If both channels have names, they must match
-    // If both are unnamed, they match by PSK only (but log warning)
+    // BOTH name AND PSK must match for proper channel matching
     const sourceName = sourceChannel.name || '';
     const targetName = targetChannel.name || '';
 
-    // SECURITY: If names are present, they MUST match
-    if (sourceName && targetName && sourceName !== targetName) {
+    // Names must match exactly (or both be empty)
+    if (sourceName !== targetName) {
       return false;
-    }
-
-    // If either is unnamed, only PSK matching applies (less secure, warn)
-    if (!sourceName || !targetName) {
-      console.warn(`⚠️  Matching channels by PSK only (missing names): "${sourceName}" vs "${targetName}"`);
     }
 
     return true;
