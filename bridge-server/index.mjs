@@ -845,10 +845,10 @@ class MeshtasticBridgeServer {
       // Check rate limiting
       if (this.isRateLimited(fromNode)) {
         console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
-        await radio.protocol.sendMessage(
+        await this.sendMessageWithQueue(
+          radioId,
           `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
-          channel,
-          { wantAck: false }
+          channel
         );
         return;
       }
@@ -864,10 +864,10 @@ class MeshtasticBridgeServer {
       // Check if command is enabled
       if (!this.enabledCommands.includes(cmd)) {
         console.log(`⚠️  Command not enabled: ${cmd}`);
-        await radio.protocol.sendMessage(
+        await this.sendMessageWithQueue(
+          radioId,
           `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
-          channel,
-          { wantAck: false }
+          channel
         );
         return;
       }
@@ -927,11 +927,12 @@ class MeshtasticBridgeServer {
 
       if (response) {
         console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
-        await radio.protocol.sendMessage(response, channel, { wantAck: false });
+        await this.sendMessageWithQueue(radioId, response, channel);
       }
 
     } catch (error) {
       console.error('❌ Error handling command:', error);
+      // Don't crash - commands should be fire-and-forget
     }
   }
 
@@ -1797,6 +1798,33 @@ class MeshtasticBridgeServer {
     });
 
     console.log(`📬 Message queued for ${radioId} (${queue.length} in queue)`);
+  }
+
+  /**
+   * Send message with automatic queueing if radio not ready
+   * This wraps protocol.sendMessage with error 3 handling
+   */
+  async sendMessageWithQueue(radioId, text, channel = 0) {
+    const radio = this.radios.get(radioId);
+    if (!radio) {
+      throw new Error(`Radio ${radioId} not found`);
+    }
+
+    try {
+      await radio.protocol.sendMessage(text, channel, { wantAck: false });
+      return true;
+    } catch (error) {
+      // Check if this is error code 3 (device not ready) - queue the message
+      const errorCode = error?.error || error?.code || error?.errorCode;
+      if (errorCode === 3) {
+        console.log(`⏸️  Radio not ready for command response, queueing...`);
+        this.queueMessage(radioId, text, channel);
+        return false; // Queued, not sent
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
   }
 
   /**
