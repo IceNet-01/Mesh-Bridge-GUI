@@ -20,7 +20,7 @@ import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
 import { SerialPort } from 'serialport';
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
@@ -37,6 +37,7 @@ if (!globalThis.crypto) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, '..', 'dist');
+const configPath = join(__dirname, 'bridge-config.json');
 
 class MeshtasticBridgeServer {
   constructor(port = 8080, host = '0.0.0.0') {
@@ -134,6 +135,9 @@ class MeshtasticBridgeServer {
     this.mqttRetain = false;                   // Retain messages
     this.mqttClient = null;                    // MQTT client instance
 
+    // Load persistent configuration (AI state, etc.)
+    this.loadConfig();
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -158,6 +162,46 @@ class MeshtasticBridgeServer {
       console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
     }
     console.log('');
+  }
+
+  /**
+   * Load persistent configuration from file
+   */
+  loadConfig() {
+    try {
+      if (existsSync(configPath)) {
+        const configData = readFileSync(configPath, 'utf8');
+        const config = JSON.parse(configData);
+
+        // Load AI enabled state
+        if (config.aiEnabled !== undefined) {
+          this.aiEnabled = config.aiEnabled;
+          console.log(`📋 Loaded AI state from config: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Can add more config options here in the future (MQTT, email, etc.)
+      }
+    } catch (error) {
+      console.error('⚠️  Error loading config file:', error.message);
+      // Continue with defaults if config file is corrupted or missing
+    }
+  }
+
+  /**
+   * Save persistent configuration to file
+   */
+  saveConfig() {
+    try {
+      const config = {
+        aiEnabled: this.aiEnabled,
+        // Can add more config options here in the future
+      };
+
+      writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+      console.log(`💾 Configuration saved to ${configPath}`);
+    } catch (error) {
+      console.error('❌ Error saving config file:', error.message);
+    }
   }
 
   /**
@@ -280,6 +324,12 @@ class MeshtasticBridgeServer {
       // Connect to MQTT if enabled
       if (this.mqttEnabled && this.mqttBrokerUrl) {
         this.connectMQTT();
+      }
+
+      // Auto-start AI assistant if it was previously enabled
+      if (this.aiEnabled) {
+        console.log('🤖 AI assistant was previously enabled, checking Ollama availability...');
+        this.checkOllamaAndAutoStart();
       }
 
       // Auto-scan and auto-connect to radios for headless operation
@@ -2103,6 +2153,9 @@ class MeshtasticBridgeServer {
       this.aiEnabled = enabled;
       console.log(`🤖 AI assistant ${enabled ? 'enabled' : 'disabled'}`);
 
+      // Save configuration to persist across restarts
+      this.saveConfig();
+
       ws.send(JSON.stringify({
         type: 'ai-set-enabled-success',
         enabled: this.aiEnabled
@@ -2119,6 +2172,48 @@ class MeshtasticBridgeServer {
         type: 'error',
         error: `Failed to set AI enabled: ${error.message}`
       }));
+    }
+  }
+
+  /**
+   * Check if Ollama is available and auto-start AI if enabled
+   */
+  async checkOllamaAndAutoStart() {
+    try {
+      // Check if Ollama is running and has the configured model
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
+
+      if (!response.ok) {
+        console.warn('⚠️  Ollama not responding, AI assistant disabled');
+        this.aiEnabled = false;
+        this.saveConfig();
+        return;
+      }
+
+      const data = await response.json();
+      const models = data.models || [];
+      const hasModel = models.some(m => m.name === this.aiModel);
+
+      if (!hasModel) {
+        console.warn(`⚠️  Ollama model "${this.aiModel}" not found, AI assistant disabled`);
+        console.warn(`   Available models: ${models.map(m => m.name).join(', ')}`);
+        this.aiEnabled = false;
+        this.saveConfig();
+        return;
+      }
+
+      console.log(`✅ AI assistant auto-started with model: ${this.aiModel}`);
+      console.log(`   Ollama endpoint: ${this.aiEndpoint}`);
+    } catch (error) {
+      if (error.cause?.code === 'ECONNREFUSED' || error.name === 'AbortError') {
+        console.warn('⚠️  Ollama not available, AI assistant disabled');
+      } else {
+        console.error('❌ Error checking Ollama:', error.message);
+      }
+      this.aiEnabled = false;
+      this.saveConfig();
     }
   }
 
