@@ -184,39 +184,43 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-auto">
-          <div className="p-6">
-            {activeTab === 'dashboard' && statistics && (
-              <Dashboard radios={radios} statistics={statistics} messages={messages} />
-            )}
-            {activeTab === 'radios' && (
-              <RadioList radios={radios} onDisconnect={disconnectRadio} />
-            )}
-            {activeTab === 'messages' && (
-              <MessageMonitor messages={messages} radios={radios} />
-            )}
-            {activeTab === 'map' && (
+          {/* Map needs full height, other tabs need padding */}
+          {activeTab === 'map' ? (
+            <div className="h-full">
               <MapView nodes={nodes} radios={radios} />
-            )}
-            {activeTab === 'configuration' && bridgeConfig && (
-              <BridgeConfiguration
-                config={bridgeConfig}
-                radios={radios}
-                onUpdate={updateBridgeConfig}
-              />
-            )}
-            {activeTab === 'ai' && (
-              <AISettings />
-            )}
-            {activeTab === 'communication' && (
-              <CommunicationSettings />
-            )}
-            {activeTab === 'mqtt' && (
-              <MQTTSettings />
-            )}
-            {activeTab === 'logs' && (
-              <LogViewer logs={logs} onClear={clearLogs} />
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="p-6">
+              {activeTab === 'dashboard' && statistics && (
+                <Dashboard radios={radios} statistics={statistics} messages={messages} />
+              )}
+              {activeTab === 'radios' && (
+                <RadioList radios={radios} onDisconnect={disconnectRadio} />
+              )}
+              {activeTab === 'messages' && (
+                <MessageMonitor messages={messages} radios={radios} />
+              )}
+              {activeTab === 'configuration' && bridgeConfig && (
+                <BridgeConfiguration
+                  config={bridgeConfig}
+                  radios={radios}
+                  onUpdate={updateBridgeConfig}
+                />
+              )}
+              {activeTab === 'ai' && (
+                <AISettings />
+              )}
+              {activeTab === 'communication' && (
+                <CommunicationSettings />
+              )}
+              {activeTab === 'mqtt' && (
+                <MQTTSettings />
+              )}
+              {activeTab === 'logs' && (
+                <LogViewer logs={logs} onClear={clearLogs} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
