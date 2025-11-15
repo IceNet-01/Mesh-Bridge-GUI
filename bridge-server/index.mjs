@@ -560,7 +560,7 @@ class MeshtasticBridgeServer {
         this.handleMessagePacket(radioId, portPath, packet, protocolHandler.getProtocolName());
       });
 
-      protocolHandler.on('nodeInfo', (nodeInfo) => {
+      protocolHandler.on('nodeInfo', async (nodeInfo) => {
         console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
         const radio = this.radios.get(radioId);
         if (radio) {
