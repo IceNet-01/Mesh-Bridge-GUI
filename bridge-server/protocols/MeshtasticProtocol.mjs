@@ -459,6 +459,43 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
   }
 
+  /**
+   * Sync the current time to the radio
+   * This sets the radio's clock to match the system time
+   */
+  async syncTime() {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      // Get current time in Unix timestamp (seconds)
+      const currentTimeSeconds = Math.floor(Date.now() / 1000);
+
+      console.log(`[Meshtastic] Syncing time to radio: ${new Date().toLocaleString()}`);
+
+      // Create a minimal User object with just the time
+      // The setOwner method will sync the time to the device
+      const userWithTime = {
+        id: this.nodeInfo?.userId || '!ffffffff', // Use existing user ID or placeholder
+        longName: this.nodeInfo?.longName || 'Bridge',
+        shortName: this.nodeInfo?.shortName || 'BRG',
+        macaddr: new Uint8Array(6), // Empty MAC
+        hwModel: this.nodeInfo?.hwModel || 0,
+        isLicensed: false
+      };
+
+      // Send the owner update which will sync the time
+      await this.device.setOwner(userWithTime);
+
+      console.log(`[Meshtastic] ✅ Time sync command sent to radio`);
+      return true;
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error syncing time:', error);
+      throw error;
+    }
+  }
+
   normalizeMessagePacket(packet) {
     // The @meshtastic/core library already decodes text messages
     // packet.data contains the decoded string for text messages
