@@ -824,7 +824,7 @@ class MeshtasticBridgeServer {
 
         const message = {
           id: packet.id || `msg-${Date.now()}`,
-          timestamp: packet.timestamp instanceof Date ? packet.timestamp : new Date(),
+          timestamp: new Date(), // Always use current time to maintain correct message order
           from: packet.from,
           to: packet.to,
           channel: packet.channel || 0,
