@@ -48,10 +48,10 @@ class MeshtasticBridgeServer {
     //   - channelMap = null: Forward channel 0→0, 1→1, etc (passthrough)
     //   - channelMap = {0: 3, 1: 1}: Forward channel 0→3, 1→1, etc (custom mapping)
     //
-    // MODE 2: Smart PSK/name matching (enableSmartMatching = true)
-    //   - Searches ALL channels on target radio for matching PSK+name
+    // MODE 2: Smart PSK matching (enableSmartMatching = true)
+    //   - Searches ALL channels on target radio for matching PSK (name is ignored)
     //   - Handles radios with channels on different indices
-    //   - Example: Radio A has "skynet" on ch0, Radio B has "skynet" on ch3
+    //   - Example: Radio A has PSK "abc123" on ch0, Radio B has PSK "abc123" on ch3
     //            → Automatically forwards ch0→ch3 maintaining encryption
     //   - REQUIRED for private channel forwarding with mixed configurations
     //
@@ -1401,7 +1401,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Check if two channels have matching configuration (name and PSK)
+   * Check if two channels have matching configuration (PSK only)
    * for secure bridging
    */
   channelsMatch(sourceChannel, targetChannel) {
@@ -1409,28 +1409,9 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // PSK MUST match (this is the encryption key)
-    const pskMatch = sourceChannel.psk === targetChannel.psk;
-    if (!pskMatch) {
-      return false;
-    }
-
-    // If both channels have names, they must match
-    // If both are unnamed, they match by PSK only (but log warning)
-    const sourceName = sourceChannel.name || '';
-    const targetName = targetChannel.name || '';
-
-    // SECURITY: If names are present, they MUST match
-    if (sourceName && targetName && sourceName !== targetName) {
-      return false;
-    }
-
-    // If either is unnamed, only PSK matching applies (less secure, warn)
-    if (!sourceName || !targetName) {
-      console.warn(`⚠️  Matching channels by PSK only (missing names): "${sourceName}" vs "${targetName}"`);
-    }
-
-    return true;
+    // Match channels based on PSK (encryption key) only
+    // Channel names are ignored - only PSK must match
+    return sourceChannel.psk === targetChannel.psk;
   }
 
   /**
@@ -1503,7 +1484,7 @@ class MeshtasticBridgeServer {
       console.log(`🔀 [SMART MATCH] Forwarding from source channel ${channel}:`);
       console.log(`   Name: "${sourceChannel.name}"`);
       console.log(`   PSK: ${sourceChannel.psk.substring(0, 16)}...`);
-      console.log(`   Searching for matching channel on other radios...`);
+      console.log(`   Searching for matching PSK on other radios (name ignored)...`);
 
       // Forward to each radio that has matching channel configuration
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
@@ -1514,7 +1495,7 @@ class MeshtasticBridgeServer {
           const targetProtocol = radio.protocolType;
 
           // ===== MESHTASTIC CHANNEL FORWARDING =====
-          // Search ALL channels on target radio for matching name+PSK
+          // Search ALL channels on target radio for matching PSK
           let matchingChannelIndex = null;
           let matchingChannel = null;
 
@@ -1522,8 +1503,7 @@ class MeshtasticBridgeServer {
             console.log(`  🔍 Searching ${radio.channels.size} channels on ${targetRadioId} for match...`);
             for (const [idx, ch] of radio.channels.entries()) {
               const pskMatch = sourceChannel.psk === ch.psk;
-              const nameMatch = sourceChannel.name === ch.name;
-              console.log(`    Channel ${idx}: "${ch.name}" PSK:${ch.psk.substring(0,8)}... | PSK match: ${pskMatch}, Name match: ${nameMatch}`);
+              console.log(`    Channel ${idx}: "${ch.name}" PSK:${ch.psk.substring(0,8)}... | PSK match: ${pskMatch}`);
 
               if (this.channelsMatch(sourceChannel, ch)) {
                 console.log(`    ✅ MATCH FOUND on channel ${idx}`);
@@ -1535,14 +1515,14 @@ class MeshtasticBridgeServer {
           }
 
           if (matchingChannelIndex === null) {
-            console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
-            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same name+PSK`);
+            console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching PSK: ${sourceChannel.psk.substring(0,8)}..., skipping`);
+            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 
           // If the matching channel is on a DIFFERENT index, log it
           if (matchingChannelIndex !== channel) {
-            console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
+            console.log(`🔀 Cross-index forward: source channel ${channel} ("${sourceChannel.name}") → target channel ${matchingChannelIndex} ("${matchingChannel.name}") - PSK match`);
           }
 
           await radio.protocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
