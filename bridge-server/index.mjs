@@ -64,8 +64,8 @@ class MeshtasticBridgeServer {
     //   - channelMap = null: Forward channel 0→0, 1→1, etc (passthrough)
     //   - channelMap = {0: 3, 1: 1}: Forward channel 0→3, 1→1, etc (custom mapping)
     //
-    // MODE 2: Smart PSK/name matching (enableSmartMatching = true)
-    //   - Searches ALL channels on target radio for matching PSK+name
+    // MODE 2: Smart PSK matching (enableSmartMatching = true)
+    //   - Searches ALL channels on target radio for matching PSK
     //   - Handles radios with channels on different indices
     //   - Example: Radio A has "skynet" on ch0, Radio B has "skynet" on ch3
     //            → Automatically forwards ch0→ch3 maintaining encryption
@@ -1566,7 +1566,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Check if two channels have matching configuration (name and PSK)
+   * Check if two channels have matching configuration (PSK only)
    * for secure bridging
    */
   channelsMatch(sourceChannel, targetChannel) {
@@ -1574,22 +1574,9 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // PSK MUST match (this is the encryption key)
-    const pskMatch = sourceChannel.psk === targetChannel.psk;
-    if (!pskMatch) {
-      return false;
-    }
-
-    // BOTH name AND PSK must match for proper channel matching
-    const sourceName = sourceChannel.name || '';
-    const targetName = targetChannel.name || '';
-
-    // Names must match exactly (or both be empty)
-    if (sourceName !== targetName) {
-      return false;
-    }
-
-    return true;
+    // Only PSK needs to match (this is the encryption key)
+    // Name matching is no longer required
+    return sourceChannel.psk === targetChannel.psk;
   }
 
   /**
@@ -1641,7 +1628,7 @@ class MeshtasticBridgeServer {
       const sourceChannel = sourceRadio.channels?.get(channel);
 
       // If we don't have channel config yet, SKIP forwarding to prevent sending unencrypted
-      // or to wrong channels. Smart matching requires PSK+name from channel config.
+      // or to wrong channels. Smart matching requires PSK from channel config.
       if (!sourceChannel) {
         console.warn(`⚠️  Cannot forward: Channel ${channel} config not yet received from ${sourceRadioId}`);
         console.warn(`   Source radio has ${sourceRadio.channels?.size || 0} channel configs loaded`);
@@ -1650,7 +1637,7 @@ class MeshtasticBridgeServer {
           console.warn(`   Available channel indices: [${availableChannels.join(', ')}]`);
           console.warn(`   ⚠️  You tried to send on channel ${channel} but it doesn't exist!`);
         } else {
-          console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
+          console.warn(`   Smart matching requires channel PSK to route correctly.`);
           console.warn(`   Waiting for channel config... (radio may still be initializing)`);
         }
         return;
@@ -1670,7 +1657,7 @@ class MeshtasticBridgeServer {
           const targetProtocol = radio.protocolType;
 
           // ===== MESHTASTIC CHANNEL FORWARDING =====
-          // Search ALL channels on target radio for matching name+PSK
+          // Search ALL channels on target radio for matching PSK
           let matchingChannelIndex = null;
           let matchingChannel = null;
 
@@ -1692,7 +1679,7 @@ class MeshtasticBridgeServer {
 
           if (matchingChannelIndex === null) {
             console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
-            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same name+PSK`);
+            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 

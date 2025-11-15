@@ -480,8 +480,8 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   channelsMatch(channel1, channel2) {
-    // Meshtastic channels match if PSK and name are the same
-    return channel1.psk === channel2.psk && channel1.name === channel2.name;
+    // Meshtastic channels match if PSK is the same (name matching not required)
+    return channel1.psk === channel2.psk;
   }
 
   getProtocolMetadata() {
