@@ -1835,7 +1835,8 @@ class MeshtasticBridgeServer {
             console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
-          await radio.protocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
+          // Use message queue to handle radios that aren't ready yet
+          await this.sendMessageWithQueue(targetRadioId, text, matchingChannelIndex);
           console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
