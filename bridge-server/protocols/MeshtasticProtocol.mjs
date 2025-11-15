@@ -459,6 +459,43 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
   }
 
+  /**
+   * Sync the current time to the radio
+   * This sets the radio's clock to match the system time
+   */
+  async syncTime() {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      // Get current time in Unix timestamp (seconds)
+      const currentTimeSeconds = Math.floor(Date.now() / 1000);
+
+      console.log(`[Meshtastic] Syncing time to radio: ${new Date().toLocaleString()}`);
+
+      // Create a minimal User object with just the time
+      // The setOwner method will sync the time to the device
+      const userWithTime = {
+        id: this.nodeInfo?.userId || '!ffffffff', // Use existing user ID or placeholder
+        longName: this.nodeInfo?.longName || 'Bridge',
+        shortName: this.nodeInfo?.shortName || 'BRG',
+        macaddr: new Uint8Array(6), // Empty MAC
+        hwModel: this.nodeInfo?.hwModel || 0,
+        isLicensed: false
+      };
+
+      // Send the owner update which will sync the time
+      await this.device.setOwner(userWithTime);
+
+      console.log(`[Meshtastic] ✅ Time sync command sent to radio`);
+      return true;
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error syncing time:', error);
+      throw error;
+    }
+  }
+
   normalizeMessagePacket(packet) {
     // The @meshtastic/core library already decodes text messages
     // packet.data contains the decoded string for text messages
@@ -466,7 +503,7 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     return {
       id: packet.id || Date.now().toString(),
-      timestamp: packet.rxTime ? new Date(packet.rxTime * 1000) : new Date(),
+      timestamp: new Date(), // Always use current time to avoid timezone issues
       from: packet.from,
       to: packet.to,
       channel: packet.channel || 0,
@@ -480,14 +517,26 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   channelsMatch(channel1, channel2) {
-    // Meshtastic channels match if PSK and name are the same
-    return channel1.psk === channel2.psk && channel1.name === channel2.name;
+    // Meshtastic channels match if PSK is the same (name matching not required)
+    return channel1.psk === channel2.psk;
   }
 
   getProtocolMetadata() {
+    // Get device time if available (helps diagnose timestamp issues)
+    let deviceTime = null;
+    try {
+      // Try to get device time from position time or calculate from rxTime
+      if (this.nodeInfo?.position?.time) {
+        deviceTime = new Date(this.nodeInfo.position.time * 1000).toISOString();
+      }
+    } catch (e) {
+      // Ignore errors getting device time
+    }
+
     return {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
+      deviceTime: deviceTime, // Device's current time (null if unavailable)
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),

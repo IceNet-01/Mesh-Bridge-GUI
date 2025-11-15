@@ -34,3 +34,4 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+bridge-server/bridge-config.json

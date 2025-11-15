@@ -20,7 +20,7 @@ import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
 import { SerialPort } from 'serialport';
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
@@ -37,6 +37,7 @@ if (!globalThis.crypto) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, '..', 'dist');
+const configPath = join(__dirname, 'bridge-config.json');
 
 class MeshtasticBridgeServer {
   constructor(port = 8080, host = '0.0.0.0') {
@@ -64,8 +65,8 @@ class MeshtasticBridgeServer {
     //   - channelMap = null: Forward channel 0→0, 1→1, etc (passthrough)
     //   - channelMap = {0: 3, 1: 1}: Forward channel 0→3, 1→1, etc (custom mapping)
     //
-    // MODE 2: Smart PSK/name matching (enableSmartMatching = true)
-    //   - Searches ALL channels on target radio for matching PSK+name
+    // MODE 2: Smart PSK matching (enableSmartMatching = true)
+    //   - Searches ALL channels on target radio for matching PSK
     //   - Handles radios with channels on different indices
     //   - Example: Radio A has "skynet" on ch0, Radio B has "skynet" on ch3
     //            → Automatically forwards ch0→ch3 maintaining encryption
@@ -134,6 +135,9 @@ class MeshtasticBridgeServer {
     this.mqttRetain = false;                   // Retain messages
     this.mqttClient = null;                    // MQTT client instance
 
+    // Load persistent configuration (AI state, etc.)
+    this.loadConfig();
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -158,6 +162,46 @@ class MeshtasticBridgeServer {
       console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
     }
     console.log('');
+  }
+
+  /**
+   * Load persistent configuration from file
+   */
+  loadConfig() {
+    try {
+      if (existsSync(configPath)) {
+        const configData = readFileSync(configPath, 'utf8');
+        const config = JSON.parse(configData);
+
+        // Load AI enabled state
+        if (config.aiEnabled !== undefined) {
+          this.aiEnabled = config.aiEnabled;
+          console.log(`📋 Loaded AI state from config: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Can add more config options here in the future (MQTT, email, etc.)
+      }
+    } catch (error) {
+      console.error('⚠️  Error loading config file:', error.message);
+      // Continue with defaults if config file is corrupted or missing
+    }
+  }
+
+  /**
+   * Save persistent configuration to file
+   */
+  saveConfig() {
+    try {
+      const config = {
+        aiEnabled: this.aiEnabled,
+        // Can add more config options here in the future
+      };
+
+      writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+      console.log(`💾 Configuration saved to ${configPath}`);
+    } catch (error) {
+      console.error('❌ Error saving config file:', error.message);
+    }
   }
 
   /**
@@ -280,6 +324,24 @@ class MeshtasticBridgeServer {
       // Connect to MQTT if enabled
       if (this.mqttEnabled && this.mqttBrokerUrl) {
         this.connectMQTT();
+      }
+
+      // Auto-start AI assistant if it was previously enabled
+      if (this.aiEnabled) {
+        console.log('🤖 AI assistant was previously enabled, checking Ollama availability...');
+        this.checkOllamaAndAutoStart();
+      }
+
+      // Auto-scan and auto-connect to radios for headless operation
+      const autoConnect = process.env.AUTO_CONNECT !== 'false'; // Default true
+      if (autoConnect) {
+        console.log('🔍 Auto-connect enabled, scanning for radios...');
+        setTimeout(() => this.autoScanAndConnect(), 2000); // Wait 2s for server to stabilize
+
+        // Re-scan periodically for new radios
+        setInterval(() => this.autoScanAndConnect(), 30000); // Every 30 seconds
+      } else {
+        console.log('ℹ️  Auto-connect disabled. Waiting for manual connection via web UI...');
       }
     });
   }
@@ -522,6 +584,9 @@ class MeshtasticBridgeServer {
 
   /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
+   * @param {WebSocket} ws - Optional WebSocket client to notify (null for headless mode)
+   * @param {string} portPath - Serial port path
+   * @param {string} protocol - Protocol type (default: 'meshtastic')
    */
   async connectRadio(ws, portPath, protocol = 'meshtastic') {
     try {
@@ -545,13 +610,45 @@ class MeshtasticBridgeServer {
         this.handleMessagePacket(radioId, portPath, packet, protocolHandler.getProtocolName());
       });
 
-      protocolHandler.on('nodeInfo', (nodeInfo) => {
+      protocolHandler.on('nodeInfo', async (nodeInfo) => {
         console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.nodeInfo = nodeInfo;
           radio.nodeNum = parseInt(nodeInfo.nodeId);
           console.log(`✅ Radio ${radioId} node info updated`);
+
+          // Check device time if available and auto-sync if wrong
+          const metadata = protocolHandler.getProtocolMetadata();
+          if (metadata.deviceTime) {
+            const deviceDate = new Date(metadata.deviceTime);
+            const currentDate = new Date();
+            const timeDiff = Math.abs(currentDate - deviceDate) / 1000 / 60; // minutes
+
+            console.log(`⏰ Radio ${radioId} device time: ${deviceDate.toLocaleString()}`);
+
+            if (timeDiff > 60) { // More than 1 hour difference
+              console.warn(`⚠️  WARNING: Radio ${radioId} clock is off by ${Math.round(timeDiff / 60)} hours!`);
+              console.warn(`   Device time: ${deviceDate.toLocaleString()}`);
+              console.warn(`   Current time: ${currentDate.toLocaleString()}`);
+              console.warn(`   Attempting to automatically sync time...`);
+
+              // Auto-sync time if method exists
+              if (typeof protocolHandler.syncTime === 'function') {
+                try {
+                  await protocolHandler.syncTime();
+                  console.log(`✅ Time sync initiated for ${radioId}`);
+                } catch (error) {
+                  console.error(`❌ Failed to sync time on ${radioId}:`, error.message);
+                  console.warn(`   You may need to manually sync time using the Meshtastic app`);
+                }
+              } else {
+                console.warn(`   Auto time-sync not supported for this protocol type`);
+              }
+            } else {
+              console.log(`✅ Radio ${radioId} clock is accurate (within 1 hour)`);
+            }
+          }
 
           // Broadcast updated radio info to clients
           this.broadcast({
@@ -710,10 +807,60 @@ class MeshtasticBridgeServer {
         }
       }
 
-      ws.send(JSON.stringify({
-        type: 'error',
-        error: `Connection failed: ${error.message}`
-      }));
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Connection failed: ${error.message}`
+        }));
+      }
+    }
+  }
+
+  /**
+   * Auto-scan for radios and connect to them (headless mode)
+   */
+  async autoScanAndConnect() {
+    try {
+      const ports = await SerialPort.list();
+
+      // Filter for actual USB/ACM devices (same filter as listPorts)
+      const filteredPorts = ports.filter(port => {
+        if (port.path.match(/\/dev\/ttyS\d+$/)) {
+          return false;
+        }
+        return (
+          port.path.includes('USB') ||
+          port.path.includes('ACM') ||
+          port.manufacturer?.toLowerCase().includes('silicon') ||
+          port.manufacturer?.toLowerCase().includes('uart') ||
+          port.manufacturer?.toLowerCase().includes('ch340') ||
+          port.manufacturer?.toLowerCase().includes('cp210') ||
+          port.manufacturer?.toLowerCase().includes('ftdi')
+        );
+      });
+
+      if (filteredPorts.length === 0) {
+        console.log('🔍 Auto-scan: No USB/ACM serial devices found');
+        return;
+      }
+
+      console.log(`🔍 Auto-scan: Found ${filteredPorts.length} USB/ACM serial port(s)`);
+
+      // Try to connect to any ports we're not already connected to
+      for (const port of filteredPorts) {
+        // Check if already connected
+        const alreadyConnected = Array.from(this.radios.values()).some(
+          radio => radio.port === port.path
+        );
+
+        if (!alreadyConnected) {
+          console.log(`🔌 Auto-connecting to ${port.path}...`);
+          // Call connectRadio without websocket (headless mode)
+          await this.connectRadio(null, port.path, 'meshtastic');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error in auto-scan:', error);
     }
   }
 
@@ -824,7 +971,7 @@ class MeshtasticBridgeServer {
 
         const message = {
           id: packet.id || `msg-${Date.now()}`,
-          timestamp: packet.timestamp instanceof Date ? packet.timestamp : new Date(),
+          timestamp: new Date(), // Always use current time to maintain correct message order
           from: packet.from,
           to: packet.to,
           channel: packet.channel || 0,
@@ -1566,7 +1713,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Check if two channels have matching configuration (name and PSK)
+   * Check if two channels have matching configuration (PSK only)
    * for secure bridging
    */
   channelsMatch(sourceChannel, targetChannel) {
@@ -1574,22 +1721,9 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // PSK MUST match (this is the encryption key)
-    const pskMatch = sourceChannel.psk === targetChannel.psk;
-    if (!pskMatch) {
-      return false;
-    }
-
-    // BOTH name AND PSK must match for proper channel matching
-    const sourceName = sourceChannel.name || '';
-    const targetName = targetChannel.name || '';
-
-    // Names must match exactly (or both be empty)
-    if (sourceName !== targetName) {
-      return false;
-    }
-
-    return true;
+    // Only PSK needs to match (this is the encryption key)
+    // Name matching is no longer required
+    return sourceChannel.psk === targetChannel.psk;
   }
 
   /**
@@ -1641,7 +1775,7 @@ class MeshtasticBridgeServer {
       const sourceChannel = sourceRadio.channels?.get(channel);
 
       // If we don't have channel config yet, SKIP forwarding to prevent sending unencrypted
-      // or to wrong channels. Smart matching requires PSK+name from channel config.
+      // or to wrong channels. Smart matching requires PSK from channel config.
       if (!sourceChannel) {
         console.warn(`⚠️  Cannot forward: Channel ${channel} config not yet received from ${sourceRadioId}`);
         console.warn(`   Source radio has ${sourceRadio.channels?.size || 0} channel configs loaded`);
@@ -1650,7 +1784,7 @@ class MeshtasticBridgeServer {
           console.warn(`   Available channel indices: [${availableChannels.join(', ')}]`);
           console.warn(`   ⚠️  You tried to send on channel ${channel} but it doesn't exist!`);
         } else {
-          console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
+          console.warn(`   Smart matching requires channel PSK to route correctly.`);
           console.warn(`   Waiting for channel config... (radio may still be initializing)`);
         }
         return;
@@ -1670,7 +1804,7 @@ class MeshtasticBridgeServer {
           const targetProtocol = radio.protocolType;
 
           // ===== MESHTASTIC CHANNEL FORWARDING =====
-          // Search ALL channels on target radio for matching name+PSK
+          // Search ALL channels on target radio for matching PSK
           let matchingChannelIndex = null;
           let matchingChannel = null;
 
@@ -1692,7 +1826,7 @@ class MeshtasticBridgeServer {
 
           if (matchingChannelIndex === null) {
             console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
-            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same name+PSK`);
+            console.warn(`    To forward this channel, configure it on ${targetRadioId} with same PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 
@@ -1701,7 +1835,8 @@ class MeshtasticBridgeServer {
             console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
-          await radio.protocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
+          // Use message queue to handle radios that aren't ready yet
+          await this.sendMessageWithQueue(targetRadioId, text, matchingChannelIndex);
           console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
@@ -2019,6 +2154,9 @@ class MeshtasticBridgeServer {
       this.aiEnabled = enabled;
       console.log(`🤖 AI assistant ${enabled ? 'enabled' : 'disabled'}`);
 
+      // Save configuration to persist across restarts
+      this.saveConfig();
+
       ws.send(JSON.stringify({
         type: 'ai-set-enabled-success',
         enabled: this.aiEnabled
@@ -2035,6 +2173,48 @@ class MeshtasticBridgeServer {
         type: 'error',
         error: `Failed to set AI enabled: ${error.message}`
       }));
+    }
+  }
+
+  /**
+   * Check if Ollama is available and auto-start AI if enabled
+   */
+  async checkOllamaAndAutoStart() {
+    try {
+      // Check if Ollama is running and has the configured model
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
+
+      if (!response.ok) {
+        console.warn('⚠️  Ollama not responding, AI assistant disabled');
+        this.aiEnabled = false;
+        this.saveConfig();
+        return;
+      }
+
+      const data = await response.json();
+      const models = data.models || [];
+      const hasModel = models.some(m => m.name === this.aiModel);
+
+      if (!hasModel) {
+        console.warn(`⚠️  Ollama model "${this.aiModel}" not found, AI assistant disabled`);
+        console.warn(`   Available models: ${models.map(m => m.name).join(', ')}`);
+        this.aiEnabled = false;
+        this.saveConfig();
+        return;
+      }
+
+      console.log(`✅ AI assistant auto-started with model: ${this.aiModel}`);
+      console.log(`   Ollama endpoint: ${this.aiEndpoint}`);
+    } catch (error) {
+      if (error.cause?.code === 'ECONNREFUSED' || error.name === 'AbortError') {
+        console.warn('⚠️  Ollama not available, AI assistant disabled');
+      } else {
+        console.error('❌ Error checking Ollama:', error.message);
+      }
+      this.aiEnabled = false;
+      this.saveConfig();
     }
   }
 
