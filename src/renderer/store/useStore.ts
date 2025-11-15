@@ -44,6 +44,8 @@ interface AppStore {
   sendMessage: (radioId: string, text: string, channel?: number) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
+  deleteNode: (nodeId: string) => void;
+  clearAllNodes: () => void;
 
   // AI Actions
   getAIConfig: () => Promise<void>;
@@ -340,6 +342,18 @@ export const useStore = create<AppStore>((set, get) => {
 
     clearLogs: () => {
       set({ logs: [] });
+    },
+
+    deleteNode: (nodeId: string) => {
+      manager.deleteNode(nodeId);
+      set(state => ({
+        nodes: state.nodes.filter(n => n.nodeId !== nodeId)
+      }));
+    },
+
+    clearAllNodes: () => {
+      manager.clearAllNodes();
+      set({ nodes: [] });
     },
 
     // AI Actions

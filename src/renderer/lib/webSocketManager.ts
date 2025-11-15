@@ -605,6 +605,25 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Delete a specific node from the database
+   */
+  deleteNode(nodeId: string): void {
+    this.nodes.delete(nodeId);
+    this.saveNodesToStorage();
+    this.log('info', `🗑️ Deleted node: ${nodeId}`);
+  }
+
+  /**
+   * Clear all nodes from the database
+   */
+  clearAllNodes(): void {
+    const count = this.nodes.size;
+    this.nodes.clear();
+    this.saveNodesToStorage();
+    this.log('info', `🗑️ Cleared all ${count} nodes from database`);
+  }
+
+  /**
    * Get logs
    */
   getLogs(): LogEntry[] {

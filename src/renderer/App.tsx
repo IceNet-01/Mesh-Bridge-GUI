@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
 import Dashboard from './components/Dashboard';
 import RadioList from './components/RadioList';
+import NodeList from './components/NodeList';
 import MessageMonitor from './components/MessageMonitor';
 import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
@@ -10,7 +11,7 @@ import CommunicationSettings from './components/CommunicationSettings';
 import MQTTSettings from './components/MQTTSettings';
 import { MapView } from './components/MapView';
 
-type Tab = 'dashboard' | 'radios' | 'messages' | 'map' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -84,6 +85,13 @@ function App() {
             active={activeTab === 'radios'}
             badge={connectedRadios.length}
             onClick={() => setActiveTab('radios')}
+          />
+          <NavButton
+            icon="list"
+            label="Nodes"
+            active={activeTab === 'nodes'}
+            badge={nodes.length}
+            onClick={() => setActiveTab('nodes')}
           />
           <NavButton
             icon="messages"
@@ -196,6 +204,9 @@ function App() {
               )}
               {activeTab === 'radios' && (
                 <RadioList radios={radios} onDisconnect={disconnectRadio} />
+              )}
+              {activeTab === 'nodes' && (
+                <NodeList nodes={nodes} radios={radios} />
               )}
               {activeTab === 'messages' && (
                 <MessageMonitor messages={messages} radios={radios} />
