@@ -27,8 +27,12 @@
   "dependencies": {
     "@meshtastic/core": "^2.6.7",
     "@meshtastic/transport-node-serial": "^0.0.2",
+    "@types/leaflet": "^1.9.21",
     "buffer": "^6.0.3",
+    "leaflet": "^1.9.4",
+    "mqtt": "^5.14.1",
     "nodemailer": "^7.0.10",
+    "react-leaflet": "^4.2.1",
     "recharts": "^2.13.3",
     "serialport": "^13.0.0",
     "stream-browserify": "^3.0.0",

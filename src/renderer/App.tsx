@@ -7,8 +7,10 @@ import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
 import AISettings from './components/AISettings';
 import CommunicationSettings from './components/CommunicationSettings';
+import MQTTSettings from './components/MQTTSettings';
+import { MapView } from './components/MapView';
 
-type Tab = 'dashboard' | 'radios' | 'messages' | 'configuration' | 'ai' | 'communication' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'messages' | 'map' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -18,6 +20,7 @@ function App() {
   const statistics = useStore(state => state.statistics);
   const logs = useStore(state => state.logs);
   const messages = useStore(state => state.messages);
+  const nodes = useStore(state => state.nodes);
   const bridgeConfig = useStore(state => state.bridgeConfig);
   const bridgeConnected = useStore(state => state.bridgeConnected);
   const autoScanEnabled = useStore(state => state.autoScanEnabled);
@@ -49,33 +52,6 @@ function App() {
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ago`;
   };
-
-  // Check for Web Serial API support
-  const isWebSerialSupported = 'serial' in navigator;
-
-  if (!isWebSerialSupported) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-        <div className="card p-8 max-w-md text-center">
-          <svg className="w-16 h-16 mx-auto mb-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <h2 className="text-2xl font-bold text-white mb-4">Web Serial API Not Supported</h2>
-          <p className="text-slate-300 mb-4">
-            This application requires the Web Serial API, which is only available in:
-          </p>
-          <ul className="text-left text-slate-300 mb-6 space-y-2">
-            <li>✅ Chrome 89+ (Desktop)</li>
-            <li>✅ Edge 89+ (Desktop)</li>
-            <li>✅ Opera 75+ (Desktop)</li>
-          </ul>
-          <p className="text-slate-400 text-sm">
-            Please use a supported browser to access USB radio devices.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -117,6 +93,13 @@ function App() {
             onClick={() => setActiveTab('messages')}
           />
           <NavButton
+            icon="map"
+            label="Map"
+            active={activeTab === 'map'}
+            badge={nodes.filter(n => n.position).length}
+            onClick={() => setActiveTab('map')}
+          />
+          <NavButton
             icon="config"
             label="Configuration"
             active={activeTab === 'configuration'}
@@ -133,6 +116,12 @@ function App() {
             label="Communication"
             active={activeTab === 'communication'}
             onClick={() => setActiveTab('communication')}
+          />
+          <NavButton
+            icon="mqtt"
+            label="MQTT"
+            active={activeTab === 'mqtt'}
+            onClick={() => setActiveTab('mqtt')}
           />
           <NavButton
             icon="logs"
@@ -205,6 +194,9 @@ function App() {
             {activeTab === 'messages' && (
               <MessageMonitor messages={messages} radios={radios} />
             )}
+            {activeTab === 'map' && (
+              <MapView nodes={nodes} radios={radios} />
+            )}
             {activeTab === 'configuration' && bridgeConfig && (
               <BridgeConfiguration
                 config={bridgeConfig}
@@ -217,6 +209,9 @@ function App() {
             )}
             {activeTab === 'communication' && (
               <CommunicationSettings />
+            )}
+            {activeTab === 'mqtt' && (
+              <MQTTSettings />
             )}
             {activeTab === 'logs' && (
               <LogViewer logs={logs} onClear={clearLogs} />
@@ -248,6 +243,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     messages: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
     ),
+    map: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+    ),
     config: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
     ),
@@ -256,6 +254,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     communication: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    ),
+    mqtt: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
     ),
     logs: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

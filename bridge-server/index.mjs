@@ -14,6 +14,7 @@
  * - Serves static frontend files from dist/ directory in production
  */
 
+import crypto from 'crypto';
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
 import { WebSocketServer } from 'ws';
@@ -22,16 +23,25 @@ import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
+import mqtt from 'mqtt';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
+
+// Make crypto available globally for @meshtastic libraries (if not already available)
+// Node.js v20+ already has crypto on globalThis, so only set if undefined
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, '..', 'dist');
 
 class MeshtasticBridgeServer {
-  constructor(port = 8080) {
+  constructor(port = 8080, host = '0.0.0.0') {
     this.wsPort = port;
+    this.wsHost = host; // Bind address: '0.0.0.0' for LAN access, 'localhost' for local only
     this.wss = null;
     this.radios = new Map(); // radioId -> { device, transport, port, info }
     this.clients = new Set(); // WebSocket clients
@@ -39,6 +49,12 @@ class MeshtasticBridgeServer {
     this.maxHistorySize = 500;
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
+
+    // ===== MESSAGE QUEUE CONFIGURATION =====
+    // Queue messages when radio isn't ready and send when initialized
+    this.messageQueues = new Map(); // radioId -> array of queued messages
+    this.maxQueueSize = 50; // Max messages to queue per radio
+    this.queueTimeout = 300000; // 5 minutes timeout for queued messages
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -107,6 +123,17 @@ class MeshtasticBridgeServer {
     this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
     this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
 
+    // ===== MQTT CONFIGURATION =====
+    this.mqttEnabled = false;                  // Enable/disable MQTT bridge
+    this.mqttBrokerUrl = '';                   // MQTT broker URL (e.g., mqtt://broker.hivemq.com:1883)
+    this.mqttUsername = '';                    // MQTT username (if required)
+    this.mqttPassword = '';                    // MQTT password (if required)
+    this.mqttTopicPrefix = 'meshtastic';       // Topic prefix (e.g., meshtastic/channel0)
+    this.mqttClientId = `mesh-bridge-${Date.now()}`; // Unique client ID
+    this.mqttQos = 0;                          // QoS level (0, 1, or 2)
+    this.mqttRetain = false;                   // Retain messages
+    this.mqttClient = null;                    // MQTT client instance
+
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
@@ -125,6 +152,11 @@ class MeshtasticBridgeServer {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
     console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   MQTT bridge: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.mqttEnabled) {
+      console.log(`   MQTT broker: ${this.mqttBrokerUrl}`);
+      console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
+    }
     console.log('');
   }
 
@@ -158,13 +190,32 @@ class MeshtasticBridgeServer {
         messages: this.messageHistory
       }));
 
-      // Send current radio status
+      // Send current radio status with complete state
       const radiosStatus = Array.from(this.radios.entries()).map(([id, radio]) => ({
         id,
         port: radio.port,
         status: 'connected',
+        protocol: radio.protocolType || 'meshtastic',
+        nodeInfo: radio.nodeInfo,
+        channels: Array.from(radio.channels.entries()).map(([idx, ch]) => ({
+          index: idx,
+          name: ch.name,
+          role: ch.role,
+          psk: ch.psk
+        })),
+        batteryLevel: radio.telemetry?.batteryLevel,
+        voltage: radio.telemetry?.voltage,
+        channelUtilization: radio.telemetry?.channelUtilization,
+        airUtilTx: radio.telemetry?.airUtilTx,
+        messagesReceived: radio.messagesReceived || 0,
+        messagesSent: radio.messagesSent || 0,
+        errors: radio.errors || 0,
         info: radio.info
       }));
+
+      if (radiosStatus.length > 0) {
+        console.log(`📡 Sending ${radiosStatus.length} persisted radio(s) to new client`);
+      }
 
       ws.send(JSON.stringify({
         type: 'radios',
@@ -196,13 +247,28 @@ class MeshtasticBridgeServer {
     });
 
     // Start HTTP server
-    httpServer.listen(this.wsPort, () => {
-      console.log(`✅ HTTP server listening on http://localhost:${this.wsPort}`);
-      console.log(`✅ WebSocket server listening on ws://localhost:${this.wsPort}`);
+    httpServer.listen(this.wsPort, this.wsHost, () => {
+      const isLanMode = this.wsHost === '0.0.0.0';
+
+      console.log(`✅ HTTP server listening on http://${this.wsHost}:${this.wsPort}`);
+      console.log(`✅ WebSocket server listening on ws://${this.wsHost}:${this.wsPort}`);
 
       if (existsSync(distPath)) {
         console.log(`📂 Serving static files from: ${distPath}`);
-        console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+
+        if (isLanMode) {
+          // Get local IP addresses for LAN access
+          const networkInterfaces = this.getNetworkInterfaces();
+          console.log(`🌐 Access locally: http://localhost:${this.wsPort}`);
+          if (networkInterfaces.length > 0) {
+            console.log(`🌐 Access on LAN:`);
+            networkInterfaces.forEach(iface => {
+              console.log(`   http://${iface.address}:${this.wsPort} (${iface.name})`);
+            });
+          }
+        } else {
+          console.log(`🌐 Open http://localhost:${this.wsPort} in your browser`);
+        }
       } else {
         console.log(`⚠️  No dist/ folder found - run 'npm run build' first for production mode`);
         console.log(`💡 For development, run 'npm run dev' in a separate terminal`);
@@ -210,6 +276,11 @@ class MeshtasticBridgeServer {
 
       console.log('📻 Ready to connect radios...');
       console.log('');
+
+      // Connect to MQTT if enabled
+      if (this.mqttEnabled && this.mqttBrokerUrl) {
+        this.connectMQTT();
+      }
     });
   }
 
@@ -274,6 +345,28 @@ class MeshtasticBridgeServer {
       console.error(`❌ Error serving ${filePath}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Get network interfaces for LAN access information
+   */
+  getNetworkInterfaces() {
+    const interfaces = [];
+    const nets = networkInterfaces();
+
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        // Skip internal (loopback) and non-IPv4 addresses
+        if (net.family === 'IPv4' && !net.internal) {
+          interfaces.push({
+            name: name,
+            address: net.address
+          });
+        }
+      }
+    }
+
+    return interfaces;
   }
 
   /**
@@ -346,6 +439,23 @@ class MeshtasticBridgeServer {
 
         case 'comm-test-discord':
           await this.commTestDiscord(ws);
+          break;
+
+        // MQTT Management
+        case 'mqtt-get-config':
+          await this.mqttGetConfig(ws);
+          break;
+
+        case 'mqtt-set-config':
+          await this.mqttSetConfig(ws, message.config);
+          break;
+
+        case 'mqtt-test':
+          await this.testMQTT(ws);
+          break;
+
+        case 'mqtt-enable':
+          await this.mqttSetEnabled(ws, message.enabled);
           break;
 
         default:
@@ -490,6 +600,25 @@ class MeshtasticBridgeServer {
         }
       });
 
+      protocolHandler.on('node', (meshNode) => {
+        console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+
+        // Broadcast node info to clients
+        this.broadcast({
+          type: 'node-info',
+          radioId: radioId,
+          node: {
+            ...meshNode,
+            lastHeard: meshNode.lastHeard.toISOString(),
+            position: meshNode.position ? {
+              ...meshNode.position,
+              time: meshNode.position.time?.toISOString()
+            } : undefined,
+            fromRadio: radioId
+          }
+        });
+      });
+
       protocolHandler.on('config', (config) => {
         console.log(`⚙️  Radio ${radioId} config updated`);
         // Broadcast updated radio info to clients (includes protocolMetadata with loraConfig)
@@ -504,6 +633,11 @@ class MeshtasticBridgeServer {
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.errors = (radio.errors || 0) + 1;
+          // Broadcast updated radio stats
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
         }
       });
 
@@ -554,6 +688,9 @@ class MeshtasticBridgeServer {
         type: 'radio-connected',
         radio: this.getRadioInfo(radioId)
       });
+
+      // Process any queued messages now that radio is ready
+      await this.processMessageQueue(radioId);
 
     } catch (error) {
       console.error(`❌ Failed to connect to ${portPath}:`, error);
@@ -642,6 +779,12 @@ class MeshtasticBridgeServer {
         text: packet.text
       });
 
+      // Increment message received counter for this radio
+      const radio = this.radios.get(radioId);
+      if (radio) {
+        radio.messagesReceived = (radio.messagesReceived || 0) + 1;
+      }
+
       // Extract text from normalized packet
       const text = packet.text;
 
@@ -707,9 +850,30 @@ class MeshtasticBridgeServer {
           message: message
         });
 
+        // Broadcast updated radio stats
+        if (radio) {
+          this.broadcast({
+            type: 'radio-updated',
+            radio: this.getRadioInfo(radioId)
+          });
+        }
+
+        // Publish to MQTT if enabled (only for received messages, not our own)
+        if (!isFromOurBridgeRadio && this.mqttEnabled) {
+          this.publishToMQTT(packet.channel, {
+            from: packet.from,
+            text: text,
+            rssi: packet.rssi,
+            snr: packet.snr
+          });
+        }
+
         // BRIDGE: Forward to all OTHER radios ONLY if message is NOT from our bridge
         if (!isFromOurBridgeRadio) {
+          console.log(`🌉 Forwarding message to other radios (source channel: ${packet.channel})`);
           this.forwardToOtherRadios(radioId, text, packet.channel);
+        } else {
+          console.log(`🔁 Not forwarding - message from our bridge radio`);
         }
       } else {
         console.log(`📦 Non-text packet or empty data:`, packet.data);
@@ -733,10 +897,10 @@ class MeshtasticBridgeServer {
       // Check rate limiting
       if (this.isRateLimited(fromNode)) {
         console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
-        await radio.protocol.sendMessage(
+        await this.sendMessageWithQueue(
+          radioId,
           `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
-          channel,
-          { wantAck: false }
+          channel
         );
         return;
       }
@@ -752,10 +916,10 @@ class MeshtasticBridgeServer {
       // Check if command is enabled
       if (!this.enabledCommands.includes(cmd)) {
         console.log(`⚠️  Command not enabled: ${cmd}`);
-        await radio.protocol.sendMessage(
+        await this.sendMessageWithQueue(
+          radioId,
           `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
-          channel,
-          { wantAck: false }
+          channel
         );
         return;
       }
@@ -815,11 +979,12 @@ class MeshtasticBridgeServer {
 
       if (response) {
         console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
-        await radio.protocol.sendMessage(response, channel, { wantAck: false });
+        await this.sendMessageWithQueue(radioId, response, channel);
       }
 
     } catch (error) {
       console.error('❌ Error handling command:', error);
+      // Don't crash - commands should be fire-and-forget
     }
   }
 
@@ -1415,19 +1580,13 @@ class MeshtasticBridgeServer {
       return false;
     }
 
-    // If both channels have names, they must match
-    // If both are unnamed, they match by PSK only (but log warning)
+    // BOTH name AND PSK must match for proper channel matching
     const sourceName = sourceChannel.name || '';
     const targetName = targetChannel.name || '';
 
-    // SECURITY: If names are present, they MUST match
-    if (sourceName && targetName && sourceName !== targetName) {
+    // Names must match exactly (or both be empty)
+    if (sourceName !== targetName) {
       return false;
-    }
-
-    // If either is unnamed, only PSK matching applies (less secure, warn)
-    if (!sourceName || !targetName) {
-      console.warn(`⚠️  Matching channels by PSK only (missing names): "${sourceName}" vs "${targetName}"`);
     }
 
     return true;
@@ -1481,22 +1640,19 @@ class MeshtasticBridgeServer {
 
       const sourceChannel = sourceRadio.channels?.get(channel);
 
-      // If we don't have channel config yet, fall back to simple broadcast on same channel number
+      // If we don't have channel config yet, SKIP forwarding to prevent sending unencrypted
+      // or to wrong channels. Smart matching requires PSK+name from channel config.
       if (!sourceChannel) {
-        console.log(`⚠️  Channel ${channel} config not yet received, using simple broadcast mode`);
-
-        // Simple broadcast: send to same channel number on all other radios
-        const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
-          try {
-            console.log(`  📤 Forwarding to ${targetRadioId} on channel ${channel}`);
-            await radio.protocol.sendMessage(text, channel);
-            console.log(`  ✅ Forwarded to ${targetRadioId}`);
-          } catch (error) {
-            console.error(`  ❌ Failed to forward to ${targetRadioId}:`, error.message);
-          }
-        });
-
-        await Promise.allSettled(forwardPromises);
+        console.warn(`⚠️  Cannot forward: Channel ${channel} config not yet received from ${sourceRadioId}`);
+        console.warn(`   Source radio has ${sourceRadio.channels?.size || 0} channel configs loaded`);
+        if (sourceRadio.channels && sourceRadio.channels.size > 0) {
+          const availableChannels = Array.from(sourceRadio.channels.keys());
+          console.warn(`   Available channel indices: [${availableChannels.join(', ')}]`);
+          console.warn(`   ⚠️  You tried to send on channel ${channel} but it doesn't exist!`);
+        } else {
+          console.warn(`   Smart matching requires channel name and PSK to route correctly.`);
+          console.warn(`   Waiting for channel config... (radio may still be initializing)`);
+        }
         return;
       }
 
@@ -1585,26 +1741,209 @@ class MeshtasticBridgeServer {
 
       console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
 
-      // Send using the protocol handler
-      await radio.protocol.sendMessage(text, channel, { wantAck: false });
+      // Create a message record for the sent message IMMEDIATELY (before waiting for send to complete)
+      const sentMessage = {
+        id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        timestamp: new Date().toISOString(),
+        radioId: radioId,
+        protocol: radio.protocolType,
+        from: radio.nodeInfo?.nodeId || radioId,
+        to: 'broadcast',
+        channel: channel,
+        portnum: 1,
+        text: text,
+        sent: true, // Mark as sent (not received)
+      };
 
-      // Increment sent message counter
-      radio.messagesSent = (radio.messagesSent || 0) + 1;
+      // Broadcast the sent message to all clients so it appears in message log immediately
+      this.broadcast({
+        type: 'message',
+        message: sentMessage
+      });
 
-      console.log(`✅ Text sent successfully on channel ${channel}`);
+      // Send using the protocol handler (fire and forget - don't wait for completion)
+      // The Meshtastic library's sendText may hang waiting for ACK even with wantAck:false
+      radio.protocol.sendMessage(text, channel, { wantAck: false }).then(() => {
+        console.log(`✅ Text sent successfully on channel ${channel}`);
 
-      ws.send(JSON.stringify({
-        type: 'send-success',
-        radioId: radioId
-      }));
+        // Increment sent message counter
+        radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+        // Broadcast updated radio stats
+        this.broadcast({
+          type: 'radio-updated',
+          radio: this.getRadioInfo(radioId)
+        });
+
+        ws.send(JSON.stringify({
+          type: 'send-success',
+          radioId: radioId
+        }));
+      }).catch((error) => {
+        console.error('❌ Send completion error:', error);
+
+        // Check if this is error code 3 (device not ready) - queue the message
+        const errorCode = error?.error || error?.code || error?.errorCode;
+        if (errorCode === 3) {
+          console.log(`⏸️  Radio not ready, queueing message for later...`);
+          this.queueMessage(radioId, text, channel);
+          ws.send(JSON.stringify({
+            type: 'info',
+            message: 'Message queued - radio is initializing. Will send when ready.'
+          }));
+        } else {
+          // For other errors, just log - message was already shown to user
+          console.error('❌ Failed to send:', errorCode ? `Error ${errorCode}` : error);
+        }
+      });
 
     } catch (error) {
       console.error('❌ Send failed:', error);
+
+      // Extract meaningful error message
+      let errorMsg = 'Unknown error';
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Try to get a meaningful message from the error object
+        errorMsg = error.message || error.error || JSON.stringify(error);
+      } else {
+        errorMsg = String(error);
+      }
+
       ws.send(JSON.stringify({
         type: 'error',
-        error: `Send failed: ${error.message}`
+        error: `Send failed: ${errorMsg}`
       }));
     }
+  }
+
+  /**
+   * Queue a message for sending when radio becomes ready
+   */
+  queueMessage(radioId, text, channel) {
+    if (!this.messageQueues.has(radioId)) {
+      this.messageQueues.set(radioId, []);
+    }
+
+    const queue = this.messageQueues.get(radioId);
+
+    // Check queue size limit
+    if (queue.length >= this.maxQueueSize) {
+      console.warn(`⚠️  Message queue full for ${radioId}, dropping oldest message`);
+      queue.shift(); // Remove oldest message
+    }
+
+    queue.push({
+      text,
+      channel,
+      queuedAt: Date.now()
+    });
+
+    console.log(`📬 Message queued for ${radioId} (${queue.length} in queue)`);
+  }
+
+  /**
+   * Send message with automatic queueing if radio not ready
+   * This wraps protocol.sendMessage with error 3 handling
+   */
+  async sendMessageWithQueue(radioId, text, channel = 0) {
+    const radio = this.radios.get(radioId);
+    if (!radio) {
+      throw new Error(`Radio ${radioId} not found`);
+    }
+
+    try {
+      await radio.protocol.sendMessage(text, channel, { wantAck: false });
+      return true;
+    } catch (error) {
+      // Check if this is error code 3 (device not ready) - queue the message
+      const errorCode = error?.error || error?.code || error?.errorCode;
+      if (errorCode === 3) {
+        console.log(`⏸️  Radio not ready for command response, queueing...`);
+        this.queueMessage(radioId, text, channel);
+        return false; // Queued, not sent
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Process queued messages for a radio
+   */
+  async processMessageQueue(radioId) {
+    const queue = this.messageQueues.get(radioId);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+
+    console.log(`📤 Processing ${queue.length} queued message(s) for ${radioId}...`);
+
+    const radio = this.radios.get(radioId);
+    if (!radio) {
+      console.error(`❌ Radio ${radioId} not found, clearing queue`);
+      this.messageQueues.delete(radioId);
+      return;
+    }
+
+    // Process all queued messages
+    const messages = [...queue]; // Copy array
+    this.messageQueues.set(radioId, []); // Clear queue
+
+    for (const msg of messages) {
+      // Check if message has timed out
+      const age = Date.now() - msg.queuedAt;
+      if (age > this.queueTimeout) {
+        console.warn(`⚠️  Skipping expired queued message (${Math.floor(age / 1000)}s old)`);
+        continue;
+      }
+
+      console.log(`📨 Sending queued message: "${msg.text}" on channel ${msg.channel}`);
+
+      try {
+        // Create message record
+        const sentMessage = {
+          id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          timestamp: new Date().toISOString(),
+          radioId: radioId,
+          protocol: radio.protocolType,
+          from: radio.nodeInfo?.nodeId || radioId,
+          to: 'broadcast',
+          channel: msg.channel,
+          portnum: 1,
+          text: msg.text,
+          sent: true,
+        };
+
+        // Broadcast to clients
+        this.broadcast({
+          type: 'message',
+          message: sentMessage
+        });
+
+        // Send the message
+        await radio.protocol.sendMessage(msg.text, msg.channel, { wantAck: false });
+        console.log(`✅ Queued message sent successfully`);
+
+        // Increment counter
+        radio.messagesSent = (radio.messagesSent || 0) + 1;
+
+      } catch (error) {
+        console.error(`❌ Failed to send queued message:`, error);
+        // Don't re-queue - move on to next message
+      }
+
+      // Small delay between messages to avoid overwhelming the radio
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Broadcast updated stats
+    this.broadcast({
+      type: 'radio-updated',
+      radio: this.getRadioInfo(radioId)
+    });
   }
 
   /**
@@ -1629,6 +1968,15 @@ class MeshtasticBridgeServer {
       }
 
       this.radios.delete(radioId);
+
+      // Clear any queued messages for this radio
+      if (this.messageQueues.has(radioId)) {
+        const queueLength = this.messageQueues.get(radioId).length;
+        if (queueLength > 0) {
+          console.log(`🗑️  Clearing ${queueLength} queued message(s) for disconnected radio`);
+        }
+        this.messageQueues.delete(radioId);
+      }
 
       console.log(`✅ Disconnected radio ${radioId}`);
 
@@ -2087,6 +2435,362 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'comm-test-result',
         service: 'discord',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Connect to MQTT broker
+   */
+  async connectMQTT() {
+    if (!this.mqttEnabled || !this.mqttBrokerUrl) {
+      console.log('MQTT not enabled or broker URL not configured');
+      return;
+    }
+
+    if (this.mqttClient) {
+      console.log('MQTT client already connected');
+      return;
+    }
+
+    try {
+      console.log(`🌐 Connecting to MQTT broker: ${this.mqttBrokerUrl}`);
+
+      const options = {
+        clientId: this.mqttClientId,
+        clean: true,
+        reconnectPeriod: 5000,
+      };
+
+      // Add credentials if provided
+      if (this.mqttUsername) {
+        options.username = this.mqttUsername;
+      }
+      if (this.mqttPassword) {
+        options.password = this.mqttPassword;
+      }
+
+      this.mqttClient = mqtt.connect(this.mqttBrokerUrl, options);
+
+      this.mqttClient.on('connect', () => {
+        console.log('✅ Connected to MQTT broker');
+
+        // Subscribe to incoming messages topic
+        const incomingTopic = `${this.mqttTopicPrefix}/+/rx`;
+        this.mqttClient.subscribe(incomingTopic, { qos: this.mqttQos }, (err) => {
+          if (err) {
+            console.error('❌ Failed to subscribe to MQTT topic:', err);
+          } else {
+            console.log(`📥 Subscribed to MQTT topic: ${incomingTopic}`);
+          }
+        });
+
+        // Broadcast MQTT status to clients
+        this.broadcast({
+          type: 'mqtt-status',
+          connected: true,
+          broker: this.mqttBrokerUrl
+        });
+      });
+
+      this.mqttClient.on('message', (topic, message) => {
+        this.handleMQTTMessage(topic, message);
+      });
+
+      this.mqttClient.on('error', (error) => {
+        console.error('❌ MQTT error:', error);
+        this.broadcast({
+          type: 'mqtt-error',
+          error: error.message
+        });
+      });
+
+      this.mqttClient.on('close', () => {
+        console.log('📡 MQTT connection closed');
+        this.broadcast({
+          type: 'mqtt-status',
+          connected: false
+        });
+      });
+
+      this.mqttClient.on('reconnect', () => {
+        console.log('🔄 Reconnecting to MQTT broker...');
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to connect to MQTT broker:', error);
+      this.mqttClient = null;
+    }
+  }
+
+  /**
+   * Disconnect from MQTT broker
+   */
+  async disconnectMQTT() {
+    if (this.mqttClient) {
+      console.log('📡 Disconnecting from MQTT broker...');
+      this.mqttClient.end();
+      this.mqttClient = null;
+      console.log('✅ Disconnected from MQTT broker');
+    }
+  }
+
+  /**
+   * Publish message to MQTT
+   */
+  async publishToMQTT(channelIndex, message) {
+    if (!this.mqttClient || !this.mqttClient.connected) {
+      console.log('⚠️  MQTT not connected, skipping publish');
+      return;
+    }
+
+    try {
+      const topic = `${this.mqttTopicPrefix}/channel${channelIndex}/tx`;
+      const payload = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        channel: channelIndex,
+        from: message.from,
+        text: message.text,
+        rssi: message.rssi,
+        snr: message.snr
+      });
+
+      this.mqttClient.publish(topic, payload, {
+        qos: this.mqttQos,
+        retain: this.mqttRetain
+      }, (err) => {
+        if (err) {
+          console.error('❌ Failed to publish to MQTT:', err);
+        } else {
+          console.log(`📤 Published to MQTT topic: ${topic}`);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error publishing to MQTT:', error);
+    }
+  }
+
+  /**
+   * Handle incoming MQTT messages
+   */
+  async handleMQTTMessage(topic, messageBuffer) {
+    try {
+      const message = JSON.parse(messageBuffer.toString());
+      console.log(`📥 MQTT message from ${topic}:`, message);
+
+      // Extract channel from topic (format: prefix/channel0/rx)
+      const topicParts = topic.split('/');
+      const channelPart = topicParts[topicParts.length - 2]; // Get "channel0"
+      const channelIndex = parseInt(channelPart.replace('channel', ''));
+
+      if (isNaN(channelIndex)) {
+        console.error('❌ Invalid channel in MQTT topic:', topic);
+        return;
+      }
+
+      // Forward MQTT message to all radios on the appropriate channel
+      const text = message.text || message.message || '';
+      if (!text) {
+        console.warn('⚠️  MQTT message has no text content');
+        return;
+      }
+
+      console.log(`🌉 Forwarding MQTT message to radios on channel ${channelIndex}: "${text}"`);
+
+      // Send to all connected radios
+      for (const [radioId, radio] of this.radios.entries()) {
+        try {
+          await this.sendMessageWithQueue(radioId, text, channelIndex);
+          console.log(`✅ Forwarded MQTT message to ${radioId}`);
+        } catch (error) {
+          console.error(`❌ Failed to forward MQTT message to ${radioId}:`, error);
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling MQTT message:', error);
+    }
+  }
+
+  /**
+   * Test MQTT connection
+   */
+  async testMQTT(ws) {
+    try {
+      if (!this.mqttBrokerUrl) {
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: false,
+          error: 'MQTT broker URL not configured'
+        }));
+        return;
+      }
+
+      // Try to connect temporarily
+      const testClient = mqtt.connect(this.mqttBrokerUrl, {
+        clientId: `mesh-bridge-test-${Date.now()}`,
+        username: this.mqttUsername || undefined,
+        password: this.mqttPassword || undefined,
+        connectTimeout: 10000
+      });
+
+      testClient.on('connect', () => {
+        console.log('✅ MQTT test connection successful');
+        testClient.end();
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: true
+        }));
+      });
+
+      testClient.on('error', (error) => {
+        console.error('❌ MQTT test connection failed:', error);
+        testClient.end();
+        ws.send(JSON.stringify({
+          type: 'mqtt-test-result',
+          success: false,
+          error: error.message
+        }));
+      });
+
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        if (testClient.connected) {
+          testClient.end();
+        } else {
+          ws.send(JSON.stringify({
+            type: 'mqtt-test-result',
+            success: false,
+            error: 'Connection timeout'
+          }));
+        }
+      }, 10000);
+
+    } catch (error) {
+      console.error('❌ MQTT test error:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-test-result',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Get MQTT configuration
+   */
+  async mqttGetConfig(ws) {
+    ws.send(JSON.stringify({
+      type: 'mqtt-config',
+      config: {
+        enabled: this.mqttEnabled,
+        brokerUrl: this.mqttBrokerUrl,
+        username: this.mqttUsername,
+        password: this.mqttPassword ? '********' : '', // Mask password
+        topicPrefix: this.mqttTopicPrefix,
+        qos: this.mqttQos,
+        retain: this.mqttRetain,
+        connected: this.mqttClient ? this.mqttClient.connected : false
+      }
+    }));
+  }
+
+  /**
+   * Set MQTT configuration
+   */
+  async mqttSetConfig(ws, config) {
+    try {
+      // Disconnect existing connection if any
+      await this.disconnectMQTT();
+
+      // Update configuration
+      if (config.brokerUrl !== undefined) this.mqttBrokerUrl = config.brokerUrl;
+      if (config.username !== undefined) this.mqttUsername = config.username;
+      if (config.password !== undefined && config.password !== '********') {
+        this.mqttPassword = config.password;
+      }
+      if (config.topicPrefix !== undefined) this.mqttTopicPrefix = config.topicPrefix;
+      if (config.qos !== undefined) this.mqttQos = config.qos;
+      if (config.retain !== undefined) this.mqttRetain = config.retain;
+
+      console.log('✅ MQTT configuration updated');
+
+      // Send confirmation
+      ws.send(JSON.stringify({
+        type: 'mqtt-config-updated',
+        success: true
+      }));
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'mqtt-config-changed',
+        config: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword ? '********' : '',
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain
+        }
+      });
+
+      // Reconnect if enabled
+      if (this.mqttEnabled) {
+        await this.connectMQTT();
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to update MQTT config:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-config-updated',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Enable/disable MQTT
+   */
+  async mqttSetEnabled(ws, enabled) {
+    try {
+      this.mqttEnabled = enabled;
+      console.log(`MQTT ${enabled ? 'enabled' : 'disabled'}`);
+
+      if (enabled) {
+        await this.connectMQTT();
+      } else {
+        await this.disconnectMQTT();
+      }
+
+      ws.send(JSON.stringify({
+        type: 'mqtt-enabled-updated',
+        success: true,
+        enabled: this.mqttEnabled
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'mqtt-config-changed',
+        config: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword ? '********' : '',
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain,
+          connected: this.mqttClient ? this.mqttClient.connected : false
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to toggle MQTT:', error);
+      ws.send(JSON.stringify({
+        type: 'mqtt-enabled-updated',
         success: false,
         error: error.message
       }));

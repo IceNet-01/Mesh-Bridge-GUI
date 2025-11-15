@@ -1,0 +1,26 @@
+[Unit]
+Description=Mesh Bridge - Meshtastic Relay Station
+Documentation=https://github.com/IceNet-01/Mesh-Bridge-GUI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%INSTALL_DIR%
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run bridge
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

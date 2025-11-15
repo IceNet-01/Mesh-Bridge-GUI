@@ -60,13 +60,14 @@ export interface Message {
   fromRadio: string;
   toRadio?: string;
   protocol: RadioProtocol;
-  from: number;
-  to: number;
+  from: number | string;
+  to: number | string;
   channel: number;
   portnum: number;
   payload: any;
   forwarded: boolean;
   duplicate: boolean;
+  sent?: boolean; // True if this message was sent by us (not received)
   rssi?: number;
   snr?: number;
   hopLimit?: number;
@@ -86,6 +87,27 @@ export interface Statistics {
       errors: number;
     };
   };
+}
+
+export interface MeshNode {
+  nodeId: string;
+  num: number;
+  longName: string;
+  shortName: string;
+  hwModel: string;
+  lastHeard: Date;
+  snr?: number;
+  position?: {
+    latitude: number;
+    longitude: number;
+    altitude?: number;
+    time?: Date;
+  };
+  batteryLevel?: number;
+  voltage?: number;
+  channelUtilization?: number;
+  airUtilTx?: number;
+  fromRadio: string; // Which radio saw this node
 }
 
 export interface LogEntry {
@@ -147,6 +169,17 @@ export interface DiscordConfig {
   webhook: string;
   username: string;
   avatarUrl: string;
+}
+
+export interface MQTTConfig {
+  enabled: boolean;
+  brokerUrl: string;
+  username: string;
+  password: string;
+  topicPrefix: string;
+  qos: number;
+  retain: boolean;
+  connected?: boolean;
 }
 
 export interface CommunicationConfig {

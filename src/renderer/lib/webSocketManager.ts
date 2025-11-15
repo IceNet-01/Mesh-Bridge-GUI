@@ -1,4 +1,4 @@
-import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol } from '../types';
+import type { Radio, Message, Statistics, LogEntry, BridgeConfig, AIConfig, AIModel, AIStatus, CommunicationConfig, EmailConfig, DiscordConfig, RadioProtocol, MeshNode } from '../types';
 
 /**
  * WebSocketRadioManager
@@ -13,6 +13,7 @@ export class WebSocketRadioManager {
   private ws: WebSocket | null = null;
   private radios: Map<string, Radio> = new Map();
   private messages: Map<string, Message> = new Map();
+  private nodes: Map<string, MeshNode> = new Map(); // Track all mesh nodes
   private logs: LogEntry[] = [];
   private statistics: Statistics;
   private bridgeConfig: BridgeConfig;
@@ -23,6 +24,8 @@ export class WebSocketRadioManager {
   private maxReconnectAttempts = 10;
   private reconnectDelay = 2000;
   private bridgeUrl: string;
+  private readonly MESSAGE_STORAGE_KEY = 'mesh-bridge-messages';
+  private readonly MESSAGE_RETENTION_DAYS = 7;
 
   constructor(bridgeUrl: string = 'ws://localhost:8080') {
     this.bridgeUrl = bridgeUrl;
@@ -46,8 +49,14 @@ export class WebSocketRadioManager {
       maxReconnectAttempts: 10,
     };
 
+    // Load persisted messages from localStorage
+    this.loadMessagesFromStorage();
+
     // Update statistics every second
     setInterval(() => this.updateStatistics(), 1000);
+
+    // Clean up old messages every hour
+    setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
   }
 
   // Event emitter pattern
@@ -203,8 +212,47 @@ export class WebSocketRadioManager {
         this.log('warn', `Radio disconnected: ${data.radioId}`);
         break;
 
+      case 'radio-updated':
+        // Radio information updated (nodeInfo, channels, config, stats)
+        if (data.radio) {
+          this.radios.set(data.radio.id, data.radio);
+          this.emit('radio-status-change', Array.from(this.radios.values()));
+          this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');
+        }
+        break;
+
+      case 'radio-telemetry':
+        // Radio telemetry data updated
+        const radio = this.radios.get(data.radioId);
+        if (radio && data.telemetry) {
+          // Merge telemetry data into radio object
+          Object.assign(radio, data.telemetry);
+          this.radios.set(data.radioId, radio);
+          this.emit('radio-status-change', Array.from(this.radios.values()));
+          this.log('debug', `Radio telemetry updated: ${data.radioId}`, 'telemetry');
+        }
+        break;
+
+      case 'node-info':
+        // Node information from mesh network
+        if (data.node) {
+          const node: MeshNode = {
+            ...data.node,
+            lastHeard: new Date(data.node.lastHeard),
+            position: data.node.position ? {
+              ...data.node.position,
+              time: data.node.position.time ? new Date(data.node.position.time) : undefined
+            } : undefined
+          };
+
+          this.nodes.set(node.nodeId, node);
+          this.emit('node-update', node);
+          this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) ${node.position ? 'with location' : 'no location'}`, 'node');
+        }
+        break;
+
       case 'message':
-        // New message received
+        // New message received (or sent by us)
         const message: Message = {
           id: data.message.id,
           timestamp: new Date(data.message.timestamp),
@@ -220,20 +268,35 @@ export class WebSocketRadioManager {
           },
           forwarded: false,
           duplicate: false,
+          sent: data.message.sent || false,
           rssi: data.message.rssi,
           snr: data.message.snr
         };
 
         this.messages.set(message.id, message);
+        this.saveMessagesToStorage(); // Persist to localStorage
         this.messageTimestamps.push(message.timestamp);
-        this.statistics.totalMessagesReceived++;
+
+        // Only increment received count if not a sent message
+        if (!message.sent) {
+          this.statistics.totalMessagesReceived++;
+        }
 
         if (this.statistics.radioStats[message.fromRadio]) {
-          this.statistics.radioStats[message.fromRadio].received++;
+          if (message.sent) {
+            this.statistics.radioStats[message.fromRadio].sent++;
+          } else {
+            this.statistics.radioStats[message.fromRadio].received++;
+          }
         }
 
         this.emit('message-received', { radioId: message.fromRadio, message });
-        this.log('info', `💬 Message from ${message.from}: "${message.payload.text}"`);
+
+        if (message.sent) {
+          this.log('info', `📤 Sent: "${message.payload.text}"`);
+        } else {
+          this.log('info', `💬 Message from ${message.from}: "${message.payload.text}"`);
+        }
         break;
 
       case 'ports-list':
@@ -332,6 +395,40 @@ export class WebSocketRadioManager {
         } else {
           this.log('error', `❌ ${data.service} test failed: ${data.error}`);
         }
+        break;
+
+      case 'mqtt-config':
+        // MQTT configuration
+        this.emit('mqtt-config-update', data.config);
+        break;
+
+      case 'mqtt-config-changed':
+        // MQTT configuration changed (broadcast from server)
+        this.emit('mqtt-config-changed', data.config);
+        this.log('info', 'MQTT configuration updated');
+        break;
+
+      case 'mqtt-config-updated':
+        this.log('info', data.success ? 'MQTT configuration saved' : `MQTT config error: ${data.error}`);
+        break;
+
+      case 'mqtt-test-result':
+        // Test result for MQTT
+        if (data.success) {
+          this.log('info', '✅ MQTT test successful');
+        } else {
+          this.log('error', `❌ MQTT test failed: ${data.error}`);
+        }
+        break;
+
+      case 'mqtt-status':
+        // MQTT connection status
+        this.log('info', `MQTT ${data.connected ? 'connected' : 'disconnected'}`);
+        break;
+
+      case 'mqtt-error':
+        // MQTT error
+        this.log('error', `MQTT error: ${data.error}`);
         break;
 
       case 'reticulum-status':
@@ -481,6 +578,14 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Get all mesh nodes
+   */
+  getNodes(): MeshNode[] {
+    return Array.from(this.nodes.values())
+      .sort((a, b) => b.lastHeard.getTime() - a.lastHeard.getTime());
+  }
+
+  /**
    * Get logs
    */
   getLogs(): LogEntry[] {
@@ -517,6 +622,61 @@ export class WebSocketRadioManager {
     this.statistics.messageRatePerMinute = this.messageTimestamps.length;
 
     this.emit('statistics-update', this.statistics);
+  }
+
+  /**
+   * Load messages from localStorage
+   */
+  private loadMessagesFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(this.MESSAGE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.forEach((msg: any) => {
+          // Restore Date objects from ISO strings
+          this.messages.set(msg.id, {
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          });
+        });
+        this.log('info', `📦 Loaded ${this.messages.size} messages from storage`);
+      }
+    } catch (error) {
+      this.log('error', 'Failed to load messages from storage', undefined, error);
+    }
+  }
+
+  /**
+   * Save messages to localStorage
+   */
+  private saveMessagesToStorage(): void {
+    try {
+      const messages = Array.from(this.messages.values());
+      localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messages));
+    } catch (error) {
+      this.log('error', 'Failed to save messages to storage', undefined, error);
+    }
+  }
+
+  /**
+   * Clean up old messages (older than MESSAGE_RETENTION_DAYS)
+   */
+  private cleanupOldMessages(): void {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - this.MESSAGE_RETENTION_DAYS);
+
+    let removedCount = 0;
+    for (const [id, message] of this.messages.entries()) {
+      if (message.timestamp < cutoffDate) {
+        this.messages.delete(id);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.log('info', `🗑️ Cleaned up ${removedCount} old messages (older than ${this.MESSAGE_RETENTION_DAYS} days)`);
+      this.saveMessagesToStorage();
+    }
   }
 
   /**
@@ -716,6 +876,73 @@ export class WebSocketRadioManager {
     }
 
     this.ws.send(JSON.stringify({ type: 'comm-test-discord' }));
+  }
+
+  /**
+   * Get MQTT configuration
+   */
+  async getMQTTConfig(): Promise<any | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: any) => {
+        this.off('mqtt-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('mqtt-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'mqtt-get-config' }));
+
+      setTimeout(() => {
+        this.off('mqtt-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set MQTT configuration
+   */
+  async setMQTTConfig(config: any): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'mqtt-set-config',
+      config
+    }));
+  }
+
+  /**
+   * Enable/disable MQTT
+   */
+  async setMQTTEnabled(enabled: boolean): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'mqtt-enable',
+      enabled
+    }));
+  }
+
+  /**
+   * Test MQTT connection
+   */
+  async testMQTT(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'mqtt-test' }));
   }
 
   /**

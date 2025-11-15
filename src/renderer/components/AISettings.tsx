@@ -62,6 +62,45 @@ function AISettings() {
     }
   }, [aiConfig]);
 
+  // Auto-enable AI if Ollama is available and a model is installed
+  useEffect(() => {
+    console.log('[AI] Auto-enable check:', {
+      hasConfig: !!aiConfig,
+      hasStatus: !!aiStatus,
+      modelsCount: aiModels.length,
+      statusAvailable: aiStatus?.available,
+      configModel: aiConfig?.model,
+      configEnabled: aiConfig?.enabled
+    });
+
+    if (aiConfig && aiStatus && aiModels.length > 0) {
+      // If Ollama is available, a model is configured, and AI is not enabled, auto-enable it
+      if (aiStatus.available && aiConfig.model && !aiConfig.enabled) {
+        const modelInstalled = aiModels.some(m => m.name === aiConfig.model);
+        console.log('[AI] Model check:', {
+          configuredModel: aiConfig.model,
+          modelInstalled,
+          availableModels: aiModels.map(m => m.name)
+        });
+
+        if (modelInstalled) {
+          console.log('[AI] ✅ Auto-enabling AI - Ollama available with model:', aiConfig.model);
+          setAIEnabled(true).then(() => {
+            console.log('[AI] ✅ AI enabled successfully, refreshing config...');
+            // Refresh config to update UI
+            setTimeout(() => getAIConfig(), 500);
+          });
+        } else {
+          console.log('[AI] ❌ Model not installed:', aiConfig.model);
+        }
+      } else {
+        console.log('[AI] Auto-enable conditions not met');
+      }
+    } else {
+      console.log('[AI] Waiting for AI data to load...');
+    }
+  }, [aiStatus, aiConfig, aiModels, setAIEnabled, getAIConfig]);
+
   const handleToggleAI = async () => {
     if (!aiConfig) return;
     await setAIEnabled(!aiConfig.enabled);

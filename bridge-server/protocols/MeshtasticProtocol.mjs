@@ -47,11 +47,33 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] Heartbeat enabled`);
 
       this.connected = true;
+
+      // Explicitly fetch and emit node info from the device after configuration
+      // This ensures we get the data even if events don't fire properly
+      setTimeout(() => {
+        this.fetchAndEmitDeviceInfo();
+      }, 2000); // Wait 2 seconds for device to fully populate
+
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
       return true;
     } catch (error) {
       console.error(`[Meshtastic] Connection failed:`, error);
+
+      // Clean up any partial connection on error
+      try {
+        if (this.device) {
+          await this.device.disconnect();
+          this.device = null;
+        }
+        if (this.transport) {
+          this.transport = null;
+        }
+        this.connected = false;
+      } catch (cleanupError) {
+        console.error(`[Meshtastic] Error during cleanup:`, cleanupError);
+      }
+
       this.handleError(error);
       throw error;
     }
@@ -124,9 +146,46 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to other node info
+    // Subscribe to node info packets (includes our own node with full user details)
     this.device.events.onNodeInfoPacket.subscribe((node) => {
       console.log(`[Meshtastic] Node info packet:`, node);
+
+      // Check if this is our own node - update our node info with full details
+      if (this.myNodeNum && node.num === this.myNodeNum && node.user) {
+        console.log(`[Meshtastic] Received full node info for our own radio!`);
+        const nodeInfo = {
+          nodeId: node.num.toString(),
+          longName: node.user.longName || 'Unknown',
+          shortName: node.user.shortName || '????',
+          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown'
+        };
+        this.updateNodeInfo(nodeInfo);
+        console.log(`[Meshtastic] Updated our node info:`, nodeInfo);
+      }
+
+      // Emit all node data for mesh map
+      if (node.user) {
+        const meshNode = {
+          nodeId: node.user.id || node.num.toString(),
+          num: node.num,
+          longName: node.user.longName || 'Unknown',
+          shortName: node.user.shortName || '????',
+          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown',
+          lastHeard: new Date(node.lastHeard * 1000),
+          snr: node.snr,
+          position: node.position && node.position.latitudeI && node.position.longitudeI ? {
+            latitude: node.position.latitudeI / 1e7,
+            longitude: node.position.longitudeI / 1e7,
+            altitude: node.position.altitude,
+            time: node.position.time ? new Date(node.position.time * 1000) : undefined
+          } : undefined,
+          batteryLevel: node.deviceMetrics?.batteryLevel,
+          voltage: node.deviceMetrics?.voltage,
+          channelUtilization: node.deviceMetrics?.channelUtilization,
+          airUtilTx: node.deviceMetrics?.airUtilTx
+        };
+        this.emit('node', meshNode);
+      }
     });
 
     // Subscribe to channel configuration packets
@@ -191,6 +250,81 @@ export class MeshtasticProtocol extends BaseProtocol {
     });
   }
 
+  /**
+   * Fetch and emit device info from the device object
+   * This is called after configure() to ensure we get node info and channels
+   * even if the event subscriptions don't fire properly
+   */
+  fetchAndEmitDeviceInfo() {
+    try {
+      console.log(`[Meshtastic] Fetching device info from device object...`);
+
+      // Get node info from device
+      if (this.device && this.device.nodes) {
+        const myNode = this.device.nodes.get(this.device.nodeNum);
+        if (myNode && myNode.user) {
+          this.myNodeNum = this.device.nodeNum;
+          const nodeInfo = {
+            nodeId: this.device.nodeNum?.toString() || 'unknown',
+            longName: myNode.user.longName || 'Unknown',
+            shortName: myNode.user.shortName || '????',
+            hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
+          };
+          this.updateNodeInfo(nodeInfo);
+          console.log(`[Meshtastic] Node info fetched from device.nodes:`, nodeInfo);
+        } else {
+          console.log(`[Meshtastic] My node not found in device.nodes or missing user data`);
+        }
+      }
+
+      // Get channels from device
+      if (this.device && this.device.channels) {
+        console.log(`[Meshtastic] Found ${this.device.channels.length} channels in device object`);
+        this.device.channels.forEach((channel, index) => {
+          if (channel && channel.settings) {
+            const channelInfo = {
+              index: index,
+              role: channel.role,
+              name: channel.settings.name || '',
+              psk: channel.settings.psk ? Buffer.from(channel.settings.psk).toString('base64') : ''
+            };
+            this.channelMap.set(index, channelInfo);
+            console.log(`[Meshtastic] Channel ${index}: "${channelInfo.name || '(unnamed)'}"`);
+          }
+        });
+
+        // Emit channels
+        const channelsArray = Array.from(this.channelMap.values());
+        if (channelsArray.length > 0) {
+          this.updateChannels(channelsArray);
+          console.log(`[Meshtastic] Emitted ${channelsArray.length} channels`);
+        }
+      }
+
+      // Get config from device
+      if (this.device && this.device.config && this.device.config.lora) {
+        const lora = this.device.config.lora;
+        this.loraConfig = {
+          region: lora.region,
+          modemPreset: lora.modemPreset,
+          hopLimit: lora.hopLimit,
+          txEnabled: lora.txEnabled,
+          txPower: lora.txPower,
+          channelNum: lora.channelNum
+        };
+        console.log(`[Meshtastic] LoRa config fetched:`, {
+          region: this.getRegionName(this.loraConfig.region),
+          modemPreset: this.getModemPresetName(this.loraConfig.modemPreset)
+        });
+        this.emit('config', this.loraConfig);
+      }
+
+      console.log(`[Meshtastic] Device info fetch complete`);
+    } catch (error) {
+      console.error('[Meshtastic] Error fetching device info:', error);
+    }
+  }
+
   async disconnect() {
     try {
       console.log(`[Meshtastic] Disconnecting from ${this.portPath}...`);
@@ -219,23 +353,109 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error('Device not connected');
       }
 
+      // Check if device is configured
+      if (!this.nodeInfo || !this.nodeInfo.nodeId) {
+        throw new Error('Device not fully configured yet. Please wait a few seconds and try again.');
+      }
+
+      // Validate channel exists
+      const availableChannels = Array.from(this.channelMap.keys());
+      console.log(`[Meshtastic] Available channels:`, availableChannels);
+      console.log(`[Meshtastic] Requested channel:`, channel);
+
+      if (!this.channelMap.has(channel)) {
+        throw new Error(`Channel ${channel} not found. Available channels: ${availableChannels.join(', ')}`);
+      }
+
+      const channelConfig = this.channelMap.get(channel);
+      console.log(`[Meshtastic] Channel ${channel} config:`, {
+        name: channelConfig.name,
+        role: channelConfig.role,
+        hasPSK: !!channelConfig.psk && channelConfig.psk.length > 0
+      });
+
       const { wantAck = false } = options;
 
-      console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel}`);
+      console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel} (broadcast)`);
+      console.log(`[Meshtastic] Send parameters:`, {
+        text,
+        destination: 'broadcast',
+        wantAck,
+        channel
+      });
 
       // Send using the device
       // sendText(text, destination, wantAck, channel)
       // Use "broadcast" as destination to broadcast on the specified channel
-      await this.device.sendText(text, "broadcast", wantAck, channel);
+      const result = await this.device.sendText(text, "broadcast", wantAck, channel);
+
+      console.log(`[Meshtastic] sendText result:`, result);
 
       this.stats.messagesSent++;
-      console.log(`[Meshtastic] Text broadcast successfully on channel ${channel}`);
+      console.log(`[Meshtastic] ✅ Text broadcast successfully on channel ${channel}`);
 
       return true;
     } catch (error) {
-      console.error('[Meshtastic] Error sending message:', error);
-      this.handleError(error);
-      throw error;
+      console.error('[Meshtastic] ❌ Error sending message:', error);
+      console.error('[Meshtastic] Error type:', typeof error);
+      console.error('[Meshtastic] Error constructor:', error?.constructor?.name);
+
+      // Try to log error details
+      try {
+        console.error('[Meshtastic] Error JSON:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      } catch (e) {
+        console.error('[Meshtastic] Could not stringify error');
+      }
+
+      // Provide better error messages for common Meshtastic error codes
+      let errorMsg = 'Unknown error';
+
+      // Handle various error formats
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'number') {
+        // Direct error code
+        if (error === 3) {
+          errorMsg = 'Device not ready. Please wait for device configuration to complete.';
+        } else if (error === 2) {
+          errorMsg = 'Invalid channel. Please check channel number.';
+        } else if (error === 1) {
+          errorMsg = 'Message queue full. Please wait and try again.';
+        } else {
+          errorMsg = `Meshtastic error code: ${error}`;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        // Error object from Meshtastic library: { id: ..., error: 3 }
+        // Check error.error property first (most common format)
+        const errorCode = error.error || error.code || error.errorCode || error.status;
+
+        if (errorCode === 3) {
+          errorMsg = 'Device not ready. Please wait for device configuration to complete.';
+        } else if (errorCode === 2) {
+          errorMsg = 'Invalid channel. Please check channel number.';
+        } else if (errorCode === 1) {
+          errorMsg = 'Message queue full. Please wait and try again.';
+        } else {
+          // Try to get a message from various properties
+          const msg = error.message || error.msg || error.description;
+          if (msg) {
+            errorMsg = String(msg);
+          } else {
+            // No message, show the error object
+            try {
+              errorMsg = `Send failed: ${JSON.stringify(error)}`;
+            } catch (e) {
+              errorMsg = `Send failed: ${String(error)}`;
+            }
+          }
+        }
+      } else {
+        errorMsg = String(error);
+      }
+
+      const finalError = new Error(errorMsg);
+      this.handleError(finalError);
+      throw finalError;
     }
   }
 
@@ -313,5 +533,120 @@ export class MeshtasticProtocol extends BaseProtocol {
       7: 'Long Moderate'
     };
     return presets[preset] || `Unknown (${preset})`;
+  }
+
+  getHwModelName(model) {
+    const models = {
+      0: 'Unset',
+      1: 'TLORA_V2',
+      2: 'TLORA_V1',
+      3: 'TLORA_V2_1_1p6',
+      4: 'TBEAM',
+      5: 'HELTEC_V2_0',
+      6: 'TBEAM_V0p7',
+      7: 'T_ECHO',
+      8: 'TLORA_V1_1p3',
+      9: 'RAK4631',
+      10: 'HELTEC_V2_1',
+      11: 'HELTEC_V1',
+      12: 'LILYGO_TBEAM_S3_CORE',
+      13: 'RAK11200',
+      14: 'NANO_G1',
+      15: 'TLORA_V2_1_1p8',
+      16: 'TLORA_T3_S3',
+      17: 'NANO_G1_EXPLORER',
+      18: 'NANO_G2_ULTRA',
+      19: 'LORA_TYPE',
+      20: 'WIPHONE',
+      21: 'WIO_WM1110',
+      22: 'RAK2560',
+      23: 'HELTEC_HRU_3601',
+      24: 'STATION_G1',
+      25: 'RAK11310',
+      26: 'SENSELORA_RP2040',
+      27: 'SENSELORA_S3',
+      28: 'CANARYONE',
+      29: 'RP2040_LORA',
+      30: 'STATION_G2',
+      31: 'LORA_RELAY_V1',
+      32: 'NRF52840DK',
+      33: 'PPR',
+      34: 'GENIEBLOCKS',
+      35: 'NRF52_UNKNOWN',
+      36: 'PORTDUINO',
+      37: 'ANDROID_SIM',
+      38: 'DIY_V1',
+      39: 'NRF52840_PCA10059',
+      40: 'DR_DEV',
+      41: 'M5STACK',
+      42: 'HELTEC_V3',
+      43: 'HELTEC_WSL_V3',
+      44: 'BETAFPV_2400_TX',
+      45: 'BETAFPV_900_NANO_TX',
+      46: 'RPI_PICO',
+      47: 'HELTEC_WIRELESS_TRACKER',
+      48: 'HELTEC_WIRELESS_PAPER',
+      49: 'T_DECK',
+      50: 'T_WATCH_S3',
+      51: 'PICOMPUTER_S3',
+      52: 'HELTEC_HT62',
+      53: 'EBYTE_ESP32_S3',
+      54: 'ESP32_S3_PICO',
+      55: 'CHATTER_2',
+      56: 'HELTEC_WIRELESS_PAPER_V1_0',
+      57: 'HELTEC_CAPSULE_SENSOR_V3',
+      58: 'T_BEAM_SUPREME',
+      59: 'UNPHONE',
+      60: 'TD_LORAC',
+      61: 'CDEBYTE_EORA_S3',
+      62: 'TWC_MESH_V4',
+      63: 'NRF52_PROMICRO_DIY',
+      64: 'RADIOMASTER_900_BANDIT_NANO',
+      65: 'HELTEC_VISION_MASTER_T190',
+      66: 'HELTEC_VISION_MASTER_E213',
+      67: 'HELTEC_VISION_MASTER_E290',
+      68: 'HELTEC_MESH_NODE_T114',
+      69: 'SENSECAP_INDICATOR',
+      70: 'TRACKER_T1000_E',
+      71: 'RAK3172',
+      72: 'WIO_E5',
+      73: 'RADIOMASTER_900_BANDIT',
+      74: 'ME25LS01_4Y10TD',
+      75: 'RP2040_FEATHER_RFM95',
+      76: 'M5STACK_COREBASIC',
+      77: 'M5STACK_CORE2',
+      78: 'RPI_PICO2',
+      79: 'M5STACK_CORES3',
+      80: 'SEEED_XIAO_S3',
+      81: 'BETAFPV_ELRS_MICRO_TX',
+      82: 'PICOMPUTER_S3_WAVESHARE',
+      83: 'RADIOMASTER_900_BANDIT_MICRO',
+      84: 'HELTEC_CAPSULE_SENSOR_V3_NO_GPS',
+      85: 'SWAN_R5',
+      86: 'RP2350_LORA',
+      87: 'WIPHONE2',
+      88: 'HELTEC_ESP32C6',
+      89: 'RAK3172_E22',
+      90: 'RAK3172_E220',
+      91: 'KIWIMESH',
+      92: 'TD_LOWIFI',
+      93: 'E22_900M30S_JP',
+      94: 'NOMAD_STAR_METEOR_PRO',
+      95: 'E22_400M30S',
+      96: 'ICECHAT',
+      97: 'DIY_V1_EU865',
+      98: 'DIY_V1_JP_TX',
+      99: 'DIY_V1_JP_RX',
+      100: 'DIY_V1_NZ865',
+      101: 'DIY_V1_EU433',
+      102: 'DIY_V1_SE',
+      103: 'DIY_V1_TW',
+      104: 'DIY_V1_UK',
+      105: 'EBYTE_E22_400M30S',
+      106: 'FEATHER_OLED_BLE',
+      107: 'FEATHER_OLED_WIFI',
+      255: 'PRIVATE_HW'
+    };
+    return models[model] || `Unknown (${model})`;
   }
 }
