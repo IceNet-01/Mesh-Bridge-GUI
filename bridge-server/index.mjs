@@ -281,6 +281,18 @@ class MeshtasticBridgeServer {
       if (this.mqttEnabled && this.mqttBrokerUrl) {
         this.connectMQTT();
       }
+
+      // Auto-scan and auto-connect to radios for headless operation
+      const autoConnect = process.env.AUTO_CONNECT !== 'false'; // Default true
+      if (autoConnect) {
+        console.log('🔍 Auto-connect enabled, scanning for radios...');
+        setTimeout(() => this.autoScanAndConnect(), 2000); // Wait 2s for server to stabilize
+
+        // Re-scan periodically for new radios
+        setInterval(() => this.autoScanAndConnect(), 30000); // Every 30 seconds
+      } else {
+        console.log('ℹ️  Auto-connect disabled. Waiting for manual connection via web UI...');
+      }
     });
   }
 
@@ -522,6 +534,9 @@ class MeshtasticBridgeServer {
 
   /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
+   * @param {WebSocket} ws - Optional WebSocket client to notify (null for headless mode)
+   * @param {string} portPath - Serial port path
+   * @param {string} protocol - Protocol type (default: 'meshtastic')
    */
   async connectRadio(ws, portPath, protocol = 'meshtastic') {
     try {
@@ -710,10 +725,60 @@ class MeshtasticBridgeServer {
         }
       }
 
-      ws.send(JSON.stringify({
-        type: 'error',
-        error: `Connection failed: ${error.message}`
-      }));
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Connection failed: ${error.message}`
+        }));
+      }
+    }
+  }
+
+  /**
+   * Auto-scan for radios and connect to them (headless mode)
+   */
+  async autoScanAndConnect() {
+    try {
+      const ports = await SerialPort.list();
+
+      // Filter for actual USB/ACM devices (same filter as listPorts)
+      const filteredPorts = ports.filter(port => {
+        if (port.path.match(/\/dev\/ttyS\d+$/)) {
+          return false;
+        }
+        return (
+          port.path.includes('USB') ||
+          port.path.includes('ACM') ||
+          port.manufacturer?.toLowerCase().includes('silicon') ||
+          port.manufacturer?.toLowerCase().includes('uart') ||
+          port.manufacturer?.toLowerCase().includes('ch340') ||
+          port.manufacturer?.toLowerCase().includes('cp210') ||
+          port.manufacturer?.toLowerCase().includes('ftdi')
+        );
+      });
+
+      if (filteredPorts.length === 0) {
+        console.log('🔍 Auto-scan: No USB/ACM serial devices found');
+        return;
+      }
+
+      console.log(`🔍 Auto-scan: Found ${filteredPorts.length} USB/ACM serial port(s)`);
+
+      // Try to connect to any ports we're not already connected to
+      for (const port of filteredPorts) {
+        // Check if already connected
+        const alreadyConnected = Array.from(this.radios.values()).some(
+          radio => radio.port === port.path
+        );
+
+        if (!alreadyConnected) {
+          console.log(`🔌 Auto-connecting to ${port.path}...`);
+          // Call connectRadio without websocket (headless mode)
+          await this.connectRadio(null, port.path, 'meshtastic');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error in auto-scan:', error);
     }
   }
 
