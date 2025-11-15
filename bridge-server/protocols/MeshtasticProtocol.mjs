@@ -466,7 +466,7 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     return {
       id: packet.id || Date.now().toString(),
-      timestamp: packet.rxTime ? new Date(packet.rxTime * 1000) : new Date(),
+      timestamp: new Date(), // Always use current time to avoid timezone issues
       from: packet.from,
       to: packet.to,
       channel: packet.channel || 0,
