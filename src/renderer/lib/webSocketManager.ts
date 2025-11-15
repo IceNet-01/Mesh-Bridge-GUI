@@ -25,7 +25,9 @@ export class WebSocketRadioManager {
   private reconnectDelay = 2000;
   private bridgeUrl: string;
   private readonly MESSAGE_STORAGE_KEY = 'mesh-bridge-messages';
+  private readonly NODE_STORAGE_KEY = 'mesh-bridge-nodes';
   private readonly MESSAGE_RETENTION_DAYS = 7;
+  private readonly NODE_RETENTION_DAYS = 180; // Keep node database for 6 months
 
   constructor(bridgeUrl: string = 'ws://localhost:8080') {
     this.bridgeUrl = bridgeUrl;
@@ -49,14 +51,16 @@ export class WebSocketRadioManager {
       maxReconnectAttempts: 10,
     };
 
-    // Load persisted messages from localStorage
+    // Load persisted messages and nodes from localStorage
     this.loadMessagesFromStorage();
+    this.loadNodesFromStorage();
 
     // Update statistics every second
     setInterval(() => this.updateStatistics(), 1000);
 
-    // Clean up old messages every hour
+    // Clean up old messages and nodes every hour
     setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
+    setInterval(() => this.cleanupOldNodes(), 60 * 60 * 1000);
   }
 
   // Event emitter pattern
@@ -246,8 +250,23 @@ export class WebSocketRadioManager {
           };
 
           this.nodes.set(node.nodeId, node);
+          this.saveNodesToStorage(); // Persist to localStorage
           this.emit('node-update', node);
-          this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) ${node.position ? 'with location' : 'no location'}`, 'node');
+
+          // Enhanced logging to help debug map issues
+          if (node.position) {
+            this.log('info', `📍 Node ${node.shortName} (${node.nodeId}) @ ${node.position.latitude.toFixed(6)}, ${node.position.longitude.toFixed(6)}`, 'node');
+            console.log('[WebSocketManager] Node with position:', {
+              nodeId: node.nodeId,
+              shortName: node.shortName,
+              lat: node.position.latitude,
+              lon: node.position.longitude,
+              totalNodes: this.nodes.size,
+              nodesWithPosition: Array.from(this.nodes.values()).filter(n => n.position).length
+            });
+          } else {
+            this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) no location`, 'node');
+          }
         }
         break;
 
@@ -676,6 +695,65 @@ export class WebSocketRadioManager {
     if (removedCount > 0) {
       this.log('info', `🗑️ Cleaned up ${removedCount} old messages (older than ${this.MESSAGE_RETENTION_DAYS} days)`);
       this.saveMessagesToStorage();
+    }
+  }
+
+  /**
+   * Load nodes from localStorage
+   */
+  private loadNodesFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(this.NODE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.forEach((node: any) => {
+          // Restore Date objects from ISO strings
+          this.nodes.set(node.nodeId, {
+            ...node,
+            lastHeard: new Date(node.lastHeard),
+            position: node.position ? {
+              ...node.position,
+              time: node.position.time ? new Date(node.position.time) : undefined
+            } : undefined
+          });
+        });
+        this.log('info', `📦 Loaded ${this.nodes.size} nodes from storage (${Array.from(this.nodes.values()).filter(n => n.position).length} with positions)`);
+      }
+    } catch (error) {
+      this.log('error', 'Failed to load nodes from storage', undefined, error);
+    }
+  }
+
+  /**
+   * Save nodes to localStorage
+   */
+  private saveNodesToStorage(): void {
+    try {
+      const nodes = Array.from(this.nodes.values());
+      localStorage.setItem(this.NODE_STORAGE_KEY, JSON.stringify(nodes));
+    } catch (error) {
+      this.log('error', 'Failed to save nodes to storage', undefined, error);
+    }
+  }
+
+  /**
+   * Clean up old nodes (older than NODE_RETENTION_DAYS)
+   */
+  private cleanupOldNodes(): void {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - this.NODE_RETENTION_DAYS);
+
+    let removedCount = 0;
+    for (const [nodeId, node] of this.nodes.entries()) {
+      if (node.lastHeard < cutoffDate) {
+        this.nodes.delete(nodeId);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.log('info', `🗑️ Cleaned up ${removedCount} old nodes (older than ${this.NODE_RETENTION_DAYS} days)`);
+      this.saveNodesToStorage();
     }
   }
 
