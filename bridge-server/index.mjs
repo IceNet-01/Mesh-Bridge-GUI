@@ -568,6 +568,23 @@ class MeshtasticBridgeServer {
           radio.nodeNum = parseInt(nodeInfo.nodeId);
           console.log(`✅ Radio ${radioId} node info updated`);
 
+          // Check device time if available
+          const metadata = protocolHandler.getProtocolMetadata();
+          if (metadata.deviceTime) {
+            const deviceDate = new Date(metadata.deviceTime);
+            const currentDate = new Date();
+            const timeDiff = Math.abs(currentDate - deviceDate) / 1000 / 60; // minutes
+
+            console.log(`⏰ Radio ${radioId} device time: ${deviceDate.toLocaleString()}`);
+
+            if (timeDiff > 60) { // More than 1 hour difference
+              console.warn(`⚠️  WARNING: Radio ${radioId} clock is off by ${Math.round(timeDiff / 60)} hours!`);
+              console.warn(`   Device time: ${deviceDate.toLocaleString()}`);
+              console.warn(`   Current time: ${currentDate.toLocaleString()}`);
+              console.warn(`   This will cause incorrect timestamps on forwarded messages!`);
+            }
+          }
+
           // Broadcast updated radio info to clients
           this.broadcast({
             type: 'radio-updated',

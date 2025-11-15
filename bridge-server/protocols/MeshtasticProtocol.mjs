@@ -485,9 +485,21 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   getProtocolMetadata() {
+    // Get device time if available (helps diagnose timestamp issues)
+    let deviceTime = null;
+    try {
+      // Try to get device time from position time or calculate from rxTime
+      if (this.nodeInfo?.position?.time) {
+        deviceTime = new Date(this.nodeInfo.position.time * 1000).toISOString();
+      }
+    } catch (e) {
+      // Ignore errors getting device time
+    }
+
     return {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
+      deviceTime: deviceTime, // Device's current time (null if unavailable)
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),
