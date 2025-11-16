@@ -107,6 +107,7 @@ export interface MeshNode {
   voltage?: number;
   channelUtilization?: number;
   airUtilTx?: number;
+  temperature?: number;
   fromRadio: string; // Which radio saw this node
 }
 

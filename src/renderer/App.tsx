@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
 import Dashboard from './components/Dashboard';
 import RadioList from './components/RadioList';
+import NodeList from './components/NodeList';
 import MessageMonitor from './components/MessageMonitor';
 import LogViewer from './components/LogViewer';
 import BridgeConfiguration from './components/BridgeConfiguration';
@@ -9,8 +10,9 @@ import AISettings from './components/AISettings';
 import CommunicationSettings from './components/CommunicationSettings';
 import MQTTSettings from './components/MQTTSettings';
 import { MapView } from './components/MapView';
+import SitePlanner from './components/SitePlanner';
 
-type Tab = 'dashboard' | 'radios' | 'messages' | 'map' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'siteplanner' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -86,6 +88,13 @@ function App() {
             onClick={() => setActiveTab('radios')}
           />
           <NavButton
+            icon="nodes"
+            label="Nodes"
+            active={activeTab === 'nodes'}
+            badge={nodes.length}
+            onClick={() => setActiveTab('nodes')}
+          />
+          <NavButton
             icon="messages"
             label="Messages"
             active={activeTab === 'messages'}
@@ -98,6 +107,12 @@ function App() {
             active={activeTab === 'map'}
             badge={nodes.filter(n => n.position).length}
             onClick={() => setActiveTab('map')}
+          />
+          <NavButton
+            icon="siteplanner"
+            label="Site Planner"
+            active={activeTab === 'siteplanner'}
+            onClick={() => setActiveTab('siteplanner')}
           />
           <NavButton
             icon="config"
@@ -184,39 +199,49 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-auto">
-          <div className="p-6">
-            {activeTab === 'dashboard' && statistics && (
-              <Dashboard radios={radios} statistics={statistics} messages={messages} />
-            )}
-            {activeTab === 'radios' && (
-              <RadioList radios={radios} onDisconnect={disconnectRadio} />
-            )}
-            {activeTab === 'messages' && (
-              <MessageMonitor messages={messages} radios={radios} />
-            )}
-            {activeTab === 'map' && (
+          {/* Map needs full height, other tabs need padding */}
+          {activeTab === 'map' ? (
+            <div className="h-full">
               <MapView nodes={nodes} radios={radios} />
-            )}
-            {activeTab === 'configuration' && bridgeConfig && (
-              <BridgeConfiguration
-                config={bridgeConfig}
-                radios={radios}
-                onUpdate={updateBridgeConfig}
-              />
-            )}
-            {activeTab === 'ai' && (
-              <AISettings />
-            )}
-            {activeTab === 'communication' && (
-              <CommunicationSettings />
-            )}
-            {activeTab === 'mqtt' && (
-              <MQTTSettings />
-            )}
-            {activeTab === 'logs' && (
-              <LogViewer logs={logs} onClear={clearLogs} />
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="p-6">
+              {activeTab === 'dashboard' && statistics && (
+                <Dashboard radios={radios} statistics={statistics} messages={messages} />
+              )}
+              {activeTab === 'radios' && (
+                <RadioList radios={radios} onDisconnect={disconnectRadio} />
+              )}
+              {activeTab === 'nodes' && (
+                <NodeList nodes={nodes} radios={radios} />
+              )}
+              {activeTab === 'messages' && (
+                <MessageMonitor messages={messages} radios={radios} />
+              )}
+              {activeTab === 'siteplanner' && (
+                <SitePlanner />
+              )}
+              {activeTab === 'configuration' && bridgeConfig && (
+                <BridgeConfiguration
+                  config={bridgeConfig}
+                  radios={radios}
+                  onUpdate={updateBridgeConfig}
+                />
+              )}
+              {activeTab === 'ai' && (
+                <AISettings />
+              )}
+              {activeTab === 'communication' && (
+                <CommunicationSettings />
+              )}
+              {activeTab === 'mqtt' && (
+                <MQTTSettings />
+              )}
+              {activeTab === 'logs' && (
+                <LogViewer logs={logs} onClear={clearLogs} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -260,6 +285,12 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     logs: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    ),
+    nodes: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    ),
+    siteplanner: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945" />
     ),
   };
 
