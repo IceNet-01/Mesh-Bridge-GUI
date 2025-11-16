@@ -182,10 +182,127 @@ export class MeshtasticProtocol extends BaseProtocol {
           batteryLevel: node.deviceMetrics?.batteryLevel,
           voltage: node.deviceMetrics?.voltage,
           channelUtilization: node.deviceMetrics?.channelUtilization,
-          airUtilTx: node.deviceMetrics?.airUtilTx
+          airUtilTx: node.deviceMetrics?.airUtilTx,
+          temperature: node.deviceMetrics?.temperature
         };
         this.emit('node', meshNode);
       }
+    });
+
+    // Subscribe to position packets
+    this.device.events.onPositionPacket.subscribe((positionPacket) => {
+      console.log(`[Meshtastic] Position packet:`, positionPacket);
+      try {
+        if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
+          // Update node position in database
+          const meshNode = {
+            nodeId: positionPacket.from.toString(),
+            num: positionPacket.from,
+            longName: 'Unknown', // Will be updated when node info arrives
+            shortName: '????',
+            hwModel: 'Unknown',
+            lastHeard: new Date(),
+            position: {
+              latitude: positionPacket.data.latitudeI / 1e7,
+              longitude: positionPacket.data.longitudeI / 1e7,
+              altitude: positionPacket.data.altitude,
+              time: positionPacket.data.time ? new Date(positionPacket.data.time * 1000) : new Date()
+            }
+          };
+          this.emit('node', meshNode);
+        }
+      } catch (error) {
+        console.error('[Meshtastic] Error handling position packet:', error);
+      }
+    });
+
+    // Subscribe to telemetry packets (device metrics)
+    this.device.events.onTelemetryPacket.subscribe((telemetryPacket) => {
+      console.log(`[Meshtastic] Telemetry packet:`, telemetryPacket);
+      try {
+        const data = telemetryPacket.data;
+
+        // Build node update with all available telemetry
+        const meshNode = {
+          nodeId: telemetryPacket.from.toString(),
+          num: telemetryPacket.from,
+          longName: 'Unknown',
+          shortName: '????',
+          hwModel: 'Unknown',
+          lastHeard: new Date()
+        };
+
+        // Device metrics (battery, voltage, etc)
+        if (data.deviceMetrics) {
+          meshNode.batteryLevel = data.deviceMetrics.batteryLevel;
+          meshNode.voltage = data.deviceMetrics.voltage;
+          meshNode.channelUtilization = data.deviceMetrics.channelUtilization;
+          meshNode.airUtilTx = data.deviceMetrics.airUtilTx;
+          meshNode.uptimeSeconds = data.deviceMetrics.uptimeSeconds;
+        }
+
+        // Environment metrics (temperature, humidity, pressure)
+        if (data.environmentMetrics) {
+          meshNode.temperature = data.environmentMetrics.temperature;
+          meshNode.humidity = data.environmentMetrics.relativeHumidity;
+          meshNode.pressure = data.environmentMetrics.barometricPressure;
+          meshNode.gasResistance = data.environmentMetrics.gasResistance;
+          meshNode.iaq = data.environmentMetrics.iaq;
+        }
+
+        // Power metrics
+        if (data.powerMetrics) {
+          meshNode.ch1Voltage = data.powerMetrics.ch1Voltage;
+          meshNode.ch1Current = data.powerMetrics.ch1Current;
+          meshNode.ch2Voltage = data.powerMetrics.ch2Voltage;
+          meshNode.ch2Current = data.powerMetrics.ch2Current;
+          meshNode.ch3Voltage = data.powerMetrics.ch3Voltage;
+          meshNode.ch3Current = data.powerMetrics.ch3Current;
+        }
+
+        // Air quality metrics
+        if (data.airQualityMetrics) {
+          meshNode.pm10Standard = data.airQualityMetrics.pm10Standard;
+          meshNode.pm25Standard = data.airQualityMetrics.pm25Standard;
+          meshNode.pm100Standard = data.airQualityMetrics.pm100Standard;
+        }
+
+        this.emit('node', meshNode);
+      } catch (error) {
+        console.error('[Meshtastic] Error handling telemetry packet:', error);
+      }
+    });
+
+    // Subscribe to user packets (for node name/info updates)
+    this.device.events.onUserPacket.subscribe((userPacket) => {
+      console.log(`[Meshtastic] User packet:`, userPacket);
+      try {
+        if (userPacket.data) {
+          const meshNode = {
+            nodeId: userPacket.data.id || userPacket.from.toString(),
+            num: userPacket.from,
+            longName: userPacket.data.longName || 'Unknown',
+            shortName: userPacket.data.shortName || '????',
+            hwModel: this.getHwModelName(userPacket.data.hwModel) || 'Unknown',
+            lastHeard: new Date()
+          };
+          this.emit('node', meshNode);
+        }
+      } catch (error) {
+        console.error('[Meshtastic] Error handling user packet:', error);
+      }
+    });
+
+    // Subscribe to routing packets (for neighbor info)
+    this.device.events.onRoutingPacket.subscribe((routingPacket) => {
+      console.log(`[Meshtastic] Routing packet:`, routingPacket);
+      // Routing packets contain neighbor info - could be used for mesh topology
+    });
+
+    // Subscribe to waypoint packets
+    this.device.events.onWaypointPacket.subscribe((waypointPacket) => {
+      console.log(`[Meshtastic] Waypoint packet:`, waypointPacket);
+      // Waypoint data - could be added to map
     });
 
     // Subscribe to channel configuration packets
