@@ -236,6 +236,7 @@ function NodeList({ nodes, radios }: NodeListProps) {
                 >
                   Battery {sortField === 'batteryLevel' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Temperature</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Signal</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Telemetry</th>
                 <th
@@ -251,7 +252,7 @@ function NodeList({ nodes, radios }: NodeListProps) {
             <tbody className="divide-y divide-slate-700/50">
               {filteredAndSortedNodes.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-slate-400">
                     No nodes to display
                   </td>
                 </tr>
@@ -312,6 +313,20 @@ function NodeList({ nodes, radios }: NodeListProps) {
                                 {node.voltage.toFixed(2)}V
                               </div>
                             )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {node.temperature !== undefined ? (
+                          <div className={`font-medium ${
+                            node.temperature < 0 ? 'text-blue-400' :
+                            node.temperature < 25 ? 'text-green-400' :
+                            node.temperature < 35 ? 'text-yellow-400' :
+                            node.temperature < 50 ? 'text-orange-400' : 'text-red-400'
+                          }`}>
+                            {node.temperature.toFixed(1)}°C
                           </div>
                         ) : (
                           <span className="text-slate-500">-</span>

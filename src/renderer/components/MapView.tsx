@@ -81,6 +81,7 @@ function ZoomToNode({ position, zoom }: { position: [number, number] | null; zoo
 export function MapView({ nodes, radios }: MapViewProps) {
   const [selectedNodePosition, setSelectedNodePosition] = useState<[number, number] | null>(null);
   const [showNodeList, setShowNodeList] = useState(true);
+  const [mapLayer, setMapLayer] = useState<'osm' | 'satellite' | 'topo'>('osm');
 
   // Debug: Log nodes on mount and when they change
   useEffect(() => {
@@ -222,16 +223,60 @@ export function MapView({ nodes, radios }: MapViewProps) {
 
         {/* Map Container */}
         <div className="flex-1 relative">
+          {/* Layer Switcher */}
+          <div className="absolute top-4 right-4 z-[1000] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setMapLayer('osm')}
+              className={`px-4 py-2 text-sm font-medium transition-colors block w-full text-left ${
+                mapLayer === 'osm' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              🗺️ Street Map
+            </button>
+            <button
+              onClick={() => setMapLayer('satellite')}
+              className={`px-4 py-2 text-sm font-medium transition-colors block w-full text-left border-t border-gray-200 ${
+                mapLayer === 'satellite' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              🛰️ Satellite
+            </button>
+            <button
+              onClick={() => setMapLayer('topo')}
+              className={`px-4 py-2 text-sm font-medium transition-colors block w-full text-left border-t border-gray-200 ${
+                mapLayer === 'topo' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              ⛰️ Topographic
+            </button>
+          </div>
+
           <MapContainer
             center={defaultCenter}
             zoom={positions.length > 0 ? 13 : 2}
             style={{ height: '100%', width: '100%' }}
             zoomControl={true}
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            {mapLayer === 'osm' && (
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+            )}
+            {mapLayer === 'satellite' && (
+              <TileLayer
+                attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                maxZoom={19}
+              />
+            )}
+            {mapLayer === 'topo' && (
+              <TileLayer
+                attribution='Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
+                url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+                maxZoom={17}
+              />
+            )}
 
             {positions.length > 0 && <MapBounds positions={positions} />}
             {selectedNodePosition && <ZoomToNode position={selectedNodePosition} zoom={15} />}
