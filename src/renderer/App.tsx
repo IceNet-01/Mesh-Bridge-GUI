@@ -12,8 +12,9 @@ import MQTTSettings from './components/MQTTSettings';
 import { MapView } from './components/MapView';
 import SitePlanner from './components/SitePlanner';
 import TacticalView from './components/TacticalView';
+import EmergencyResponse from './components/EmergencyResponse';
 
-type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'tactical' | 'siteplanner' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'tactical' | 'siteplanner' | 'emergency' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -31,6 +32,7 @@ function App() {
   const initialize = useStore(state => state.initialize);
   const connectToBridge = useStore(state => state.connectToBridge);
   const disconnectRadio = useStore(state => state.disconnectRadio);
+  const sendMessage = useStore(state => state.sendMessage);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
   const clearLogs = useStore(state => state.clearLogs);
 
@@ -121,6 +123,12 @@ function App() {
             label="Site Planner"
             active={activeTab === 'siteplanner'}
             onClick={() => setActiveTab('siteplanner')}
+          />
+          <NavButton
+            icon="emergency"
+            label="Emergency / SOS"
+            active={activeTab === 'emergency'}
+            onClick={() => setActiveTab('emergency')}
           />
           <NavButton
             icon="config"
@@ -230,6 +238,14 @@ function App() {
               {activeTab === 'siteplanner' && (
                 <SitePlanner />
               )}
+              {activeTab === 'emergency' && (
+                <EmergencyResponse
+                  nodes={nodes}
+                  radios={radios}
+                  messages={messages}
+                  onSendMessage={sendMessage}
+                />
+              )}
               {activeTab === 'configuration' && bridgeConfig && (
                 <BridgeConfiguration
                   config={bridgeConfig}
@@ -303,6 +319,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     tactical: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+    ),
+    emergency: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
     ),
   };
 
