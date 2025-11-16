@@ -1,12 +1,20 @@
 import { useState } from 'react';
-import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 /**
- * Calculate maximum range based on link budget
- * Link Budget: RxPower(dBm) = TxPower(dBm) + TxGain(dBi) + RxGain(dBi) - PathLoss(dB)
- * RxPower must be >= Receiver Sensitivity for successful reception
+ * Calculate radio horizon based on antenna heights
+ * Uses the 4/3 Earth radius approximation for atmospheric refraction
+ * Formula: d = 3.57 * (√h1 + √h2) where h is height in meters, d is in km
+ */
+function calculateRadioHorizon(txHeightMeters: number, rxHeightMeters: number): number {
+  return 3.57 * (Math.sqrt(txHeightMeters) + Math.sqrt(rxHeightMeters));
+}
+
+/**
+ * Calculate maximum range based on link budget with realistic constraints
+ * Uses FSPL but caps at radio horizon and adds ground-based path loss
  */
 function calculateMaxRange(
   txPowerDBm: number,
@@ -14,20 +22,32 @@ function calculateMaxRange(
   rxGainDBi: number,
   rxSensitivityDBm: number,
   frequencyMHz: number,
+  txHeightMeters: number,
+  rxHeightMeters: number,
   fadingMarginDB: number = 10 // Safety margin for fading/obstacles
 ): number {
+  // Calculate radio horizon (line-of-sight limit due to Earth curvature)
+  const radioHorizonKm = calculateRadioHorizon(txHeightMeters, rxHeightMeters);
+
   // Available link budget
   const linkBudget = txPowerDBm + txGainDBi + rxGainDBi - rxSensitivityDBm - fadingMarginDB;
 
-  // Solve FSPL equation for distance
-  // FSPL = linkBudget
-  // 20log₁₀(d) + 20log₁₀(f) + 32.44 = linkBudget
-  // 20log₁₀(d) = linkBudget - 20log₁₀(f) - 32.44
-  // log₁₀(d) = (linkBudget - 20log₁₀(f) - 32.44) / 20
-  // d = 10^((linkBudget - 20log₁₀(f) - 32.44) / 20)
-
+  // Solve FSPL equation for distance (Free Space Path Loss)
+  // FSPL(dB) = 20log₁₀(d) + 20log₁₀(f) + 32.44
+  // where d = distance in km, f = frequency in MHz
   const exponent = (linkBudget - 20 * Math.log10(frequencyMHz) - 32.44) / 20;
-  return Math.pow(10, exponent); // Distance in km
+  let fsplRangeKm = Math.pow(10, exponent);
+
+  // Ground-based radios have additional losses beyond FSPL
+  // Apply a more realistic path loss model for ground-based communications
+  // Use a simplified 2-ray ground reflection model: add ~30-40dB loss for ground bounce
+  const groundLossFactor = 0.3; // Reduces range by ~70% for ground-based radios
+  let practicalRangeKm = fsplRangeKm * groundLossFactor;
+
+  // Cap at radio horizon (can't see beyond the curve of the Earth)
+  practicalRangeKm = Math.min(practicalRangeKm, radioHorizonKm);
+
+  return practicalRangeKm;
 }
 
 interface TransmitterSite {
@@ -70,6 +90,7 @@ function SitePlanner() {
   });
   const [mapLayer, setMapLayer] = useState<'osm' | 'satellite' | 'topo'>('topo');
   const [isAddingNewSite, setIsAddingNewSite] = useState(false);
+  const [clickToPlaceMode, setClickToPlaceMode] = useState(false);
   const [newSite, setNewSite] = useState<Partial<TransmitterSite>>({
     name: '',
     latitude: 40.7128,
@@ -88,6 +109,8 @@ function SitePlanner() {
       receiverConfig.rxGain,
       receiverConfig.rxSensitivity,
       site.frequency,
+      site.antennaHeight,
+      receiverConfig.antennaHeight,
       receiverConfig.fadingMargin
     );
     return {
@@ -135,6 +158,26 @@ function SitePlanner() {
     ? [sites[0].latitude, sites[0].longitude]
     : [40.7128, -74.0060]; // Default to NYC
 
+  // Component to handle map clicks for placing sites
+  function MapClickHandler() {
+    useMapEvents({
+      click(e) {
+        if (clickToPlaceMode) {
+          const { lat, lng } = e.latlng;
+          setNewSite({
+            ...newSite,
+            latitude: lat,
+            longitude: lng,
+            name: newSite.name || `Site ${sites.length + 1}`,
+          });
+          setIsAddingNewSite(true);
+          setClickToPlaceMode(false);
+        }
+      },
+    });
+    return null;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -151,11 +194,11 @@ function SitePlanner() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-blue-300 mb-1">Free Space Path Loss Model (v1.0)</h3>
+            <h3 className="text-sm font-semibold text-blue-300 mb-1">Ground-Based RF Propagation Model (v2.0)</h3>
             <p className="text-xs text-slate-400">
-              Currently using FSPL model for line-of-sight predictions. This provides conservative estimates.
-              Actual range may vary based on terrain, obstacles, and environmental conditions.
-              Future updates will include terrain analysis and advanced propagation models.
+              Uses FSPL with radio horizon calculation (Earth curvature) and ground-based path loss factor.
+              Estimates are conservative for ground-level radios. Actual range varies with terrain, obstacles,
+              and atmospheric conditions. Click-to-place towers on map for quick site planning.
             </p>
           </div>
         </div>
@@ -231,12 +274,30 @@ function SitePlanner() {
               <h3 className="text-lg font-semibold text-white">
                 Transmitter Sites ({sites.length})
               </h3>
-              <button
-                onClick={() => setIsAddingNewSite(!isAddingNewSite)}
-                className="btn-primary text-sm"
-              >
-                {isAddingNewSite ? 'Cancel' : '+ Add Site'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setClickToPlaceMode(!clickToPlaceMode);
+                    setIsAddingNewSite(false);
+                  }}
+                  className={`text-sm px-3 py-2 rounded-lg transition-colors ${
+                    clickToPlaceMode
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {clickToPlaceMode ? '📍 Click Map to Place' : '🗺️ Click to Place'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAddingNewSite(!isAddingNewSite);
+                    setClickToPlaceMode(false);
+                  }}
+                  className="btn-primary text-sm"
+                >
+                  {isAddingNewSite ? 'Cancel' : '+ Manual Entry'}
+                </button>
+              </div>
             </div>
 
             {/* Add New Site Form */}
@@ -402,6 +463,7 @@ function SitePlanner() {
               style={{ height: '100%', width: '100%' }}
               zoomControl={true}
             >
+              <MapClickHandler />
               {mapLayer === 'osm' && (
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

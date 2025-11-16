@@ -11,8 +11,9 @@ import CommunicationSettings from './components/CommunicationSettings';
 import MQTTSettings from './components/MQTTSettings';
 import { MapView } from './components/MapView';
 import SitePlanner from './components/SitePlanner';
+import TacticalView from './components/TacticalView';
 
-type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'siteplanner' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
+type Tab = 'dashboard' | 'radios' | 'nodes' | 'messages' | 'map' | 'tactical' | 'siteplanner' | 'configuration' | 'ai' | 'communication' | 'mqtt' | 'logs';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -109,6 +110,13 @@ function App() {
             onClick={() => setActiveTab('map')}
           />
           <NavButton
+            icon="tactical"
+            label="TAK"
+            active={activeTab === 'tactical'}
+            badge={nodes.filter(n => n.position && (Date.now() - n.lastHeard.getTime()) < 5 * 60 * 1000).length}
+            onClick={() => setActiveTab('tactical')}
+          />
+          <NavButton
             icon="siteplanner"
             label="Site Planner"
             active={activeTab === 'siteplanner'}
@@ -199,10 +207,11 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-auto">
-          {/* Map needs full height, other tabs need padding */}
-          {activeTab === 'map' ? (
+          {/* Map and Tactical views need full height, other tabs need padding */}
+          {activeTab === 'map' || activeTab === 'tactical' ? (
             <div className="h-full">
-              <MapView nodes={nodes} radios={radios} />
+              {activeTab === 'map' && <MapView nodes={nodes} radios={radios} />}
+              {activeTab === 'tactical' && <TacticalView nodes={nodes} radios={radios} />}
             </div>
           ) : (
             <div className="p-6">
@@ -291,6 +300,9 @@ function NavButton({ icon, label, active, badge, badgeColor = 'blue', onClick }:
     ),
     siteplanner: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945" />
+    ),
+    tactical: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
     ),
   };
 

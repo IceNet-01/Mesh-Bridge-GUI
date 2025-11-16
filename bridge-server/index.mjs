@@ -51,12 +51,6 @@ class MeshtasticBridgeServer {
     this.seenMessageIds = new Set(); // Track message IDs for deduplication
     this.maxSeenMessages = 1000; // Limit size of seen messages set
 
-    // ===== MESSAGE QUEUE CONFIGURATION =====
-    // Queue messages when radio isn't ready and send when initialized
-    this.messageQueues = new Map(); // radioId -> array of queued messages
-    this.maxQueueSize = 50; // Max messages to queue per radio
-    this.queueTimeout = 300000; // 5 minutes timeout for queued messages
-
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
     //
@@ -786,8 +780,7 @@ class MeshtasticBridgeServer {
         radio: this.getRadioInfo(radioId)
       });
 
-      // Process any queued messages now that radio is ready
-      await this.processMessageQueue(radioId);
+      // Radio is now ready and connected
 
     } catch (error) {
       console.error(`❌ Failed to connect to ${portPath}:`, error);
@@ -1044,11 +1037,8 @@ class MeshtasticBridgeServer {
       // Check rate limiting
       if (this.isRateLimited(fromNode)) {
         console.log(`⚠️  Rate limit exceeded for node ${fromNode}`);
-        await this.sendMessageWithQueue(
-          radioId,
-          `⚠️ Rate limit exceeded. Max ${this.commandRateLimit} commands per minute.`,
-          channel
-        );
+        // Rate limit exceeded - silently drop command
+        console.log(`⚠️  Rate limit exceeded for node ${fromNode} - command dropped`);
         return;
       }
 
@@ -1063,11 +1053,8 @@ class MeshtasticBridgeServer {
       // Check if command is enabled
       if (!this.enabledCommands.includes(cmd)) {
         console.log(`⚠️  Command not enabled: ${cmd}`);
-        await this.sendMessageWithQueue(
-          radioId,
-          `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help for available commands`,
-          channel
-        );
+        // Unknown command - silently drop
+        console.log(`❓ Unknown command: ${cmd}`);
         return;
       }
 
@@ -1126,7 +1113,11 @@ class MeshtasticBridgeServer {
 
       if (response) {
         console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
-        await this.sendMessageWithQueue(radioId, response, channel);
+        try {
+          await radio.protocol.sendMessage(response, channel, { wantAck: false });
+        } catch (error) {
+          console.error(`❌ Failed to send command response:`, error);
+        }
       }
 
     } catch (error) {
@@ -1835,8 +1826,8 @@ class MeshtasticBridgeServer {
             console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
           }
 
-          // Use message queue to handle radios that aren't ready yet
-          await this.sendMessageWithQueue(targetRadioId, text, matchingChannelIndex);
+          // Send message directly (if radio isn't ready, it will fail gracefully)
+          await targetProtocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
           console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
@@ -1916,20 +1907,8 @@ class MeshtasticBridgeServer {
         }));
       }).catch((error) => {
         console.error('❌ Send completion error:', error);
-
-        // Check if this is error code 3 (device not ready) - queue the message
-        const errorCode = error?.error || error?.code || error?.errorCode;
-        if (errorCode === 3) {
-          console.log(`⏸️  Radio not ready, queueing message for later...`);
-          this.queueMessage(radioId, text, channel);
-          ws.send(JSON.stringify({
-            type: 'info',
-            message: 'Message queued - radio is initializing. Will send when ready.'
-          }));
-        } else {
-          // For other errors, just log - message was already shown to user
-          console.error('❌ Failed to send:', errorCode ? `Error ${errorCode}` : error);
-        }
+        // Message send failed - no queuing, fail immediately
+        console.error('❌ Failed to send:', error);
       });
 
     } catch (error) {
@@ -1953,133 +1932,7 @@ class MeshtasticBridgeServer {
     }
   }
 
-  /**
-   * Queue a message for sending when radio becomes ready
-   */
-  queueMessage(radioId, text, channel) {
-    if (!this.messageQueues.has(radioId)) {
-      this.messageQueues.set(radioId, []);
-    }
-
-    const queue = this.messageQueues.get(radioId);
-
-    // Check queue size limit
-    if (queue.length >= this.maxQueueSize) {
-      console.warn(`⚠️  Message queue full for ${radioId}, dropping oldest message`);
-      queue.shift(); // Remove oldest message
-    }
-
-    queue.push({
-      text,
-      channel,
-      queuedAt: Date.now()
-    });
-
-    console.log(`📬 Message queued for ${radioId} (${queue.length} in queue)`);
-  }
-
-  /**
-   * Send message with automatic queueing if radio not ready
-   * This wraps protocol.sendMessage with error 3 handling
-   */
-  async sendMessageWithQueue(radioId, text, channel = 0) {
-    const radio = this.radios.get(radioId);
-    if (!radio) {
-      throw new Error(`Radio ${radioId} not found`);
-    }
-
-    try {
-      await radio.protocol.sendMessage(text, channel, { wantAck: false });
-      return true;
-    } catch (error) {
-      // Check if this is error code 3 (device not ready) - queue the message
-      const errorCode = error?.error || error?.code || error?.errorCode;
-      if (errorCode === 3) {
-        console.log(`⏸️  Radio not ready for command response, queueing...`);
-        this.queueMessage(radioId, text, channel);
-        return false; // Queued, not sent
-      } else {
-        // Re-throw other errors
-        throw error;
-      }
-    }
-  }
-
-  /**
-   * Process queued messages for a radio
-   */
-  async processMessageQueue(radioId) {
-    const queue = this.messageQueues.get(radioId);
-    if (!queue || queue.length === 0) {
-      return;
-    }
-
-    console.log(`📤 Processing ${queue.length} queued message(s) for ${radioId}...`);
-
-    const radio = this.radios.get(radioId);
-    if (!radio) {
-      console.error(`❌ Radio ${radioId} not found, clearing queue`);
-      this.messageQueues.delete(radioId);
-      return;
-    }
-
-    // Process all queued messages
-    const messages = [...queue]; // Copy array
-    this.messageQueues.set(radioId, []); // Clear queue
-
-    for (const msg of messages) {
-      // Check if message has timed out
-      const age = Date.now() - msg.queuedAt;
-      if (age > this.queueTimeout) {
-        console.warn(`⚠️  Skipping expired queued message (${Math.floor(age / 1000)}s old)`);
-        continue;
-      }
-
-      console.log(`📨 Sending queued message: "${msg.text}" on channel ${msg.channel}`);
-
-      try {
-        // Create message record
-        const sentMessage = {
-          id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-          timestamp: new Date().toISOString(),
-          radioId: radioId,
-          protocol: radio.protocolType,
-          from: radio.nodeInfo?.nodeId || radioId,
-          to: 'broadcast',
-          channel: msg.channel,
-          portnum: 1,
-          text: msg.text,
-          sent: true,
-        };
-
-        // Broadcast to clients
-        this.broadcast({
-          type: 'message',
-          message: sentMessage
-        });
-
-        // Send the message
-        await radio.protocol.sendMessage(msg.text, msg.channel, { wantAck: false });
-        console.log(`✅ Queued message sent successfully`);
-
-        // Increment counter
-        radio.messagesSent = (radio.messagesSent || 0) + 1;
-
-      } catch (error) {
-        console.error(`❌ Failed to send queued message:`, error);
-        // Don't re-queue - move on to next message
-      }
-
-      // Small delay between messages to avoid overwhelming the radio
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    // Broadcast updated stats
-    this.broadcast({
-      type: 'radio-updated',
-      radio: this.getRadioInfo(radioId)
-    });
-  }
+  // Message queue system removed - messages fail immediately if radio is unavailable
 
   /**
    * Disconnect a radio (protocol-agnostic)
@@ -2782,7 +2635,7 @@ class MeshtasticBridgeServer {
       // Send to all connected radios
       for (const [radioId, radio] of this.radios.entries()) {
         try {
-          await this.sendMessageWithQueue(radioId, text, channelIndex);
+          await radio.protocol.sendMessage(text, channelIndex, { wantAck: false });
           console.log(`✅ Forwarded MQTT message to ${radioId}`);
         } catch (error) {
           console.error(`❌ Failed to forward MQTT message to ${radioId}:`, error);
