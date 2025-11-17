@@ -186,6 +186,15 @@ export class MeshtasticProtocol extends BaseProtocol {
           temperature: node.deviceMetrics?.temperature
         };
         this.emit('node', meshNode);
+
+        // Also emit as nodeinfo packet for potential forwarding
+        // Skip our own radio's announcements (already filtered in bridge server)
+        this.emit('nodeinfo-packet', {
+          from: node.num,
+          data: node.user,
+          channel: 0, // Node announcements typically on channel 0
+          timestamp: new Date()
+        });
       }
     });
 

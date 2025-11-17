@@ -45,6 +45,10 @@ export interface BridgeConfig {
   autoReconnect: boolean;
   reconnectDelay: number;
   maxReconnectAttempts: number;
+
+  // Advanced forwarding options
+  forwardNodeInfo?: boolean;          // Forward node announcements across bridge
+  forwardEncryptedByIndex?: boolean;  // Forward encrypted messages by channel index instead of PSK matching
 }
 
 export interface BridgeRoute {
