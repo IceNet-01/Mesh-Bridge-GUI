@@ -69,6 +69,7 @@ export interface Message {
   channel: number;
   portnum: number;
   payload: any;
+  text?: string; // Decoded text message content
   forwarded: boolean;
   duplicate: boolean;
   sent?: boolean; // True if this message was sent by us (not received)
@@ -112,6 +113,8 @@ export interface MeshNode {
   channelUtilization?: number;
   airUtilTx?: number;
   temperature?: number;
+  humidity?: number;
+  pressure?: number;
   fromRadio: string; // Which radio saw this node
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { MeshNode, Radio, Message } from '../types';
 import {
   fetchAlertsByPoint,
@@ -58,7 +58,8 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [broadcastedAlerts, setBroadcastedAlerts] = useState<Set<string>>(new Set());
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Future use for audio alerts
+  // const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Emergency keywords to detect
   const emergencyKeywords = [
@@ -152,7 +153,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
 
           const newEmergency: EmergencyEvent = {
             id: `emer-${Date.now()}-${msg.from}`,
-            nodeId: msg.from,
+            nodeId: msg.from.toString(),
             nodeName: node?.longName || 'Unknown',
             shortName: node?.shortName || '????',
             timestamp: new Date(msg.timestamp),
@@ -603,7 +604,6 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
         ) : (
           <div className="space-y-3">
             {emergencies.map(emergency => {
-              const node = nodes.find(n => n.nodeId === emergency.nodeId);
               const isSelected = selectedEmergency === emergency.id;
 
               return (
