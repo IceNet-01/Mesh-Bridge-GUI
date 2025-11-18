@@ -10,6 +10,7 @@ export type Tab =
   | 'siteplanner'
   | 'networkhealth'
   | 'emergency'
+  | 'weather'
   | 'configuration'
   | 'server'
   | 'ai'

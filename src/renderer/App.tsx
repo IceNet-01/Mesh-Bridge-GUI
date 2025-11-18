@@ -75,6 +75,8 @@ function App() {
         return { nodes, radios, messages };
       case 'emergency':
         return { nodes, radios, messages, onSendMessage: sendMessage };
+      case 'weather':
+        return { nodes, radios, messages, onSendMessage: sendMessage };
       case 'configuration':
         return { config: bridgeConfig, radios, onUpdate: updateBridgeConfig };
       case 'server':

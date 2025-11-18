@@ -79,6 +79,11 @@ export function getNavigationConfig(
           icon: 'emergency',
           label: 'Emergency / SOS'
         },
+        {
+          id: 'weather',
+          icon: 'weather',
+          label: 'NWS Weather Alerts'
+        },
       ]
     },
     {
