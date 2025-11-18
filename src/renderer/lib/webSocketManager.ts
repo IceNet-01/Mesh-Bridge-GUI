@@ -279,10 +279,16 @@ export class WebSocketRadioManager {
               ...data.node.position,
               time: data.node.position.time ? new Date(data.node.position.time) : undefined
             } : existingNode?.position, // Keep existing position if new one is undefined
-            // Preserve environmental data from existing node if not in new data
-            temperature: data.node.temperature !== undefined ? data.node.temperature : existingNode?.temperature,
-            humidity: data.node.humidity !== undefined ? data.node.humidity : existingNode?.humidity,
-            pressure: data.node.pressure !== undefined ? data.node.pressure : existingNode?.pressure,
+            // Explicitly preserve environmental data - only update if new value is defined
+            temperature: data.node.temperature !== undefined && data.node.temperature !== null
+              ? data.node.temperature
+              : existingNode?.temperature,
+            humidity: data.node.humidity !== undefined && data.node.humidity !== null
+              ? data.node.humidity
+              : existingNode?.humidity,
+            pressure: data.node.pressure !== undefined && data.node.pressure !== null
+              ? data.node.pressure
+              : existingNode?.pressure,
           };
 
           this.nodes.set(node.nodeId, node);
@@ -373,7 +379,19 @@ export class WebSocketRadioManager {
         if (this.statistics.radioStats[data.radioId]) {
           this.statistics.radioStats[data.radioId].sent++;
         }
-        this.statistics.totalMessagesForwarded++;
+        // Note: totalMessagesForwarded is now incremented by 'message-forwarded' event
+        break;
+
+      case 'message-forwarded':
+        // Message successfully forwarded by bridge to other radios
+        this.log('debug', `🔁 Message forwarded (count: ${data.count})`, 'forward');
+        this.statistics.totalMessagesForwarded += (data.count || 1);
+        break;
+
+      case 'message-duplicate':
+        // Duplicate message detected by bridge
+        this.log('debug', `🔁 Duplicate message detected: ${data.messageId}`, 'duplicate');
+        this.statistics.totalMessagesDuplicate++;
         break;
 
       case 'error':

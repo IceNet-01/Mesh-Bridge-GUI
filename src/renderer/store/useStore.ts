@@ -83,7 +83,9 @@ export const useStore = create<AppStore>((set, get) => {
   });
 
   manager.on('statistics-update', (statistics: Statistics) => {
-    set({ statistics });
+    set(state => ({
+      statistics: state.statistics ? { ...state.statistics, ...statistics } : statistics
+    }));
   });
 
   manager.on('log-message', (log: LogEntry) => {

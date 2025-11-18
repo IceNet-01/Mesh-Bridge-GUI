@@ -54,7 +54,7 @@ function AISettings() {
     getAIConfig();
     checkAIStatus();
     listAIModels();
-  }, []);
+  }, [getAIConfig, checkAIStatus, listAIModels]);
 
   useEffect(() => {
     if (aiConfig && !selectedModel) {

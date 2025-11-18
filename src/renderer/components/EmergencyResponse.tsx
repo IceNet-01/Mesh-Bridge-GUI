@@ -108,7 +108,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
         }
       }
     });
-  }, [messages]);
+  }, [messages, emergencies, nodes, radios, autoRespond]);
 
   // Auto-response to SOS
   const handleAutoResponse = (emergency: EmergencyEvent) => {
