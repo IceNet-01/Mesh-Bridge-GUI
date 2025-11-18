@@ -173,7 +173,7 @@ function App() {
             <p className="text-[10px] text-slate-500 leading-relaxed">
               <span className="font-semibold text-slate-400">Meshtastic-Only Version</span>
               <br />
-              v2.0.0
+              Alpha 25.11
               <br />
               © 2024 Northern Plains IT, LLC
               <br />

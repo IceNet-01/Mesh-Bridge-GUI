@@ -8,10 +8,10 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 
 ![License](https://img.shields.io/badge/license-Dual%20(Non--Commercial%2FCommercial)-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-2.0.0--alpha-orange.svg)
+![Version](https://img.shields.io/badge/version-Alpha%2025.11-orange.svg)
 ![Type](https://img.shields.io/badge/type-Web%20App-blue.svg)
 
-## Version 2.0 - Alpha Release! 🚀
+## Version Alpha 25.11 🚀
 
 **NEW Architecture:**
 - 🌐 **Web-Based GUI** - accessible from any modern browser
@@ -335,7 +335,7 @@ Bridge responds: 📊 Bridge Status:
                  Radios: 2 connected
                  Messages: 342 in history
                  Uptime: 5h 23m
-                 Version: 2.0.0-alpha
+                 Version: Alpha 25.11
 
 You send: #ping
 Bridge responds: 🏓 Pong! Bridge is alive and running.

@@ -1318,7 +1318,7 @@ class MeshtasticBridgeServer {
    * Command: #version - Software version
    */
   async cmdVersion() {
-    return `🔖 Meshtastic Bridge GUI v2.0.0-alpha\n` +
+    return `🔖 Meshtastic Bridge GUI Alpha 25.11\n` +
            `Node.js ${process.version}\n` +
            `Platform: ${process.platform}`;
   }
