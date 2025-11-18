@@ -13,6 +13,7 @@
     "bridge": "node bridge-server/index.mjs",
     "start": "npm run bridge & npm run dev",
     "production": "npm run build && node bridge-server/index.mjs",
+    "deploy": "bash scripts/deploy-production.sh",
     "cleanup-ports": "bash scripts/cleanup-ports.sh 8080",
     "service:install": "bash scripts/install-service.sh",
     "service:uninstall": "bash scripts/uninstall-service.sh",
