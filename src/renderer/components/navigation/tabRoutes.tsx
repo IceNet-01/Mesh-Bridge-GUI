@@ -10,6 +10,7 @@ import SitePlanner from '../SitePlanner';
 import NetworkHealth from '../NetworkHealth';
 import EmergencyResponse from '../EmergencyResponse';
 import BridgeConfiguration from '../BridgeConfiguration';
+import { BridgeServerSettings } from '../BridgeServerSettings';
 import AISettings from '../AISettings';
 import CommunicationSettings from '../CommunicationSettings';
 import MQTTSettings from '../MQTTSettings';
@@ -52,6 +53,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   configuration: {
     component: BridgeConfiguration,
+  },
+  server: {
+    component: BridgeServerSettings,
   },
   ai: {
     component: AISettings,

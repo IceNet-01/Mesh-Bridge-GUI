@@ -90,6 +90,11 @@ export function getNavigationConfig(
           label: 'Configuration'
         },
         {
+          id: 'server',
+          icon: 'server',
+          label: 'Server'
+        },
+        {
           id: 'ai',
           icon: 'ai',
           label: 'AI Assistant'
