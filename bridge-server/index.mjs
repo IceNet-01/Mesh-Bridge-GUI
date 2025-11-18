@@ -69,6 +69,19 @@ class MeshtasticBridgeServer {
     this.enableSmartMatching = true;  // Recommended: true for correct cross-index forwarding
     this.channelMap = null;           // Only used when enableSmartMatching = false
 
+    // ===== ADVANCED FORWARDING OPTIONS =====
+    // Forward node announcements (NODEINFO_APP packets) across bridge
+    // Useful for: Bridging separate meshes so nodes become aware of each other
+    // Warning: May create confusion if both radios are on same mesh
+    this.forwardNodeInfo = false;     // Enable/disable node announcement forwarding
+    this.forwardNodeInfoRateLimit = new Map(); // Track last forward time per node (prevent spam)
+
+    // Forward encrypted messages by channel INDEX instead of PSK matching
+    // When true: "Channel 0 → Channel 0" regardless of encryption keys
+    // When false: Only forward if PSKs match
+    // Use case: Bridging two separate encrypted meshes with different keys
+    this.forwardEncryptedByIndex = false;  // Enable index-based encrypted forwarding
+
     // ===== COMMAND SYSTEM CONFIGURATION =====
     // Interactive bridge commands triggered by prefix (default: #)
     // Users can send commands like "#weather Seattle" or "#ping"
@@ -135,6 +148,8 @@ class MeshtasticBridgeServer {
     console.log(`\n⚙️  BRIDGE CONFIGURATION:`);
     console.log(`   Smart channel matching: ${this.enableSmartMatching ? 'ENABLED (recommended)' : 'DISABLED'}`);
     console.log(`   Manual channel map: ${this.channelMap ? JSON.stringify(this.channelMap) : 'None (auto-detect)'}`);
+    console.log(`   Forward node announcements: ${this.forwardNodeInfo ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Forward encrypted by index: ${this.forwardEncryptedByIndex ? 'ENABLED' : 'DISABLED'}`);
     console.log(`   Command system: ${this.commandsEnabled ? 'ENABLED' : 'DISABLED'}`);
     if (this.commandsEnabled) {
       console.log(`   Command prefix: ${this.commandPrefix}`);
@@ -604,6 +619,10 @@ class MeshtasticBridgeServer {
         this.handleMessagePacket(radioId, portPath, packet, protocolHandler.getProtocolName());
       });
 
+      protocolHandler.on('nodeinfo-packet', (packet) => {
+        this.handleNodeInfoPacket(radioId, packet);
+      });
+
       protocolHandler.on('nodeInfo', async (nodeInfo) => {
         console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
         const radio = this.radios.get(radioId);
@@ -1020,6 +1039,59 @@ class MeshtasticBridgeServer {
       }
     } catch (error) {
       console.error('❌ Error handling message packet:', error, packet);
+    }
+  }
+
+  /**
+   * Handle node info announcement packets
+   * Forwards node announcements to other radios if enabled
+   */
+  handleNodeInfoPacket(radioId, packet) {
+    try {
+      if (!this.forwardNodeInfo) {
+        // Node info forwarding disabled
+        return;
+      }
+
+      console.log(`📡 Node info packet from ${radioId}:`, {
+        from: packet.from,
+        longName: packet.data?.longName,
+        channel: packet.channel
+      });
+
+      // Check if this is from one of our bridge radios (prevent forwarding our own announcements)
+      const isFromOurBridgeRadio = Array.from(this.radios.values()).some(
+        radio => radio.nodeNum === packet.from
+      );
+
+      if (isFromOurBridgeRadio) {
+        console.log(`🔁 Node info from our own bridge radio ${packet.from}, skipping forward`);
+        return;
+      }
+
+      // Rate limiting: Only forward each node's announcement once per 5 minutes
+      const nodeId = packet.from.toString();
+      const lastForward = this.forwardNodeInfoRateLimit.get(nodeId);
+      const now = Date.now();
+
+      if (lastForward && (now - lastForward) < 300000) { // 5 minutes
+        console.log(`⏱️  Rate limit: Node ${nodeId} announcement forwarded ${Math.floor((now - lastForward) / 1000)}s ago, skipping`);
+        return;
+      }
+
+      // Mark as forwarded
+      this.forwardNodeInfoRateLimit.set(nodeId, now);
+
+      // Clean up old entries (keep only last 100 nodes)
+      if (this.forwardNodeInfoRateLimit.size > 100) {
+        const firstKey = this.forwardNodeInfoRateLimit.keys().next().value;
+        this.forwardNodeInfoRateLimit.delete(firstKey);
+      }
+
+      console.log(`🌉 Forwarding node info to other radios (node: ${packet.data?.shortName || packet.from})`);
+      this.forwardNodeInfoToOtherRadios(radioId, packet);
+    } catch (error) {
+      console.error('❌ Error handling node info packet:', error, packet);
     }
   }
 
@@ -1784,7 +1856,13 @@ class MeshtasticBridgeServer {
       console.log(`🔀 [SMART MATCH] Forwarding from source channel ${channel}:`);
       console.log(`   Name: "${sourceChannel.name}"`);
       console.log(`   PSK: ${sourceChannel.psk.substring(0, 16)}...`);
-      console.log(`   Searching for matching channel on other radios...`);
+
+      // Check if index-based encrypted forwarding is enabled
+      if (this.forwardEncryptedByIndex) {
+        console.log(`   [INDEX MODE OVERRIDE] Forward encrypted by index enabled - forwarding to channel ${channel} regardless of PSK`);
+      } else {
+        console.log(`   Searching for matching channel on other radios...`);
+      }
 
       // Forward to each radio that has matching channel configuration
       const forwardPromises = otherRadios.map(async ([targetRadioId, radio]) => {
@@ -1793,6 +1871,22 @@ class MeshtasticBridgeServer {
           // Check if source and target are different protocols
           const sourceProtocol = sourceRadio.protocolType;
           const targetProtocol = radio.protocolType;
+
+          // ===== CHANNEL INDEX FORWARDING MODE =====
+          if (this.forwardEncryptedByIndex) {
+            // Forward to same channel index regardless of PSK
+            console.log(`  📍 [INDEX MODE] Forwarding to ${targetRadioId} on channel ${channel} (PSK-agnostic)`);
+
+            // Check if target radio has this channel index
+            if (!radio.channels || !radio.channels.has(channel)) {
+              console.warn(`⚠️  Target radio ${targetRadioId} doesn't have channel ${channel}, skipping`);
+              return { radioId: targetRadioId, success: false, reason: 'channel_not_found' };
+            }
+
+            await radio.protocol.sendMessage(text, channel, { wantAck: false });
+            console.log(`✅ Forwarded to ${targetRadioId} on channel ${channel} (index-based)`);
+            return { radioId: targetRadioId, success: true, targetChannel: channel, mode: 'index' };
+          }
 
           // ===== MESHTASTIC CHANNEL FORWARDING =====
           // Search ALL channels on target radio for matching PSK
@@ -1818,6 +1912,7 @@ class MeshtasticBridgeServer {
           if (matchingChannelIndex === null) {
             console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
             console.warn(`    To forward this channel, configure it on ${targetRadioId} with same PSK`);
+            console.warn(`    OR enable "Forward Encrypted By Index" to forward channel ${channel}→${channel} regardless of PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 
@@ -1848,6 +1943,26 @@ class MeshtasticBridgeServer {
       }
     } catch (error) {
       console.error('❌ Error in forwardToOtherRadios:', error);
+    }
+  }
+
+  /**
+   * Forward node info announcement to other radios
+   * NOTE: This is a placeholder - full implementation requires sending raw NODEINFO packets
+   * which the current Meshtastic library doesn't easily support
+   */
+  async forwardNodeInfoToOtherRadios(sourceRadioId, packet) {
+    try {
+      console.log(`📡 [NODE INFO FORWARD] Would forward node announcement from ${packet.data?.shortName || packet.from}`);
+      console.log(`   ⚠️  Note: Full node info forwarding requires low-level protocol access`);
+      console.log(`   Current limitation: Meshtastic library doesn't expose sendNodeInfo() method`);
+      console.log(`   Nodes on the other mesh will NOT see this announcement (feature incomplete)`);
+
+      // TODO: Implement actual node info forwarding when library supports it
+      // For now, this is logged but not forwarded
+      // Future enhancement: Use raw protocol buffer messages to forward NODEINFO_APP packets
+    } catch (error) {
+      console.error('❌ Error in forwardNodeInfoToOtherRadios:', error);
     }
   }
 

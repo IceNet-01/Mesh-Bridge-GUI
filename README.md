@@ -70,6 +70,19 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 - **Web UI configuration** - configure and test from the interface
 - **Perfect for alerts** - notify yourself from remote locations
 
+🚨 **Emergency Response System** (NEW in 2.0)
+- **SOS emergency tracking** - auto-detects emergency keywords (#sos, #emergency, #help, #911, mayday, etc.)
+- **Auto-response** - automatically sends help instructions and requests GPS location
+- **Status tracking** - manage emergencies through active, responding, and resolved states
+- **Critical info display** - shows GPS coordinates, battery level, signal strength (SNR)
+- **Emergency broadcasting** - broadcast emergencies to all nodes on the mesh
+- **Google Maps integration** - view emergency locations directly in maps
+- **NWS weather alerts** - fetch and auto-broadcast severe weather warnings from National Weather Service
+- **Weather monitoring** - monitor by state or GPS coordinates with configurable intervals
+- **Severity-based alerts** - color-coded alerts (Extreme, Severe, Moderate, Minor)
+- **Audio alerts** - plays sound when new emergencies or severe weather detected
+- **Safety protocols** - built-in emergency response documentation and procedures
+
 🎨 **Modern UI**
 - Clean, dark-themed interface
 - Responsive design with Tailwind CSS
@@ -255,10 +268,13 @@ npm run bridge
 - 🤖 **AI Assistant** - Ask questions via `#ai` commands and get responses on your radio screen
 - 📧 **Email Gateway** - Send emails from remote locations via `#email` commands
 - 💬 **Discord Integration** - Post status updates to Discord via `#discord` commands
+- 🚨 **Emergency SOS** - Automatic detection and response for emergencies with `#sos`
+- 🌩️ **Weather Alerts** - Receive severe weather warnings from National Weather Service
 - 🌤️ **Information Services** - Get weather, time, status info via commands
 - 📊 **Monitoring** - View all mesh traffic in a clean web interface
 - 📝 **Message History** - Keep track of all messages with timestamps
 - 🔍 **Node Discovery** - See all nodes on your mesh network
+- 🗺️ **GPS Tracking** - View node locations on interactive maps
 
 **Example Single Radio Workflow:**
 ```
@@ -266,7 +282,9 @@ You're hiking remotely with one radio:
 • #ai What plants are safe to eat in Pacific Northwest?
 • #weather Seattle
 • #email Reached checkpoint 3, all good
-• #notify Emergency - need pickup at coordinates
+• #sos fell and injured ankle, need assistance
+  (Bridge auto-responds requesting GPS and coordinating help)
+• Receive NWS alert: "⚠️ Flash Flood Warning for your area"
 ```
 
 All commands work perfectly with one radio - no bridging required!
@@ -431,9 +449,14 @@ To bridge/repeat encrypted private channels:
 - **Dashboard**: Overview of connected radio(s) and recent messages
 - **Messages**: Live feed of all messages from your radio(s)
 - **Radios**: Detailed status of each connected radio
+- **Map**: Visualize node locations on an interactive map
+- **TAK**: Team Awareness Kit style tactical view
+- **Site Planner**: Plan and visualize mesh network coverage
+- **Emergency/SOS**: Monitor SOS emergencies and broadcast severe weather alerts
 - **Logs**: System logs for troubleshooting
 - **AI Assistant**: Configure and manage local AI models
 - **Communication**: Configure email and Discord notifications
+- **MQTT**: Configure MQTT broker integration
 
 ### 6. AI Assistant Setup
 
@@ -578,6 +601,155 @@ Configure email and Discord notifications to send messages from your radio to ex
 - Check webhook hasn't been deleted in Discord
 - Test webhook URL directly with curl or Postman
 
+### 8. Emergency Response System
+
+The Emergency Response System provides comprehensive safety features including SOS emergency tracking and severe weather alerts.
+
+#### SOS Emergency Tracking
+
+The system automatically monitors all mesh messages for emergency keywords and provides immediate response coordination.
+
+**Monitored Keywords:**
+- `#sos`, `sos`
+- `#emergency`, `emergency`
+- `#help`
+- `#911`, `911`
+- `#rescue`, `rescue`
+- `#urgent`, `urgent`
+- `mayday`
+
+**How It Works:**
+
+1. **Detection** - When someone sends a message containing an emergency keyword:
+   ```
+   User sends: "#sos fell and injured, need help"
+   ```
+
+2. **Auto-Response** - Bridge automatically responds with help instructions:
+   - Requests GPS location if not already shared
+   - Requests battery status
+   - Provides calm reassurance
+   - Notifies that help is being coordinated
+
+3. **Emergency Tracking** - Web UI displays:
+   - Active emergency with pulsing red indicator
+   - Node name and location (if GPS available)
+   - Battery level and signal strength
+   - Time since emergency started
+   - Number of responses sent
+
+4. **Operator Actions** - Emergency coordinators can:
+   - Mark emergency as "Responding" (help en route)
+   - Broadcast emergency to all nodes
+   - Send custom instructions
+   - View location in Google Maps
+   - Mark emergency as "Resolved"
+
+**Emergency States:**
+- 🔴 **Active** (red, pulsing) - Immediate attention needed
+- 🟡 **Responding** (yellow) - Help is on the way
+- 🟢 **Resolved** (green) - Successfully handled
+
+**Settings:**
+- **Auto-Response**: Automatically send help instructions (default: ON)
+- **Alert Sound**: Play audio alert for new emergencies (default: ON)
+
+#### NWS Weather Alerts
+
+Fetches severe weather warnings from the National Weather Service and can auto-broadcast to the mesh network.
+
+**Setup:**
+
+1. **Open Web UI** → Navigate to **"Emergency / SOS"** tab
+
+2. **Enable Weather Monitoring** - Toggle to ON
+
+3. **Choose Monitoring Method**:
+   - **By State**: Select your state from dropdown (all 50 US states supported)
+   - **By GPS Coordinates**: Enter latitude/longitude for precise location
+
+4. **Configure Settings**:
+   - **Update Interval**: How often to check for new alerts (default: 5 minutes)
+   - **Auto-Broadcast Severe Alerts**: Automatically send extreme weather warnings to mesh (default: ON)
+
+5. **Monitor Alerts**:
+   - Active weather alerts appear in the interface
+   - Click alert to view full details and instructions
+   - Manually broadcast any alert with "Broadcast Alert" button
+
+**Alert Severity Levels:**
+- 🔴 **Extreme** - Tornado Warning, Hurricane Warning, Extreme Wind Warning
+- 🟠 **Severe** - Severe Thunderstorm Warning, Flash Flood Warning
+- 🟡 **Moderate** - Flood Watch, Winter Storm Watch
+- 🔵 **Minor** - Special Weather Statements
+
+**Auto-Broadcast Triggers:**
+- Severity = Extreme
+- Severity = Severe AND Urgency = Immediate
+- Specific events: Tornado Warning, Flash Flood Warning, Hurricane Warning, etc.
+
+**Broadcast Format:**
+```
+🌩️ NWS ALERT: Tornado Warning
+📍 King County, WA
+⚠️ Extreme - Immediate
+Tornado spotted 5 miles south of Seattle moving northeast...
+📋 Take shelter immediately in basement or interior room...
+⏰ Expires: 3:45 PM
+```
+
+**Use Cases:**
+- **Hurricane prep**: Auto-notify mesh network of approaching storms
+- **Tornado safety**: Immediate warnings to all nodes in affected area
+- **Flash flood alerts**: Critical for hiking/camping groups
+- **Severe thunderstorms**: Keep outdoor events informed
+- **Winter storms**: Alert remote locations before power/communication loss
+
+**Features:**
+- Automatic deduplication (won't broadcast same alert multiple times)
+- Configurable monitoring location
+- Manual broadcast override for any alert
+- Detailed safety instructions included
+- Expiration tracking
+
+#### Emergency Protocol Documentation
+
+The Emergency/SOS tab includes built-in protocol documentation:
+
+**For Users Needing Help:**
+1. Send message with keyword: `#sos` or `#emergency`
+2. Share GPS location (Settings → Position → Send Now)
+3. Include details: injury, location, number of people
+4. Stay calm and await response
+5. Conserve device battery if possible
+
+**For Emergency Coordinators:**
+- Receive immediate alert with position
+- Send help instructions and status updates
+- Coordinate rescue if needed
+- Monitor battery and signal status
+- Track emergency through resolution
+
+#### Troubleshooting
+
+**"Weather alerts not updating"**
+- Check internet connection (NWS API requires internet)
+- Verify update interval hasn't been set too high
+- Click "Refresh" button to force update
+- Check browser console for API errors
+
+**"Auto-broadcast not working"**
+- Ensure "Auto-Broadcast Severe Alerts" toggle is ON
+- Verify at least one radio is connected
+- Check that alerts meet severity threshold (Extreme or Severe+Immediate)
+- Review logs for broadcast confirmation
+
+**"Emergency not detected"**
+- Verify keyword is in the monitored list
+- Check message actually sent (not draft)
+- Look for emergency in "Emergency Events" section
+- Ensure Emergency/SOS tab is loaded (uses real-time monitoring)
+
 ## Configuration
 
 ### Bridge Server Settings
@@ -598,7 +770,15 @@ this.channelMap = null;  // e.g., {0: 3} to force ch0→ch3 forwarding
 
 ⚠️ **This is an ALPHA release** - expect bugs!
 
-**Recently Fixed:**
+**Recently Added:**
+- ✅ **Emergency Response System** - SOS tracking with auto-response and emergency coordination
+- ✅ **NWS Weather Alerts** - Severe weather monitoring and auto-broadcast to mesh network
+- ✅ **TAK Tactical View** - Team Awareness Kit style tactical display
+- ✅ **Site Planner** - Mesh network coverage planning and visualization
+- ✅ **MQTT Integration** - Connect to MQTT brokers for IoT integration
+- ✅ **Map View** - Interactive map with node locations
+
+**Previously Fixed:**
 - ✅ Radio connection now shows instant feedback (connecting → connected status)
 - ✅ Radio metrics display correctly with all required fields
 - ✅ Message deduplication working in both backend and UI
@@ -625,7 +805,20 @@ Mesh-Bridge-GUI/
 ├── src/
 │   └── renderer/
 │       ├── components/        # React UI components
+│       │   ├── Dashboard.tsx
+│       │   ├── RadioList.tsx
+│       │   ├── NodeList.tsx
+│       │   ├── MessageMonitor.tsx
+│       │   ├── MapView.tsx
+│       │   ├── TacticalView.tsx
+│       │   ├── SitePlanner.tsx
+│       │   ├── EmergencyResponse.tsx    # NEW: SOS & Weather Alerts
+│       │   ├── AISettings.tsx
+│       │   ├── CommunicationSettings.tsx
+│       │   └── MQTTSettings.tsx
 │       ├── lib/               # WebSocket manager, utilities
+│       │   ├── webSocketManager.ts
+│       │   └── weatherService.ts         # NEW: NWS API integration
 │       ├── store/             # Zustand state management
 │       ├── App.tsx            # Main app component
 │       └── types.ts           # TypeScript types
@@ -749,6 +942,8 @@ This is normal! The `device.configure()` call takes 10-30 seconds. You'll see:
 | AI Assistant | ✅ Yes (Ollama) | ❌ No |
 | Email Notifications | ✅ Yes (SMTP) | ❌ No |
 | Discord Integration | ✅ Yes (Webhooks) | ❌ No |
+| SOS Emergency Tracking | ✅ Yes (auto-detect) | ❌ No |
+| Weather Alerts (NWS) | ✅ Yes (auto-broadcast) | ❌ No |
 | Interactive Commands | ✅ 16 commands | ❌ No |
 | Real-time Monitoring | ✅ Dashboard | ⚠️ Logs only |
 | Configuration | ✅ Visual + code | ⚠️ Code only |
@@ -812,6 +1007,11 @@ See the [LICENSE](LICENSE) file for complete terms and conditions.
 - Home/personal mesh networks
 - Single radio with AI/email/Discord features
 - Multi-radio message bridging
+- Emergency response coordination and SOS tracking
+- Severe weather monitoring and alerting
+- Search and rescue operations
+- Outdoor recreation safety (hiking, camping, climbing)
+- Event coordination with weather monitoring
 - Learning about Meshtastic
 - Remote monitoring and notifications
 - Linux servers with systemd
