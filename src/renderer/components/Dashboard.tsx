@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 interface DashboardProps {
   radios: Radio[];
-  statistics: Statistics;
+  statistics: Statistics | null;
   messages: Message[];
 }
 
@@ -58,22 +58,22 @@ function Dashboard({ radios, statistics, messages }: DashboardProps) {
         />
         <StatCard
           title="Messages Received"
-          value={statistics.totalMessagesReceived}
-          subtitle={`${statistics.messageRatePerMinute}/min`}
+          value={statistics?.totalMessagesReceived ?? 0}
+          subtitle={`${statistics?.messageRatePerMinute ?? 0}/min`}
           icon="inbox"
           color="green"
         />
         <StatCard
           title="Messages Forwarded"
-          value={statistics.totalMessagesForwarded}
-          subtitle={`${statistics.totalMessagesDuplicate} duplicates`}
+          value={statistics?.totalMessagesForwarded ?? 0}
+          subtitle={`${statistics?.totalMessagesDuplicate ?? 0} duplicates`}
           icon="forward"
           color="purple"
         />
         <StatCard
           title="Uptime"
-          value={formatUptime(statistics.uptime)}
-          subtitle={statistics.totalErrors > 0 ? `${statistics.totalErrors} errors` : 'No errors'}
+          value={statistics ? formatUptime(statistics.uptime) : '0h 0m 0s'}
+          subtitle={statistics && statistics.totalErrors > 0 ? `${statistics.totalErrors} errors` : 'No errors'}
           icon="clock"
           color="orange"
         />
