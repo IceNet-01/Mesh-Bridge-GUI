@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import type { MeshNode, Radio } from '../types';
+import { NodeDetailModal } from './NodeDetailModal';
 
 interface NodeListProps {
   nodes: MeshNode[];
@@ -19,6 +20,7 @@ function NodeList({ nodes, radios }: NodeListProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [filterHasGPS, setFilterHasGPS] = useState<'all' | 'gps' | 'no-gps'>('all');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<MeshNode | null>(null);
 
   const handleDeleteNode = (nodeId: string, nodeName: string) => {
     if (confirm(`Delete node "${nodeName}" (${nodeId}) from database?`)) {
@@ -261,7 +263,11 @@ function NodeList({ nodes, radios }: NodeListProps) {
                   const nodeIsRadio = isRadio(node.nodeId);
 
                   return (
-                    <tr key={node.nodeId} className="hover:bg-slate-800/30 transition-colors">
+                    <tr
+                      key={node.nodeId}
+                      className="hover:bg-slate-800/30 transition-colors cursor-pointer"
+                      onClick={() => setSelectedNode(node)}
+                    >
                       <td className="px-4 py-3">
                         {nodeIsRadio ? (
                           <span className="badge-primary">Radio</span>
@@ -387,7 +393,10 @@ function NodeList({ nodes, radios }: NodeListProps) {
                       </td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => handleDeleteNode(node.nodeId, node.longName)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNode(node.nodeId, node.longName);
+                          }}
                           className="text-red-400 hover:text-red-300 transition-colors text-sm"
                           title="Delete node from database"
                         >
@@ -407,6 +416,14 @@ function NodeList({ nodes, radios }: NodeListProps) {
       <div className="text-sm text-slate-400 text-center">
         Showing {filteredAndSortedNodes.length} of {nodes.length} total nodes
       </div>
+
+      {/* Node Detail Modal */}
+      {selectedNode && (
+        <NodeDetailModal
+          node={selectedNode}
+          onClose={() => setSelectedNode(null)}
+        />
+      )}
     </div>
   );
 }
