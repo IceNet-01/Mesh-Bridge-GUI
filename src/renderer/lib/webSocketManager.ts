@@ -240,18 +240,37 @@ export class WebSocketRadioManager {
       case 'node-info':
         // Node information from mesh network
         if (data.node) {
+          // Get existing node data to merge with incoming data
+          const existingNode = this.nodes.get(data.node.nodeId);
+
           const node: MeshNode = {
+            // Start with existing node data (if any)
+            ...existingNode,
+            // Overlay with new data
             ...data.node,
             lastHeard: new Date(data.node.lastHeard),
             position: data.node.position ? {
               ...data.node.position,
               time: data.node.position.time ? new Date(data.node.position.time) : undefined
-            } : undefined
+            } : existingNode?.position, // Keep existing position if new one is undefined
+            // Preserve environmental data from existing node if not in new data
+            temperature: data.node.temperature !== undefined ? data.node.temperature : existingNode?.temperature,
+            humidity: data.node.humidity !== undefined ? data.node.humidity : existingNode?.humidity,
+            pressure: data.node.pressure !== undefined ? data.node.pressure : existingNode?.pressure,
           };
 
           this.nodes.set(node.nodeId, node);
           this.saveNodesToStorage(); // Persist to localStorage
           this.emit('node-update', node);
+
+          // Enhanced logging for environmental data
+          if (node.temperature !== undefined || node.humidity !== undefined || node.pressure !== undefined) {
+            const envData = [];
+            if (node.temperature !== undefined) envData.push(`temp: ${node.temperature.toFixed(1)}°C`);
+            if (node.humidity !== undefined) envData.push(`humidity: ${node.humidity.toFixed(0)}%`);
+            if (node.pressure !== undefined) envData.push(`pressure: ${node.pressure.toFixed(1)}hPa`);
+            this.log('info', `🌡️ Node ${node.shortName} (${node.nodeId}) environmental: ${envData.join(', ')}`, 'node');
+          }
 
           // Enhanced logging to help debug map issues
           if (node.position) {
