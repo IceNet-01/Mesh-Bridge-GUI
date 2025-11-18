@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MQTTConfig, MeshNode } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MQTTConfig, MeshNode, TelemetrySnapshot } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -14,6 +14,7 @@ interface AppStore {
   messages: Message[];
   nodes: MeshNode[];
   bridgeConfig: BridgeConfig | null;
+  telemetryHistory: Map<string, TelemetrySnapshot[]>; // nodeId -> snapshots
 
   // Auto-scan state
   autoScanEnabled: boolean;
@@ -46,6 +47,7 @@ interface AppStore {
   clearLogs: () => void;
   deleteNode: (nodeId: string) => void;
   clearAllNodes: () => void;
+  getNodeTelemetryHistory: (nodeId: string) => TelemetrySnapshot[];
 
   // AI Actions
   getAIConfig: () => Promise<void>;
@@ -111,13 +113,58 @@ export const useStore = create<AppStore>((set, get) => {
     set(state => {
       // Update or add node
       const existingIndex = state.nodes.findIndex(n => n.nodeId === node.nodeId);
+      let updatedNodes: MeshNode[];
       if (existingIndex >= 0) {
         const updated = [...state.nodes];
         updated[existingIndex] = node;
-        return { nodes: updated };
+        updatedNodes = updated;
       } else {
-        return { nodes: [...state.nodes, node] };
+        updatedNodes = [...state.nodes, node];
       }
+
+      // Capture telemetry snapshot if any telemetry data exists
+      const hasTelemetry =
+        node.batteryLevel !== undefined ||
+        node.voltage !== undefined ||
+        node.temperature !== undefined ||
+        node.humidity !== undefined ||
+        node.pressure !== undefined ||
+        node.snr !== undefined ||
+        node.channelUtilization !== undefined ||
+        node.airUtilTx !== undefined;
+
+      if (hasTelemetry) {
+        const snapshot: TelemetrySnapshot = {
+          timestamp: new Date(),
+          nodeId: node.nodeId,
+          batteryLevel: node.batteryLevel,
+          voltage: node.voltage,
+          temperature: node.temperature,
+          humidity: node.humidity,
+          pressure: node.pressure,
+          snr: node.snr,
+          channelUtilization: node.channelUtilization,
+          airUtilTx: node.airUtilTx,
+        };
+
+        const newHistory = new Map(state.telemetryHistory);
+        const existingSnapshots = newHistory.get(node.nodeId) || [];
+
+        // Add new snapshot
+        const updatedSnapshots = [...existingSnapshots, snapshot];
+
+        // Keep last 24 hours of snapshots (assuming ~5min intervals = 288 snapshots/day)
+        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const filteredSnapshots = updatedSnapshots.filter(
+          s => s.timestamp.getTime() > oneDayAgo
+        );
+
+        newHistory.set(node.nodeId, filteredSnapshots);
+
+        return { nodes: updatedNodes, telemetryHistory: newHistory };
+      }
+
+      return { nodes: updatedNodes };
     });
   });
 
@@ -173,6 +220,7 @@ export const useStore = create<AppStore>((set, get) => {
     messages: [],
     nodes: [],
     bridgeConfig: null,
+    telemetryHistory: new Map(),
     autoScanEnabled: false,
     autoScanInterval: 30000, // 30 seconds default
     lastScan: null,
@@ -353,7 +401,12 @@ export const useStore = create<AppStore>((set, get) => {
 
     clearAllNodes: () => {
       manager.clearAllNodes();
-      set({ nodes: [] });
+      set({ nodes: [], telemetryHistory: new Map() });
+    },
+
+    getNodeTelemetryHistory: (nodeId: string) => {
+      const state = get();
+      return state.telemetryHistory.get(nodeId) || [];
     },
 
     // AI Actions

@@ -1,5 +1,7 @@
 import { MeshNode } from '../types';
 import { formatTimeAgo, formatDateTime, formatCoordinates } from '../lib/formatters';
+import { useStore } from '../store/useStore';
+import { TelemetryChart } from './TelemetryChart';
 
 interface NodeDetailModalProps {
   node: MeshNode;
@@ -7,6 +9,9 @@ interface NodeDetailModalProps {
 }
 
 export function NodeDetailModal({ node, onClose }: NodeDetailModalProps) {
+  // Get telemetry history from store
+  const getNodeTelemetryHistory = useStore(state => state.getNodeTelemetryHistory);
+  const telemetryHistory = getNodeTelemetryHistory(node.nodeId);
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
@@ -209,18 +214,86 @@ export function NodeDetailModal({ node, onClose }: NodeDetailModalProps) {
             </section>
           )}
 
+          {/* Historical Telemetry Charts */}
+          {telemetryHistory.length > 0 && (
+            <section>
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Historical Telemetry (24 Hours)
+              </h3>
+
+              <div className="space-y-4">
+                {/* Temperature & Environmental */}
+                {telemetryHistory.some(s => s.temperature !== undefined || s.humidity !== undefined || s.pressure !== undefined) && (
+                  <TelemetryChart
+                    title="🌡️ Environmental Sensors"
+                    snapshots={telemetryHistory}
+                    dataKeys={[
+                      { key: 'temperature', label: 'Temperature', color: '#fb923c', unit: '°C' },
+                      { key: 'humidity', label: 'Humidity', color: '#60a5fa', unit: '%' },
+                      { key: 'pressure', label: 'Pressure', color: '#a78bfa', unit: ' hPa' },
+                    ]}
+                    height={250}
+                  />
+                )}
+
+                {/* Battery & Power */}
+                {telemetryHistory.some(s => s.batteryLevel !== undefined || s.voltage !== undefined) && (
+                  <TelemetryChart
+                    title="⚡ Power & Battery"
+                    snapshots={telemetryHistory}
+                    dataKeys={[
+                      { key: 'batteryLevel', label: 'Battery Level', color: '#facc15', unit: '%' },
+                      { key: 'voltage', label: 'Voltage', color: '#4ade80', unit: 'V' },
+                    ]}
+                    height={250}
+                  />
+                )}
+
+                {/* Signal Quality */}
+                {telemetryHistory.some(s => s.snr !== undefined) && (
+                  <TelemetryChart
+                    title="📡 Signal Quality"
+                    snapshots={telemetryHistory}
+                    dataKeys={[
+                      { key: 'snr', label: 'SNR', color: '#22d3ee', unit: ' dB' },
+                    ]}
+                    height={250}
+                  />
+                )}
+
+                {/* Network Utilization */}
+                {telemetryHistory.some(s => s.channelUtilization !== undefined || s.airUtilTx !== undefined) && (
+                  <TelemetryChart
+                    title="📊 Network Utilization"
+                    snapshots={telemetryHistory}
+                    dataKeys={[
+                      { key: 'channelUtilization', label: 'Channel Utilization', color: '#f472b6', unit: '%' },
+                      { key: 'airUtilTx', label: 'Air Util (TX)', color: '#c084fc', unit: '%' },
+                    ]}
+                    height={250}
+                  />
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Info Note */}
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-            <div className="flex gap-3">
-              <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="text-sm text-blue-300">
-                <strong className="font-semibold">Note:</strong> This view shows the most recent telemetry data for this node.
-                Historical telemetry tracking and charts are planned for a future update.
+          {telemetryHistory.length === 0 && (
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+              <div className="flex gap-3">
+                <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="text-sm text-blue-300">
+                  <strong className="font-semibold">Historical Data:</strong> Telemetry history will appear here as data is collected.
+                  Charts will show the last 24 hours of temperature, battery, signal quality, and network utilization data.
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}

@@ -118,6 +118,24 @@ export interface MeshNode {
   fromRadio: string; // Which radio saw this node
 }
 
+export interface TelemetrySnapshot {
+  timestamp: Date;
+  nodeId: string;
+  batteryLevel?: number;
+  voltage?: number;
+  temperature?: number;
+  humidity?: number;
+  pressure?: number;
+  snr?: number;
+  channelUtilization?: number;
+  airUtilTx?: number;
+}
+
+export interface NodeTelemetryHistory {
+  nodeId: string;
+  snapshots: TelemetrySnapshot[];
+}
+
 export interface LogEntry {
   id?: string;
   timestamp: Date;
