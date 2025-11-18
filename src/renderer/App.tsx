@@ -77,6 +77,8 @@ function App() {
         return { nodes, radios, messages, onSendMessage: sendMessage };
       case 'configuration':
         return { config: bridgeConfig, radios, onUpdate: updateBridgeConfig };
+      case 'server':
+        return { onSave: () => {} }; // Component handles reload
       case 'ai':
       case 'communication':
       case 'mqtt':

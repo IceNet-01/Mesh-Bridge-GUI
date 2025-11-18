@@ -29,8 +29,9 @@ export class WebSocketRadioManager {
   private readonly MESSAGE_RETENTION_DAYS = 7;
   private readonly NODE_RETENTION_DAYS = 180; // Keep node database for 6 months
 
-  constructor(bridgeUrl: string = 'ws://localhost:8080') {
-    this.bridgeUrl = bridgeUrl;
+  constructor(bridgeUrl?: string) {
+    // Use provided URL, or check localStorage, or fall back to smart default
+    this.bridgeUrl = bridgeUrl || this.getBridgeUrl();
     this.startTime = new Date();
     this.statistics = {
       uptime: 0,
@@ -111,6 +112,31 @@ export class WebSocketRadioManager {
       default:
         console.log(consoleMsg);
     }
+  }
+
+  /**
+   * Get bridge URL from localStorage or determine smart default
+   */
+  private getBridgeUrl(): string {
+    // Check localStorage first
+    const stored = localStorage.getItem('bridge-server-url');
+    if (stored) {
+      console.log(`[WebSocketManager] Using configured bridge URL: ${stored}`);
+      return stored;
+    }
+
+    // Smart default: If accessing via LAN IP, use that IP. Otherwise use localhost.
+    const hostname = window.location.hostname;
+
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '') {
+      const url = `ws://${hostname}:8080`;
+      console.log(`[WebSocketManager] Auto-detected bridge URL: ${url}`);
+      return url;
+    }
+
+    // Default to localhost
+    console.log(`[WebSocketManager] Using default bridge URL: ws://localhost:8080`);
+    return 'ws://localhost:8080';
   }
 
   /**

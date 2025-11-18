@@ -11,6 +11,7 @@ export type Tab =
   | 'networkhealth'
   | 'emergency'
   | 'configuration'
+  | 'server'
   | 'ai'
   | 'communication'
   | 'mqtt'
