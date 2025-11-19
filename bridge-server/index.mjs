@@ -791,7 +791,18 @@ class MeshtasticBridgeServer {
       });
 
       protocolHandler.on('node', (meshNode) => {
-        console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+        // Check if this is a telemetry update (has battery/temp but no real name)
+        const isTelemetry = (meshNode.batteryLevel !== undefined || meshNode.temperature !== undefined) &&
+                           (meshNode.longName === 'Unknown' || meshNode.shortName === '????');
+
+        if (isTelemetry) {
+          const details = [];
+          if (meshNode.batteryLevel !== undefined) details.push(`🔋${meshNode.batteryLevel}%`);
+          if (meshNode.temperature !== undefined) details.push(`🌡️${meshNode.temperature}°C`);
+          console.log(`📊 Telemetry update for ${meshNode.nodeId}: ${details.join(' ')}`);
+        } else {
+          console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+        }
 
         // Broadcast node info to clients
         this.broadcast({
