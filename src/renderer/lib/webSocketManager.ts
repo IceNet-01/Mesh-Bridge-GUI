@@ -15,6 +15,7 @@ export class WebSocketRadioManager {
   private messages: Map<string, Message> = new Map();
   private nodes: Map<string, MeshNode> = new Map(); // Track all mesh nodes
   private logs: LogEntry[] = [];
+  private consoleLines: Array<{ timestamp: string; level: string; message: string }> = []; // Raw console output
   private statistics: Statistics;
   private bridgeConfig: BridgeConfig;
   private startTime: Date;
@@ -211,6 +212,24 @@ export class WebSocketRadioManager {
         this.log('info', `Loaded ${data.messages.length} messages from history`);
         break;
 
+      case 'console-history':
+        // Load console output history from bridge
+        this.consoleLines = data.lines || [];
+        this.emit('console-update', this.consoleLines);
+        break;
+
+      case 'console-output':
+        // New console output line from bridge
+        if (data.line) {
+          this.consoleLines.push(data.line);
+          // Keep last 2000 lines
+          if (this.consoleLines.length > 2000) {
+            this.consoleLines = this.consoleLines.slice(-2000);
+          }
+          this.emit('console-update', this.consoleLines);
+        }
+        break;
+
       case 'radios':
         // Update radios list
         data.radios.forEach((radio: Radio) => {
@@ -266,8 +285,22 @@ export class WebSocketRadioManager {
       case 'node-info':
         // Node information from mesh network
         if (data.node) {
-          // Get existing node data to merge with incoming data
-          const existingNode = this.nodes.get(data.node.nodeId);
+          // DEDUPLICATION: Find existing node by numeric 'num' field (not nodeId string)
+          // This prevents duplicates when same node has different ID formats (hex vs decimal)
+          let existingNode = this.nodes.get(data.node.nodeId);
+          let oldNodeId: string | null = null;
+
+          if (!existingNode && data.node.num) {
+            // Check if node with same 'num' exists under different nodeId
+            for (const [key, node] of this.nodes.entries()) {
+              if (node.num === data.node.num) {
+                existingNode = node;
+                oldNodeId = key; // Track old key for cleanup
+                console.log(`[WebSocket] Found duplicate node: ${key} → ${data.node.nodeId} (num: ${data.node.num})`);
+                break;
+              }
+            }
+          }
 
           const node: MeshNode = {
             // Start with existing node data (if any)
@@ -275,6 +308,16 @@ export class WebSocketRadioManager {
             // Overlay with new data
             ...data.node,
             lastHeard: new Date(data.node.lastHeard),
+            // PRESERVE USER IDENTIFICATION: Don't overwrite valid names with "Unknown"
+            longName: (data.node.longName && data.node.longName !== 'Unknown')
+              ? data.node.longName
+              : (existingNode?.longName || data.node.longName),
+            shortName: (data.node.shortName && data.node.shortName !== '????')
+              ? data.node.shortName
+              : (existingNode?.shortName || data.node.shortName),
+            hwModel: (data.node.hwModel && data.node.hwModel !== 'Unknown')
+              ? data.node.hwModel
+              : (existingNode?.hwModel || data.node.hwModel),
             position: data.node.position ? {
               ...data.node.position,
               time: data.node.position.time ? new Date(data.node.position.time) : undefined
@@ -290,6 +333,12 @@ export class WebSocketRadioManager {
               ? data.node.pressure
               : existingNode?.pressure,
           };
+
+          // Remove old duplicate entry if nodeId format changed
+          if (oldNodeId && oldNodeId !== data.node.nodeId) {
+            this.nodes.delete(oldNodeId);
+            console.log(`[WebSocket] Removed duplicate node entry: ${oldNodeId}`);
+          }
 
           this.nodes.set(node.nodeId, node);
           this.saveNodesToStorage(); // Persist to localStorage

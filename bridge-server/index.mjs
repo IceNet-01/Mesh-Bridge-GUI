@@ -142,6 +142,12 @@ class MeshtasticBridgeServer {
     this.mqttRetain = false;                   // Retain messages
     this.mqttClient = null;                    // MQTT client instance
 
+    // ===== CONSOLE OUTPUT CAPTURE =====
+    // Capture all console output and broadcast to WebSocket clients for raw log viewing
+    this.consoleBuffer = [];                   // Buffer for raw console output
+    this.maxConsoleBuffer = 2000;              // Keep last 2000 lines
+    this.setupConsoleCapture();
+
     // Load persistent configuration (AI state, etc.)
     this.loadConfig();
 
@@ -171,6 +177,74 @@ class MeshtasticBridgeServer {
       console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
     }
     console.log('');
+  }
+
+  /**
+   * Setup console output capture to broadcast to WebSocket clients
+   */
+  setupConsoleCapture() {
+    // Store original console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    const originalInfo = console.info;
+
+    // Helper to capture and broadcast console output
+    const captureOutput = (level, args) => {
+      // Convert arguments to string
+      const message = args.map(arg =>
+        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+      ).join(' ');
+
+      // Add to buffer with timestamp
+      const line = {
+        timestamp: new Date().toISOString(),
+        level,
+        message
+      };
+
+      this.consoleBuffer.push(line);
+
+      // Trim buffer if too large
+      if (this.consoleBuffer.length > this.maxConsoleBuffer) {
+        this.consoleBuffer = this.consoleBuffer.slice(-this.maxConsoleBuffer);
+      }
+
+      // Broadcast to all connected WebSocket clients
+      this.broadcast({
+        type: 'console-output',
+        line
+      });
+    };
+
+    // Override console methods
+    console.log = (...args) => {
+      originalLog(...args);
+      captureOutput('log', args);
+    };
+
+    console.error = (...args) => {
+      originalError(...args);
+      captureOutput('error', args);
+    };
+
+    console.warn = (...args) => {
+      originalWarn(...args);
+      captureOutput('warn', args);
+    };
+
+    console.info = (...args) => {
+      originalInfo(...args);
+      captureOutput('info', args);
+    };
+
+    // Store originals for potential restoration
+    this.originalConsole = {
+      log: originalLog,
+      error: originalError,
+      warn: originalWarn,
+      info: originalInfo
+    };
   }
 
   /**
@@ -241,6 +315,12 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'history',
         messages: this.messageHistory
+      }));
+
+      // Send console output buffer to new client
+      ws.send(JSON.stringify({
+        type: 'console-history',
+        lines: this.consoleBuffer
       }));
 
       // Send current radio status with complete state
@@ -711,7 +791,18 @@ class MeshtasticBridgeServer {
       });
 
       protocolHandler.on('node', (meshNode) => {
-        console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+        // Check if this is a telemetry update (has battery/temp but no real name)
+        const isTelemetry = (meshNode.batteryLevel !== undefined || meshNode.temperature !== undefined) &&
+                           (meshNode.longName === 'Unknown' || meshNode.shortName === '????');
+
+        if (isTelemetry) {
+          const details = [];
+          if (meshNode.batteryLevel !== undefined) details.push(`🔋${meshNode.batteryLevel}%`);
+          if (meshNode.temperature !== undefined) details.push(`🌡️${meshNode.temperature}°C`);
+          console.log(`📊 Telemetry update for ${meshNode.nodeId}: ${details.join(' ')}`);
+        } else {
+          console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
+        }
 
         // Broadcast node info to clients
         this.broadcast({

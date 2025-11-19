@@ -11,6 +11,7 @@ interface AppStore {
   radios: Radio[];
   statistics: Statistics | null;
   logs: LogEntry[];
+  consoleLines: Array<{ timestamp: string; level: string; message: string }>; // Raw console output
   messages: Message[];
   nodes: MeshNode[];
   bridgeConfig: BridgeConfig | null;
@@ -92,6 +93,10 @@ export const useStore = create<AppStore>((set, get) => {
     set(state => ({ logs: [...state.logs, log].slice(-1000) }));
   });
 
+  manager.on('console-update', (consoleLines: Array<{ timestamp: string; level: string; message: string }>) => {
+    set({ consoleLines });
+  });
+
   manager.on('message-received', ({ message }: { radioId: string; message: Message }) => {
     set(state => {
       // Check if message already exists (prevent duplicates)
@@ -113,14 +118,28 @@ export const useStore = create<AppStore>((set, get) => {
 
   manager.on('node-update', (node: MeshNode) => {
     set(state => {
-      // Update or add node
-      const existingIndex = state.nodes.findIndex(n => n.nodeId === node.nodeId);
+      // DEDUPLICATION: Check by 'num' field first, then by nodeId
+      // This prevents duplicates when same node has different ID formats
+      let existingIndex = state.nodes.findIndex(n => n.nodeId === node.nodeId);
+      let duplicateIndex = -1;
+
+      if (existingIndex < 0 && node.num) {
+        // Node ID not found, check if node with same 'num' exists
+        duplicateIndex = state.nodes.findIndex(n => n.num === node.num);
+        if (duplicateIndex >= 0) {
+          console.log(`[Store] Found duplicate node by num: ${state.nodes[duplicateIndex].nodeId} → ${node.nodeId} (num: ${node.num})`);
+          existingIndex = duplicateIndex; // Treat duplicate as existing node
+        }
+      }
+
       let updatedNodes: MeshNode[];
       if (existingIndex >= 0) {
+        // Update existing node
         const updated = [...state.nodes];
         updated[existingIndex] = node;
         updatedNodes = updated;
       } else {
+        // Add new node
         updatedNodes = [...state.nodes, node];
       }
 
@@ -150,7 +169,18 @@ export const useStore = create<AppStore>((set, get) => {
         };
 
         const newHistory = new Map(state.telemetryHistory);
-        const existingSnapshots = newHistory.get(node.nodeId) || [];
+        let existingSnapshots = newHistory.get(node.nodeId) || [];
+
+        // If we merged a duplicate node, also merge its telemetry history
+        if (duplicateIndex >= 0 && state.nodes[duplicateIndex].nodeId !== node.nodeId) {
+          const oldNodeId = state.nodes[duplicateIndex].nodeId;
+          const oldSnapshots = newHistory.get(oldNodeId) || [];
+          if (oldSnapshots.length > 0) {
+            console.log(`[Store] Merging ${oldSnapshots.length} telemetry snapshots from duplicate node ${oldNodeId}`);
+            existingSnapshots = [...oldSnapshots, ...existingSnapshots];
+            newHistory.delete(oldNodeId); // Remove old history
+          }
+        }
 
         // Add new snapshot
         const updatedSnapshots = [...existingSnapshots, snapshot];
@@ -219,6 +249,7 @@ export const useStore = create<AppStore>((set, get) => {
     radios: [],
     statistics: null,
     logs: [],
+    consoleLines: [],
     messages: [],
     nodes: [],
     bridgeConfig: null,

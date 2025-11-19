@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LogEntry } from '../types';
 
 interface LogViewerProps {
   logs: LogEntry[];
+  consoleLines: Array<{ timestamp: string; level: string; message: string }>;
   onClear: () => void;
 }
 
-function LogViewer({ logs, onClear }: LogViewerProps) {
+function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
   const [filter, setFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const [viewMode, setViewMode] = useState<'structured' | 'raw'>('structured');
+  const consoleEndRef = useRef<HTMLDivElement>(null);
 
   const filteredLogs = logs.filter((log) => filter === 'all' || log.level === filter);
 
@@ -25,6 +27,27 @@ function LogViewer({ logs, onClear }: LogViewerProps) {
     warn: 'badge-warning',
     error: 'badge-error',
     debug: 'badge bg-slate-700 text-slate-300',
+  };
+
+  // Auto-scroll effect for console output
+  useEffect(() => {
+    if (autoScroll && viewMode === 'raw' && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleLines, autoScroll, viewMode]);
+
+  // Format timestamp for console display
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  // Color mapping for console output
+  const consoleColors = {
+    log: 'text-slate-300',
+    error: 'text-red-400',
+    warn: 'text-yellow-400',
+    info: 'text-blue-400',
   };
 
   return (
@@ -89,41 +112,30 @@ function LogViewer({ logs, onClear }: LogViewerProps) {
 
       {/* Logs Container */}
       <div className="card p-4 h-[600px] overflow-y-auto font-mono text-sm">
-        {filteredLogs.length === 0 ? (
+        {viewMode === 'raw' ? (
+          /* Raw Console View - Direct from Bridge Server */
+          consoleLines.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-slate-400">
+              No console output yet
+            </div>
+          ) : (
+            <div className="space-y-0 bg-black/50 p-4 rounded-lg">
+              {consoleLines.map((line, index) => {
+                const color = consoleColors[line.level as keyof typeof consoleColors] || 'text-slate-300';
+                return (
+                  <div key={index} className={`${color} leading-tight font-mono text-xs whitespace-pre-wrap break-words`}>
+                    <span className="text-slate-600">{formatTimestamp(line.timestamp)}</span>
+                    {' '}
+                    {line.message}
+                  </div>
+                );
+              })}
+              <div ref={consoleEndRef} />
+            </div>
+          )
+        ) : filteredLogs.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-400">
             No logs to display
-          </div>
-        ) : viewMode === 'raw' ? (
-          /* Raw Console View */
-          <div className="space-y-0 bg-black/50 p-4 rounded-lg">
-            {filteredLogs.map((log, index) => {
-              const levelPrefix = log.level.toUpperCase().padEnd(5);
-              const timestamp = new Date(log.timestamp).toLocaleTimeString();
-              const context = log.context ? `[${log.context}]` : '';
-              const radioId = log.radioId ? `[${log.radioId}]` : '';
-
-              return (
-                <div key={index} className={`${levelColors[log.level]} leading-relaxed`}>
-                  <span className="text-slate-500">{timestamp}</span>
-                  {' '}
-                  <span className="font-bold">{levelPrefix}</span>
-                  {radioId && <span className="text-blue-400"> {radioId}</span>}
-                  {context && <span className="text-cyan-400"> {context}</span>}
-                  {' '}
-                  {log.message}
-                  {log.error && (
-                    <div className="ml-20 text-red-400">
-                      Error: {log.error}
-                    </div>
-                  )}
-                  {log.data && (
-                    <div className="ml-20 text-slate-400 text-xs">
-                      {JSON.stringify(log.data)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
         ) : (
           /* Structured View */
