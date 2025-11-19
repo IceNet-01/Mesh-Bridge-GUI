@@ -14,6 +14,7 @@ function App() {
   const radios = useStore(state => state.radios);
   const statistics = useStore(state => state.statistics);
   const logs = useStore(state => state.logs);
+  const consoleLines = useStore(state => state.consoleLines);
   const messages = useStore(state => state.messages);
   const nodes = useStore(state => state.nodes);
   const bridgeConfig = useStore(state => state.bridgeConfig);
@@ -86,7 +87,7 @@ function App() {
       case 'mqtt':
         return {};
       case 'logs':
-        return { logs, onClear: clearLogs };
+        return { logs, consoleLines, onClear: clearLogs };
       default:
         return {};
     }

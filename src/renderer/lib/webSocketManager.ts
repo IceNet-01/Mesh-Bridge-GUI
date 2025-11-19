@@ -15,6 +15,7 @@ export class WebSocketRadioManager {
   private messages: Map<string, Message> = new Map();
   private nodes: Map<string, MeshNode> = new Map(); // Track all mesh nodes
   private logs: LogEntry[] = [];
+  private consoleLines: Array<{ timestamp: string; level: string; message: string }> = []; // Raw console output
   private statistics: Statistics;
   private bridgeConfig: BridgeConfig;
   private startTime: Date;
@@ -209,6 +210,24 @@ export class WebSocketRadioManager {
         });
         this.emit('messages-update', Array.from(this.messages.values()));
         this.log('info', `Loaded ${data.messages.length} messages from history`);
+        break;
+
+      case 'console-history':
+        // Load console output history from bridge
+        this.consoleLines = data.lines || [];
+        this.emit('console-update', this.consoleLines);
+        break;
+
+      case 'console-output':
+        // New console output line from bridge
+        if (data.line) {
+          this.consoleLines.push(data.line);
+          // Keep last 2000 lines
+          if (this.consoleLines.length > 2000) {
+            this.consoleLines = this.consoleLines.slice(-2000);
+          }
+          this.emit('console-update', this.consoleLines);
+        }
         break;
 
       case 'radios':

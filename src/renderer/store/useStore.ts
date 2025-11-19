@@ -11,6 +11,7 @@ interface AppStore {
   radios: Radio[];
   statistics: Statistics | null;
   logs: LogEntry[];
+  consoleLines: Array<{ timestamp: string; level: string; message: string }>; // Raw console output
   messages: Message[];
   nodes: MeshNode[];
   bridgeConfig: BridgeConfig | null;
@@ -90,6 +91,10 @@ export const useStore = create<AppStore>((set, get) => {
 
   manager.on('log-message', (log: LogEntry) => {
     set(state => ({ logs: [...state.logs, log].slice(-1000) }));
+  });
+
+  manager.on('console-update', (consoleLines: Array<{ timestamp: string; level: string; message: string }>) => {
+    set({ consoleLines });
   });
 
   manager.on('message-received', ({ message }: { radioId: string; message: Message }) => {
@@ -219,6 +224,7 @@ export const useStore = create<AppStore>((set, get) => {
     radios: [],
     statistics: null,
     logs: [],
+    consoleLines: [],
     messages: [],
     nodes: [],
     bridgeConfig: null,
