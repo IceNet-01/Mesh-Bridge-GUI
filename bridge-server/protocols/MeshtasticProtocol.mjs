@@ -239,15 +239,22 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to ALL mesh packets
     this.device.events.onMeshPacket.subscribe((packet) => {
-      console.log(`[Meshtastic] Raw MeshPacket:`, {
-        from: packet.from,
-        to: packet.to,
-        channel: packet.channel,
-        decoded: packet.decoded ? {
-          portnum: packet.decoded.portnum,
-          payloadVariant: packet.decoded.payloadVariant
-        } : null
-      });
+      const nodeId = this.normalizeNodeId(packet.from);
+
+      // Portnum 3 = TEXT_MESSAGE_APP, 4 = POSITION_APP, 7 = NODEINFO_APP,
+      // 67 = TELEMETRY_APP, 71 = RANGE_TEST_APP, etc.
+      const portnumName = packet.decoded?.portnum === 3 ? 'TEXT' :
+                         packet.decoded?.portnum === 4 ? 'POSITION' :
+                         packet.decoded?.portnum === 7 ? 'NODEINFO' :
+                         packet.decoded?.portnum === 67 ? 'TELEMETRY' :
+                         packet.decoded?.portnum;
+
+      console.log(`[Meshtastic] 📦 MeshPacket from ${nodeId}: portnum=${portnumName} (${packet.decoded?.portnum}), channel=${packet.channel}, variant=${packet.decoded?.payloadVariant?.case}`);
+
+      // Log FULL packet data for telemetry packets
+      if (packet.decoded?.portnum === 67) {
+        console.log(`[Meshtastic] 🌡️ TELEMETRY MeshPacket full data:`, JSON.stringify(packet, null, 2));
+      }
     });
 
     // Subscribe to message packets
@@ -398,64 +405,92 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Subscribe to telemetry packets (device metrics)
     this.device.events.onTelemetryPacket.subscribe((telemetryPacket) => {
       const nodeId = this.normalizeNodeId(telemetryPacket.from);
-      console.log(`[Meshtastic] 📊 TELEMETRY from ${nodeId} (num: ${telemetryPacket.from})`);
+      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
+      console.log(`[Meshtastic] 📊 TELEMETRY PACKET from ${nodeId} (num: ${telemetryPacket.from})`);
+      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
+
       try {
+        // Log the COMPLETE telemetry packet structure
+        console.log(`[Meshtastic] 🔍 FULL TelemetryPacket structure:`, JSON.stringify(telemetryPacket, null, 2));
+
         const data = telemetryPacket.data;
         const update = {};
 
-        console.log(`[Meshtastic] Telemetry packet data types:`, {
-          hasDeviceMetrics: !!data.deviceMetrics,
-          hasEnvironmentMetrics: !!data.environmentMetrics,
-          hasPowerMetrics: !!data.powerMetrics,
-          hasAirQualityMetrics: !!data.airQualityMetrics
-        });
+        // The telemetry data uses a variant (discriminated union) pattern
+        // data.variant.case tells us which type of telemetry
+        // data.variant.value contains the actual metrics
+        console.log(`[Meshtastic] 📊 Telemetry variant type: ${data.variant?.case || 'none'}`);
 
-        // Device metrics (battery, voltage, etc)
-        if (data.deviceMetrics) {
-          update.batteryLevel = data.deviceMetrics.batteryLevel;
-          update.voltage = data.deviceMetrics.voltage;
-          update.channelUtilization = data.deviceMetrics.channelUtilization;
-          update.airUtilTx = data.deviceMetrics.airUtilTx;
-          update.uptimeSeconds = data.deviceMetrics.uptimeSeconds;
+        if (!data.variant || !data.variant.case) {
+          console.warn(`[Meshtastic] ⚠️ Telemetry packet has no variant data`);
+          return;
         }
 
-        // Environment metrics (temperature, humidity, pressure)
-        if (data.environmentMetrics) {
-          // DEBUG: Log ALL fields in environmentMetrics to diagnose field naming
-          console.log(`[Meshtastic] 🌡️ environmentMetrics raw data:`, JSON.stringify(data.environmentMetrics, null, 2));
-          console.log(`[Meshtastic] 🌡️ environmentMetrics keys:`, Object.keys(data.environmentMetrics));
+        // Handle different telemetry types based on variant.case
+        switch (data.variant.case) {
+          case 'deviceMetrics': {
+            const metrics = data.variant.value;
+            console.log(`[Meshtastic] 🔋 Device metrics:`, metrics);
+            update.batteryLevel = metrics.batteryLevel;
+            update.voltage = metrics.voltage;
+            update.channelUtilization = metrics.channelUtilization;
+            update.airUtilTx = metrics.airUtilTx;
+            update.uptimeSeconds = metrics.uptimeSeconds;
+            break;
+          }
 
-          // Try both camelCase and snake_case field names
-          update.temperature = data.environmentMetrics.temperature;
-          update.humidity = data.environmentMetrics.relativeHumidity || data.environmentMetrics.relative_humidity;
-          update.pressure = data.environmentMetrics.barometricPressure || data.environmentMetrics.barometric_pressure;
-          update.gasResistance = data.environmentMetrics.gasResistance || data.environmentMetrics.gas_resistance;
-          update.iaq = data.environmentMetrics.iaq;
+          case 'environmentMetrics': {
+            const metrics = data.variant.value;
+            console.log(`[Meshtastic] 🌡️ Environment metrics raw:`, metrics);
+            console.log(`[Meshtastic] 🌡️ Environment metrics keys:`, Object.keys(metrics));
 
-          console.log(`[Meshtastic] 🌡️ Extracted environmental values:`, {
-            temperature: update.temperature,
-            humidity: update.humidity,
-            pressure: update.pressure,
-            gasResistance: update.gasResistance,
-            iaq: update.iaq
-          });
-        }
+            // Extract environmental data (supports both camelCase and snake_case)
+            update.temperature = metrics.temperature;
+            update.humidity = metrics.relativeHumidity || metrics.relative_humidity;
+            update.pressure = metrics.barometricPressure || metrics.barometric_pressure;
+            update.gasResistance = metrics.gasResistance || metrics.gas_resistance;
+            update.iaq = metrics.iaq;
 
-        // Power metrics
-        if (data.powerMetrics) {
-          update.ch1Voltage = data.powerMetrics.ch1Voltage;
-          update.ch1Current = data.powerMetrics.ch1Current;
-          update.ch2Voltage = data.powerMetrics.ch2Voltage;
-          update.ch2Current = data.powerMetrics.ch2Current;
-          update.ch3Voltage = data.powerMetrics.ch3Voltage;
-          update.ch3Current = data.powerMetrics.ch3Current;
-        }
+            console.log(`[Meshtastic] 🌡️ Extracted environmental values:`, {
+              temperature: update.temperature,
+              humidity: update.humidity,
+              pressure: update.pressure,
+              gasResistance: update.gasResistance,
+              iaq: update.iaq
+            });
+            break;
+          }
 
-        // Air quality metrics
-        if (data.airQualityMetrics) {
-          update.pm10Standard = data.airQualityMetrics.pm10Standard;
-          update.pm25Standard = data.airQualityMetrics.pm25Standard;
-          update.pm100Standard = data.airQualityMetrics.pm100Standard;
+          case 'powerMetrics': {
+            const metrics = data.variant.value;
+            console.log(`[Meshtastic] ⚡ Power metrics:`, metrics);
+            update.ch1Voltage = metrics.ch1Voltage;
+            update.ch1Current = metrics.ch1Current;
+            update.ch2Voltage = metrics.ch2Voltage;
+            update.ch2Current = metrics.ch2Current;
+            update.ch3Voltage = metrics.ch3Voltage;
+            update.ch3Current = metrics.ch3Current;
+            break;
+          }
+
+          case 'airQualityMetrics': {
+            const metrics = data.variant.value;
+            console.log(`[Meshtastic] 💨 Air quality metrics:`, metrics);
+            update.pm10Standard = metrics.pm10Standard;
+            update.pm25Standard = metrics.pm25Standard;
+            update.pm100Standard = metrics.pm100Standard;
+            break;
+          }
+
+          case 'localStats': {
+            const metrics = data.variant.value;
+            console.log(`[Meshtastic] 📊 Local stats:`, metrics);
+            // Can add local stats handling here if needed
+            break;
+          }
+
+          default:
+            console.warn(`[Meshtastic] ⚠️ Unknown telemetry variant type: ${data.variant.case}`);
         }
 
         // Update catalog with telemetry data
