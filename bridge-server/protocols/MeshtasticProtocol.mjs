@@ -22,6 +22,21 @@ export class MeshtasticProtocol extends BaseProtocol {
     return 'meshtastic';
   }
 
+  /**
+   * Normalize node ID to consistent hex format with "!" prefix
+   * This ensures all node IDs use the same format regardless of packet type
+   * @param {number} nodeNum - Numeric node number
+   * @returns {string} Normalized node ID in format "!xxxxxxxx"
+   */
+  normalizeNodeId(nodeNum) {
+    if (typeof nodeNum !== 'number') {
+      console.warn(`[Meshtastic] Invalid nodeNum type: ${typeof nodeNum}, value:`, nodeNum);
+      return 'unknown';
+    }
+    // Convert to hex and pad to 8 characters, add "!" prefix
+    return '!' + nodeNum.toString(16).padStart(8, '0');
+  }
+
   async connect() {
     try {
       console.log(`[Meshtastic] Connecting to ${this.portPath}...`);
@@ -135,7 +150,7 @@ export class MeshtasticProtocol extends BaseProtocol {
           if (myNode && myNode.user && myNode.user.longName) {
             // Have complete node info from device.nodes - use it!
             const nodeInfo = {
-              nodeId: this.device.nodeNum.toString(),
+              nodeId: this.normalizeNodeId(this.device.nodeNum),
               longName: myNode.user.longName,
               shortName: myNode.user.shortName || '????',
               hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
@@ -149,7 +164,7 @@ export class MeshtasticProtocol extends BaseProtocol {
         // Fallback: Use myNodeInfo.user if available (may be incomplete)
         if (myNodeInfo.user && myNodeInfo.user.longName) {
           const nodeInfo = {
-            nodeId: myNodeInfo.myNodeNum?.toString() || 'unknown',
+            nodeId: this.normalizeNodeId(myNodeInfo.myNodeNum),
             longName: myNodeInfo.user.longName,
             shortName: myNodeInfo.user.shortName || '????',
             hwModel: this.getHwModelName(myNodeInfo.user.hwModel) || 'Unknown'
@@ -174,7 +189,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       if (this.device && this.device.nodeNum && node.num === this.device.nodeNum && node.user && node.user.longName) {
         console.log(`[Meshtastic] Received full node info for our own radio!`);
         const nodeInfo = {
-          nodeId: node.num.toString(),
+          nodeId: this.normalizeNodeId(node.num),
           longName: node.user.longName,
           shortName: node.user.shortName || '????',
           hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown'
@@ -186,7 +201,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Emit all node data for mesh map
       if (node.user) {
         const meshNode = {
-          nodeId: node.user.id || node.num.toString(),
+          nodeId: this.normalizeNodeId(node.num), // Always use normalized format
           num: node.num,
           longName: node.user.longName || 'Unknown',
           shortName: node.user.shortName || '????',
@@ -228,7 +243,7 @@ export class MeshtasticProtocol extends BaseProtocol {
         if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
           // Update node position in database
           const meshNode = {
-            nodeId: positionPacket.from.toString(),
+            nodeId: this.normalizeNodeId(positionPacket.from),
             num: positionPacket.from,
             longName: 'Unknown', // Will be updated when node info arrives
             shortName: '????',
@@ -256,7 +271,7 @@ export class MeshtasticProtocol extends BaseProtocol {
 
         // Build node update with all available telemetry
         const meshNode = {
-          nodeId: telemetryPacket.from.toString(),
+          nodeId: this.normalizeNodeId(telemetryPacket.from),
           num: telemetryPacket.from,
           longName: 'Unknown',
           shortName: '????',
@@ -311,7 +326,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       try {
         if (userPacket.data) {
           const meshNode = {
-            nodeId: userPacket.data.id || userPacket.from.toString(),
+            nodeId: this.normalizeNodeId(userPacket.from),
             num: userPacket.from,
             longName: userPacket.data.longName || 'Unknown',
             shortName: userPacket.data.shortName || '????',
@@ -418,7 +433,7 @@ export class MeshtasticProtocol extends BaseProtocol {
         if (myNode && myNode.user && myNode.user.longName) {
           this.myNodeNum = this.device.nodeNum;
           const nodeInfo = {
-            nodeId: this.device.nodeNum?.toString() || 'unknown',
+            nodeId: this.normalizeNodeId(this.device.nodeNum),
             longName: myNode.user.longName,
             shortName: myNode.user.shortName || '????',
             hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
