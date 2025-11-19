@@ -551,16 +551,33 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       console.log(`[Meshtastic] 🔍 Scanning ${this.device.nodes.size} nodes in device.nodes...`);
       let emittedCount = 0;
+      let skippedNoUser = 0;
 
       this.device.nodes.forEach((node, nodeNum) => {
+        const nodeId = this.normalizeNodeId(nodeNum);
+
+        // DEBUG: Log what data is available for this node
+        console.log(`[Meshtastic] 🔍 Node ${nodeId}:`, {
+          hasUser: !!node.user,
+          longName: node.user?.longName,
+          shortName: node.user?.shortName,
+          hwModel: node.user?.hwModel,
+          hasPosition: !!(node.position?.latitudeI),
+          hasDeviceMetrics: !!node.deviceMetrics,
+          hasEnvironmentMetrics: !!node.environmentMetrics,
+          lastHeard: node.lastHeard
+        });
+
         // Skip if node doesn't have user data
         if (!node.user) {
+          console.log(`[Meshtastic] ⚠️  Skipping ${nodeId} - no user data`);
+          skippedNoUser++;
           return;
         }
 
         // Build complete node info from device.nodes cache
         const meshNode = {
-          nodeId: this.normalizeNodeId(nodeNum),
+          nodeId: nodeId,
           num: nodeNum,
           longName: node.user.longName || 'Unknown',
           shortName: node.user.shortName || '????',
@@ -582,11 +599,12 @@ export class MeshtasticProtocol extends BaseProtocol {
           pressure: node.environmentMetrics?.barometricPressure,
         };
 
+        console.log(`[Meshtastic] ✅ Emitting node: ${meshNode.longName} (${nodeId})`);
         this.emit('node', meshNode);
         emittedCount++;
       });
 
-      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes`);
+      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes, skipped ${skippedNoUser} (no user data)`);
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
