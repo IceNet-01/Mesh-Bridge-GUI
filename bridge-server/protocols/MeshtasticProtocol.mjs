@@ -684,6 +684,11 @@ export class MeshtasticProtocol extends BaseProtocol {
           hasPosition: !!(node.position?.latitudeI),
           hasDeviceMetrics: !!node.deviceMetrics,
           hasEnvironmentMetrics: !!node.environmentMetrics,
+          // Show actual environmental values
+          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
+          humidity: node.environmentMetrics?.relativeHumidity,
+          pressure: node.environmentMetrics?.barometricPressure,
+          batteryLevel: node.deviceMetrics?.batteryLevel,
           lastHeard: node.lastHeard
         });
 
