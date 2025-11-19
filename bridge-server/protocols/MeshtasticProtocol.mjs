@@ -348,9 +348,10 @@ export class MeshtasticProtocol extends BaseProtocol {
           voltage: node.deviceMetrics?.voltage,
           channelUtilization: node.deviceMetrics?.channelUtilization,
           airUtilTx: node.deviceMetrics?.airUtilTx,
+          // Try both camelCase and snake_case field names for environmental data
           temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity,
-          pressure: node.environmentMetrics?.barometricPressure,
+          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
+          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
         };
 
         const catalogedNode = this.updateNodeCatalog(node.num, update, 'NodeInfoPacket');
@@ -420,11 +421,24 @@ export class MeshtasticProtocol extends BaseProtocol {
 
         // Environment metrics (temperature, humidity, pressure)
         if (data.environmentMetrics) {
+          // DEBUG: Log ALL fields in environmentMetrics to diagnose field naming
+          console.log(`[Meshtastic] 🌡️ environmentMetrics raw data:`, JSON.stringify(data.environmentMetrics, null, 2));
+          console.log(`[Meshtastic] 🌡️ environmentMetrics keys:`, Object.keys(data.environmentMetrics));
+
+          // Try both camelCase and snake_case field names
           update.temperature = data.environmentMetrics.temperature;
-          update.humidity = data.environmentMetrics.relativeHumidity;
-          update.pressure = data.environmentMetrics.barometricPressure;
-          update.gasResistance = data.environmentMetrics.gasResistance;
+          update.humidity = data.environmentMetrics.relativeHumidity || data.environmentMetrics.relative_humidity;
+          update.pressure = data.environmentMetrics.barometricPressure || data.environmentMetrics.barometric_pressure;
+          update.gasResistance = data.environmentMetrics.gasResistance || data.environmentMetrics.gas_resistance;
           update.iaq = data.environmentMetrics.iaq;
+
+          console.log(`[Meshtastic] 🌡️ Extracted environmental values:`, {
+            temperature: update.temperature,
+            humidity: update.humidity,
+            pressure: update.pressure,
+            gasResistance: update.gasResistance,
+            iaq: update.iaq
+          });
         }
 
         // Power metrics
@@ -676,6 +690,10 @@ export class MeshtasticProtocol extends BaseProtocol {
         const nodeId = this.normalizeNodeId(nodeNum);
 
         // DEBUG: Log what data is available for this node
+        if (node.environmentMetrics) {
+          console.log(`[Meshtastic] 🌡️ Node ${nodeId} environmentMetrics keys:`, Object.keys(node.environmentMetrics));
+        }
+
         console.log(`[Meshtastic] 🔍 Node ${nodeId}:`, {
           hasUser: !!node.user,
           longName: node.user?.longName,
@@ -684,10 +702,10 @@ export class MeshtasticProtocol extends BaseProtocol {
           hasPosition: !!(node.position?.latitudeI),
           hasDeviceMetrics: !!node.deviceMetrics,
           hasEnvironmentMetrics: !!node.environmentMetrics,
-          // Show actual environmental values
+          // Show actual environmental values - try both camelCase and snake_case
           temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity,
-          pressure: node.environmentMetrics?.barometricPressure,
+          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
+          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
           batteryLevel: node.deviceMetrics?.batteryLevel,
           lastHeard: node.lastHeard
         });
@@ -715,9 +733,10 @@ export class MeshtasticProtocol extends BaseProtocol {
           voltage: node.deviceMetrics?.voltage,
           channelUtilization: node.deviceMetrics?.channelUtilization,
           airUtilTx: node.deviceMetrics?.airUtilTx,
+          // Try both camelCase and snake_case field names for environmental data
           temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity,
-          pressure: node.environmentMetrics?.barometricPressure,
+          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
+          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
         };
 
         const catalogedNode = this.updateNodeCatalog(nodeNum, update, 'NodeScan');
