@@ -239,15 +239,22 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to ALL mesh packets
     this.device.events.onMeshPacket.subscribe((packet) => {
-      console.log(`[Meshtastic] Raw MeshPacket:`, {
-        from: packet.from,
-        to: packet.to,
-        channel: packet.channel,
-        decoded: packet.decoded ? {
-          portnum: packet.decoded.portnum,
-          payloadVariant: packet.decoded.payloadVariant
-        } : null
-      });
+      const nodeId = this.normalizeNodeId(packet.from);
+
+      // Portnum 3 = TEXT_MESSAGE_APP, 4 = POSITION_APP, 7 = NODEINFO_APP,
+      // 67 = TELEMETRY_APP, 71 = RANGE_TEST_APP, etc.
+      const portnumName = packet.decoded?.portnum === 3 ? 'TEXT' :
+                         packet.decoded?.portnum === 4 ? 'POSITION' :
+                         packet.decoded?.portnum === 7 ? 'NODEINFO' :
+                         packet.decoded?.portnum === 67 ? 'TELEMETRY' :
+                         packet.decoded?.portnum;
+
+      console.log(`[Meshtastic] 📦 MeshPacket from ${nodeId}: portnum=${portnumName} (${packet.decoded?.portnum}), channel=${packet.channel}, variant=${packet.decoded?.payloadVariant?.case}`);
+
+      // Log FULL packet data for telemetry packets
+      if (packet.decoded?.portnum === 67) {
+        console.log(`[Meshtastic] 🌡️ TELEMETRY MeshPacket full data:`, JSON.stringify(packet, null, 2));
+      }
     });
 
     // Subscribe to message packets
@@ -398,16 +405,23 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Subscribe to telemetry packets (device metrics)
     this.device.events.onTelemetryPacket.subscribe((telemetryPacket) => {
       const nodeId = this.normalizeNodeId(telemetryPacket.from);
-      console.log(`[Meshtastic] 📊 TELEMETRY from ${nodeId} (num: ${telemetryPacket.from})`);
+      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
+      console.log(`[Meshtastic] 📊 TELEMETRY PACKET from ${nodeId} (num: ${telemetryPacket.from})`);
+      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
+
       try {
+        // Log the COMPLETE telemetry packet structure
+        console.log(`[Meshtastic] 🔍 FULL TelemetryPacket structure:`, JSON.stringify(telemetryPacket, null, 2));
+
         const data = telemetryPacket.data;
         const update = {};
 
-        console.log(`[Meshtastic] Telemetry packet data types:`, {
+        console.log(`[Meshtastic] 📊 Telemetry packet data types:`, {
           hasDeviceMetrics: !!data.deviceMetrics,
           hasEnvironmentMetrics: !!data.environmentMetrics,
           hasPowerMetrics: !!data.powerMetrics,
-          hasAirQualityMetrics: !!data.airQualityMetrics
+          hasAirQualityMetrics: !!data.airQualityMetrics,
+          hasLocalStats: !!data.localStats
         });
 
         // Device metrics (battery, voltage, etc)
