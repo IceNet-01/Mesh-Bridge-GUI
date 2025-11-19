@@ -36,7 +36,7 @@ function CommunicationSettings() {
 
   useEffect(() => {
     getCommConfig();
-  }, []);
+  }, [getCommConfig]);
 
   useEffect(() => {
     if (commConfig) {

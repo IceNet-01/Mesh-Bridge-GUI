@@ -969,6 +969,11 @@ class MeshtasticBridgeServer {
         // Check for duplicate message (both radios may receive the same broadcast)
         if (this.seenMessageIds.has(packet.id)) {
           console.log(`🔁 Duplicate message ${packet.id} ignored (already processed)`);
+          // Notify clients about duplicate detection for statistics
+          this.broadcast({
+            type: 'message-duplicate',
+            messageId: packet.id
+          });
           return;
         }
 
@@ -1318,7 +1323,7 @@ class MeshtasticBridgeServer {
    * Command: #version - Software version
    */
   async cmdVersion() {
-    return `🔖 Meshtastic Bridge GUI v2.0.0-alpha\n` +
+    return `🔖 Meshtastic Bridge GUI Alpha 25.11\n` +
            `Node.js ${process.version}\n` +
            `Platform: ${process.platform}`;
   }
@@ -1825,6 +1830,14 @@ class MeshtasticBridgeServer {
         const results = await Promise.allSettled(forwardPromises);
         const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
         console.log(`📊 Forwarding complete: ${successCount}/${otherRadios.length} successful`);
+
+        // Notify clients about successful forwarding for statistics
+        if (successCount > 0) {
+          this.broadcast({
+            type: 'message-forwarded',
+            count: successCount
+          });
+        }
         return;
       }
 
@@ -1940,6 +1953,14 @@ class MeshtasticBridgeServer {
       console.log(`📊 Forwarding complete: ${successCount}/${otherRadios.length} successful`);
       if (skippedCount > 0) {
         console.log(`⚠️  ${skippedCount} radio(s) skipped - no matching channel configuration`);
+      }
+
+      // Notify clients about successful forwarding for statistics
+      if (successCount > 0) {
+        this.broadcast({
+          type: 'message-forwarded',
+          count: successCount
+        });
       }
     } catch (error) {
       console.error('❌ Error in forwardToOtherRadios:', error);

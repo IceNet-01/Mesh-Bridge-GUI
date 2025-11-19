@@ -9,6 +9,7 @@ import TacticalView from '../TacticalView';
 import SitePlanner from '../SitePlanner';
 import NetworkHealth from '../NetworkHealth';
 import EmergencyResponse from '../EmergencyResponse';
+import NWSWeatherAlerts from '../NWSWeatherAlerts';
 import BridgeConfiguration from '../BridgeConfiguration';
 import { BridgeServerSettings } from '../BridgeServerSettings';
 import AISettings from '../AISettings';
@@ -50,6 +51,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   emergency: {
     component: EmergencyResponse,
+  },
+  weather: {
+    component: NWSWeatherAlerts,
   },
   configuration: {
     component: BridgeConfiguration,

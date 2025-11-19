@@ -122,6 +122,14 @@ export function ServerIcon({ className = "w-5 h-5" }: IconProps) {
   );
 }
 
+export function WeatherIcon({ className = "w-5 h-5" }: IconProps) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z M13 9l-3 3m0 0l-3-3m3 3V3" />
+    </svg>
+  );
+}
+
 // Icon map for dynamic lookup
 export const ICONS = {
   chart: ChartIcon,
@@ -139,6 +147,7 @@ export const ICONS = {
   tactical: TacticalIcon,
   networkhealth: NetworkHealthIcon,
   emergency: EmergencyIcon,
+  weather: WeatherIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

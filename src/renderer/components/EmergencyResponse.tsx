@@ -1,15 +1,5 @@
 import { useState, useEffect } from 'react';
 import { MeshNode, Radio, Message } from '../types';
-import {
-  fetchAlertsByPoint,
-  fetchAlertsByState,
-  WeatherAlert,
-  shouldAutoBroadcast,
-  formatAlertForBroadcast,
-  getAlertEmoji,
-  getAlertColor,
-  US_STATES,
-} from '../lib/weatherService';
 
 interface EmergencyEvent {
   id: string;
@@ -40,26 +30,9 @@ interface EmergencyResponseProps {
 
 export default function EmergencyResponse({ nodes, radios, messages, onSendMessage }: EmergencyResponseProps) {
   const [emergencies, setEmergencies] = useState<EmergencyEvent[]>([]);
-  const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
   const [autoRespond, setAutoRespond] = useState(true);
   const [alertSound, setAlertSound] = useState(true);
   const [selectedEmergency, setSelectedEmergency] = useState<string | null>(null);
-  const [selectedAlert, setSelectedAlert] = useState<string | null>(null);
-
-  // Weather settings
-  const [weatherEnabled, setWeatherEnabled] = useState(true);
-  const [autoBroadcastWeather, setAutoBroadcastWeather] = useState(true);
-  const [monitorLocation, setMonitorLocation] = useState<'state' | 'coords'>('state');
-  const [selectedState, setSelectedState] = useState('CA');
-  const [latitude, setLatitude] = useState('37.7749');
-  const [longitude, setLongitude] = useState('-122.4194');
-  const [updateInterval, setUpdateInterval] = useState(5); // minutes
-  const [lastWeatherCheck, setLastWeatherCheck] = useState<Date | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [broadcastedAlerts, setBroadcastedAlerts] = useState<Set<string>>(new Set());
-
-  // Future use for audio alerts
-  // const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Emergency keywords to detect
   const emergencyKeywords = [
@@ -88,50 +61,6 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
   };
-
-  // Fetch weather alerts
-  const fetchWeatherAlerts = async () => {
-    if (!weatherEnabled) return;
-
-    setWeatherLoading(true);
-    try {
-      let response;
-      if (monitorLocation === 'state') {
-        response = await fetchAlertsByState(selectedState);
-      } else {
-        response = await fetchAlertsByPoint(parseFloat(latitude), parseFloat(longitude));
-      }
-
-      setWeatherAlerts(response.alerts);
-      setLastWeatherCheck(new Date());
-
-      // Auto-broadcast severe alerts
-      if (autoBroadcastWeather && radios.length > 0) {
-        response.alerts.forEach(alert => {
-          if (shouldAutoBroadcast(alert) && !broadcastedAlerts.has(alert.id)) {
-            const message = formatAlertForBroadcast(alert);
-            onSendMessage(radios[0].id, message, 0);
-            setBroadcastedAlerts(prev => new Set([...prev, alert.id]));
-            playAlert();
-          }
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching weather alerts:', error);
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
-
-  // Auto-fetch weather alerts on interval
-  useEffect(() => {
-    if (!weatherEnabled) return;
-
-    fetchWeatherAlerts();
-    const interval = setInterval(fetchWeatherAlerts, updateInterval * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, [weatherEnabled, monitorLocation, selectedState, latitude, longitude, updateInterval]);
 
   // Monitor messages for emergency keywords
   useEffect(() => {
@@ -179,7 +108,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
         }
       }
     });
-  }, [messages]);
+  }, [messages, emergencies, nodes, radios, autoRespond]);
 
   // Auto-response to SOS
   const handleAutoResponse = (emergency: EmergencyEvent) => {
@@ -248,14 +177,6 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
     onSendMessage(radios[0].id, broadcast, 0);
   };
 
-  // Broadcast weather alert
-  const broadcastWeatherAlert = (alert: WeatherAlert) => {
-    if (radios.length === 0) return;
-    const message = formatAlertForBroadcast(alert);
-    onSendMessage(radios[0].id, message, 0);
-    setBroadcastedAlerts(prev => new Set([...prev, alert.id]));
-  };
-
   // Get emergency duration
   const getEmergencyDuration = (emergency: EmergencyEvent): string => {
     const duration = Date.now() - emergency.timestamp.getTime();
@@ -268,29 +189,17 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
     return `${minutes}m`;
   };
 
-  // Get time until alert expires
-  const getTimeUntilExpires = (alert: WeatherAlert): string => {
-    const remaining = alert.expires.getTime() - Date.now();
-    const minutes = Math.floor(remaining / 60000);
-    const hours = Math.floor(minutes / 60);
-
-    if (remaining < 0) return 'Expired';
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    return `${minutes}m`;
-  };
-
   const activeEmergencies = emergencies.filter(e => e.status === 'active');
   const respondingEmergencies = emergencies.filter(e => e.status === 'responding');
   const resolvedEmergencies = emergencies.filter(e => e.status === 'resolved');
-  const activeWeatherAlerts = weatherAlerts.filter(a => a.expires.getTime() > Date.now());
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold text-white mb-2">🚨 Emergency Response System</h2>
+        <h2 className="text-3xl font-bold text-white mb-2">🚨 SOS Emergency System</h2>
         <p className="text-slate-400">
-          Monitor SOS emergencies and broadcast severe weather alerts to the mesh network
+          Monitor and respond to SOS emergencies from the mesh network
         </p>
       </div>
 
@@ -318,7 +227,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
       )}
 
       {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card bg-red-500/10 border border-red-500/30">
           <div className="text-sm text-red-300">Active SOS</div>
           <div className="text-4xl font-bold text-red-400">{activeEmergencies.length}</div>
@@ -331,209 +240,11 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
           <div className="text-xs text-yellow-300">Help en route</div>
         </div>
 
-        <div className="card bg-orange-500/10 border border-orange-500/30">
-          <div className="text-sm text-orange-300">Weather Alerts</div>
-          <div className="text-4xl font-bold text-orange-400">{activeWeatherAlerts.length}</div>
-          <div className="text-xs text-orange-300">Active NWS warnings</div>
-        </div>
-
         <div className="card bg-green-500/10 border border-green-500/30">
           <div className="text-sm text-green-300">Resolved</div>
           <div className="text-4xl font-bold text-green-400">{resolvedEmergencies.length}</div>
           <div className="text-xs text-green-300">Successfully handled</div>
         </div>
-      </div>
-
-      {/* Weather Alerts Section */}
-      <div className="card border-2 border-orange-500/30">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-xl font-semibold text-white">🌩️ NWS Weather Alerts</h3>
-            <p className="text-sm text-slate-400">
-              {lastWeatherCheck ? `Last updated: ${lastWeatherCheck.toLocaleTimeString()}` : 'Not yet checked'}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={fetchWeatherAlerts}
-              disabled={weatherLoading}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg font-semibold"
-            >
-              {weatherLoading ? '⏳ Loading...' : '🔄 Refresh'}
-            </button>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={weatherEnabled}
-                onChange={(e) => setWeatherEnabled(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-
-        {/* Weather Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Monitor By</label>
-            <select
-              value={monitorLocation}
-              onChange={(e) => setMonitorLocation(e.target.value as 'state' | 'coords')}
-              className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2"
-            >
-              <option value="state">State</option>
-              <option value="coords">GPS Coordinates</option>
-            </select>
-          </div>
-
-          {monitorLocation === 'state' ? (
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">State</label>
-              <select
-                value={selectedState}
-                onChange={(e) => setSelectedState(e.target.value)}
-                className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2"
-              >
-                {US_STATES.map(state => (
-                  <option key={state.code} value={state.code}>{state.name}</option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Latitude</label>
-                <input
-                  type="text"
-                  value={latitude}
-                  onChange={(e) => setLatitude(e.target.value)}
-                  placeholder="37.7749"
-                  className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Longitude</label>
-                <input
-                  type="text"
-                  value={longitude}
-                  onChange={(e) => setLongitude(e.target.value)}
-                  placeholder="-122.4194"
-                  className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2"
-                />
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Update Interval (minutes)</label>
-            <input
-              type="number"
-              value={updateInterval}
-              onChange={(e) => setUpdateInterval(parseInt(e.target.value))}
-              min="1"
-              max="60"
-              className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium text-white text-sm">Auto-Broadcast Severe Alerts</div>
-              <div className="text-xs text-slate-400">Automatically send extreme weather warnings</div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoBroadcastWeather}
-                onChange={(e) => setAutoBroadcastWeather(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-
-        {/* Active Weather Alerts List */}
-        {activeWeatherAlerts.length > 0 ? (
-          <div className="space-y-2">
-            {activeWeatherAlerts.map(alert => {
-              const color = getAlertColor(alert.severity);
-              const isSelected = selectedAlert === alert.id;
-
-              return (
-                <div
-                  key={alert.id}
-                  className={`bg-${color}-500/10 border border-${color}-500/30 rounded-lg p-4 cursor-pointer hover:bg-${color}-500/20 transition-all ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-                  onClick={() => setSelectedAlert(isSelected ? null : alert.id)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="text-2xl">{getAlertEmoji(alert)}</div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h4 className="font-bold text-white">{alert.event}</h4>
-                          <p className="text-sm text-slate-400">{alert.areaDesc}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold bg-${color}-500 text-white`}>
-                            {alert.severity}
-                          </span>
-                          <span className="px-2 py-1 rounded text-xs font-semibold bg-slate-700 text-white">
-                            {getTimeUntilExpires(alert)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {alert.headline && (
-                        <p className="text-sm text-white mb-2">{alert.headline}</p>
-                      )}
-
-                      {isSelected && (
-                        <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
-                          <div className="text-sm text-slate-300">
-                            <strong>Description:</strong>
-                            <p className="mt-1">{alert.description}</p>
-                          </div>
-                          {alert.instruction && (
-                            <div className="text-sm text-slate-300">
-                              <strong>Instructions:</strong>
-                              <p className="mt-1">{alert.instruction}</p>
-                            </div>
-                          )}
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                broadcastWeatherAlert(alert);
-                              }}
-                              className={`bg-${color}-600 hover:bg-${color}-700 text-white px-4 py-2 rounded-lg text-sm font-semibold`}
-                            >
-                              📢 Broadcast Alert
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-slate-400">
-            {weatherEnabled ? (
-              <>
-                <svg className="w-12 h-12 mx-auto mb-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p>No active weather alerts for this location</p>
-              </>
-            ) : (
-              <p>Weather monitoring is disabled</p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* SOS Settings */}

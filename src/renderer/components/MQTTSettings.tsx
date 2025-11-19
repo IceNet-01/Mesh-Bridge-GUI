@@ -27,7 +27,7 @@ function MQTTSettings() {
 
   useEffect(() => {
     getMQTTConfig();
-  }, []);
+  }, [getMQTTConfig]);
 
   useEffect(() => {
     if (mqttConfig) {
