@@ -171,7 +171,7 @@ export class MeshtasticProtocol extends BaseProtocol {
           longName: node.user.longName || 'Unknown',
           shortName: node.user.shortName || '????',
           hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown',
-          lastHeard: new Date(node.lastHeard * 1000),
+          lastHeard: new Date(), // Use current time when packet received, not cached library value
           snr: node.snr,
           position: node.position && node.position.latitudeI && node.position.longitudeI ? {
             latitude: node.position.latitudeI / 1e7,
@@ -183,7 +183,10 @@ export class MeshtasticProtocol extends BaseProtocol {
           voltage: node.deviceMetrics?.voltage,
           channelUtilization: node.deviceMetrics?.channelUtilization,
           airUtilTx: node.deviceMetrics?.airUtilTx,
-          temperature: node.deviceMetrics?.temperature
+          // Extract environmental metrics from environmentMetrics OR deviceMetrics (fallback)
+          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
+          humidity: node.environmentMetrics?.relativeHumidity,
+          pressure: node.environmentMetrics?.barometricPressure,
         };
         this.emit('node', meshNode);
 
