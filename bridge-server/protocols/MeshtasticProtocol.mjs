@@ -16,6 +16,10 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.channelMap = new Map();
     this.loraConfig = null;
     this.myNodeNum = null; // Store our own node number for loop prevention
+
+    // Node Catalog - Single source of truth for all node data
+    // Key: numeric node number, Value: complete node object
+    this.nodeCatalog = new Map();
   }
 
   getProtocolName() {
@@ -35,6 +39,126 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
     // Convert to hex and pad to 8 characters, add "!" prefix
     return '!' + nodeNum.toString(16).padStart(8, '0');
+  }
+
+  /**
+   * Update node catalog with new data
+   * Intelligently merges data from different sources without losing information
+   *
+   * @param {number} nodeNum - Numeric node number
+   * @param {Object} update - Partial node data to merge
+   * @param {string} source - Source of update (e.g., 'NodeInfo', 'Telemetry', 'Position', 'Scan')
+   * @returns {Object} Complete merged node data
+   */
+  updateNodeCatalog(nodeNum, update, source = 'Unknown') {
+    if (typeof nodeNum !== 'number') {
+      console.warn(`[Meshtastic] Cannot update catalog - invalid nodeNum:`, nodeNum);
+      return null;
+    }
+
+    const nodeId = this.normalizeNodeId(nodeNum);
+
+    // Get existing node or create new entry
+    let node = this.nodeCatalog.get(nodeNum);
+
+    if (!node) {
+      // Create new catalog entry with defaults
+      node = {
+        nodeId: nodeId,
+        num: nodeNum,
+        longName: 'Unknown',
+        shortName: '????',
+        hwModel: 'Unknown',
+        lastHeard: new Date(),
+        // Timestamps for different data types
+        _timestamps: {
+          userInfo: null,
+          position: null,
+          telemetry: null,
+          lastSeen: new Date()
+        }
+      };
+      console.log(`[Meshtastic] 📝 Creating new catalog entry for ${nodeId} (source: ${source})`);
+    }
+
+    // Update lastSeen timestamp
+    node._timestamps.lastSeen = new Date();
+    node.lastHeard = new Date();
+
+    // SMART MERGE: Only update fields that have meaningful new data
+
+    // User identification - never overwrite good data with placeholders
+    if (update.longName && update.longName !== 'Unknown' && update.longName !== node.longName) {
+      node.longName = update.longName;
+      node._timestamps.userInfo = new Date();
+      console.log(`[Meshtastic] 👤 Updated name: ${nodeId} → "${update.longName}" (source: ${source})`);
+    }
+
+    if (update.shortName && update.shortName !== '????' && update.shortName !== node.shortName) {
+      node.shortName = update.shortName;
+      node._timestamps.userInfo = new Date();
+    }
+
+    if (update.hwModel && update.hwModel !== 'Unknown' && update.hwModel !== node.hwModel) {
+      node.hwModel = update.hwModel;
+      node._timestamps.userInfo = new Date();
+    }
+
+    // Position - update if new position data provided
+    if (update.position && (update.position.latitude || update.position.longitude)) {
+      node.position = {
+        ...node.position,
+        ...update.position
+      };
+      node._timestamps.position = new Date();
+    }
+
+    // Telemetry - always update if provided (newer data)
+    const telemetryFields = [
+      'batteryLevel', 'voltage', 'channelUtilization', 'airUtilTx', 'uptimeSeconds',
+      'temperature', 'humidity', 'pressure', 'gasResistance', 'iaq',
+      'ch1Voltage', 'ch1Current', 'ch2Voltage', 'ch2Current', 'ch3Voltage', 'ch3Current',
+      'pm10Standard', 'pm25Standard', 'pm100Standard'
+    ];
+
+    let telemetryUpdated = false;
+    for (const field of telemetryFields) {
+      if (update[field] !== undefined && update[field] !== null) {
+        node[field] = update[field];
+        telemetryUpdated = true;
+      }
+    }
+
+    if (telemetryUpdated) {
+      node._timestamps.telemetry = new Date();
+    }
+
+    // SNR - always update if provided
+    if (update.snr !== undefined) {
+      node.snr = update.snr;
+    }
+
+    // Store back in catalog
+    this.nodeCatalog.set(nodeNum, node);
+
+    return node;
+  }
+
+  /**
+   * Get node from catalog
+   * @param {number} nodeNum - Numeric node number
+   * @returns {Object|null} Node data or null if not found
+   */
+  getNodeFromCatalog(nodeNum) {
+    return this.nodeCatalog.get(nodeNum) || null;
+  }
+
+  /**
+   * Get all nodes from catalog
+   * @returns {Array} Array of all node objects
+   */
+  getAllNodesFromCatalog() {
+    return Array.from(this.nodeCatalog.values());
   }
 
   async connect() {
@@ -207,15 +331,12 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Updated our node info:`, nodeInfo);
       }
 
-      // Emit all node data for mesh map
+      // Update node catalog with data from NodeInfoPacket
       if (node.user) {
-        const meshNode = {
-          nodeId: this.normalizeNodeId(node.num), // Always use normalized format
-          num: node.num,
-          longName: node.user.longName || 'Unknown',
-          shortName: node.user.shortName || '????',
-          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown',
-          lastHeard: new Date(), // Use current time when packet received, not cached library value
+        const update = {
+          longName: node.user.longName,
+          shortName: node.user.shortName,
+          hwModel: this.getHwModelName(node.user.hwModel),
           snr: node.snr,
           position: node.position && node.position.latitudeI && node.position.longitudeI ? {
             latitude: node.position.latitudeI / 1e7,
@@ -227,12 +348,15 @@ export class MeshtasticProtocol extends BaseProtocol {
           voltage: node.deviceMetrics?.voltage,
           channelUtilization: node.deviceMetrics?.channelUtilization,
           airUtilTx: node.deviceMetrics?.airUtilTx,
-          // Extract environmental metrics from environmentMetrics OR deviceMetrics (fallback)
           temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
           humidity: node.environmentMetrics?.relativeHumidity,
           pressure: node.environmentMetrics?.barometricPressure,
         };
-        this.emit('node', meshNode);
+
+        const catalogedNode = this.updateNodeCatalog(node.num, update, 'NodeInfoPacket');
+        if (catalogedNode) {
+          this.emit('node', catalogedNode);
+        }
 
         // Also emit as nodeinfo packet for potential forwarding
         // Skip our own radio's announcements (already filtered in bridge server)
@@ -250,14 +374,8 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] Position packet:`, positionPacket);
       try {
         if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
-          // Update node position in database
-          const meshNode = {
-            nodeId: this.normalizeNodeId(positionPacket.from),
-            num: positionPacket.from,
-            longName: 'Unknown', // Will be updated when node info arrives
-            shortName: '????',
-            hwModel: 'Unknown',
-            lastHeard: new Date(),
+          // Update node catalog with position data
+          const update = {
             position: {
               latitude: positionPacket.data.latitudeI / 1e7,
               longitude: positionPacket.data.longitudeI / 1e7,
@@ -265,7 +383,11 @@ export class MeshtasticProtocol extends BaseProtocol {
               time: positionPacket.data.time ? new Date(positionPacket.data.time * 1000) : new Date()
             }
           };
-          this.emit('node', meshNode);
+
+          const catalogedNode = this.updateNodeCatalog(positionPacket.from, update, 'PositionPacket');
+          if (catalogedNode) {
+            this.emit('node', catalogedNode);
+          }
         }
       } catch (error) {
         console.error('[Meshtastic] Error handling position packet:', error);
@@ -278,16 +400,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 📊 TELEMETRY from ${nodeId} (num: ${telemetryPacket.from})`);
       try {
         const data = telemetryPacket.data;
-
-        // Build node update with all available telemetry
-        const meshNode = {
-          nodeId: nodeId,
-          num: telemetryPacket.from,
-          longName: 'Unknown',
-          shortName: '????',
-          hwModel: 'Unknown',
-          lastHeard: new Date()
-        };
+        const update = {};
 
         console.log(`[Meshtastic] Telemetry packet data types:`, {
           hasDeviceMetrics: !!data.deviceMetrics,
@@ -298,49 +411,54 @@ export class MeshtasticProtocol extends BaseProtocol {
 
         // Device metrics (battery, voltage, etc)
         if (data.deviceMetrics) {
-          meshNode.batteryLevel = data.deviceMetrics.batteryLevel;
-          meshNode.voltage = data.deviceMetrics.voltage;
-          meshNode.channelUtilization = data.deviceMetrics.channelUtilization;
-          meshNode.airUtilTx = data.deviceMetrics.airUtilTx;
-          meshNode.uptimeSeconds = data.deviceMetrics.uptimeSeconds;
+          update.batteryLevel = data.deviceMetrics.batteryLevel;
+          update.voltage = data.deviceMetrics.voltage;
+          update.channelUtilization = data.deviceMetrics.channelUtilization;
+          update.airUtilTx = data.deviceMetrics.airUtilTx;
+          update.uptimeSeconds = data.deviceMetrics.uptimeSeconds;
         }
 
         // Environment metrics (temperature, humidity, pressure)
         if (data.environmentMetrics) {
-          meshNode.temperature = data.environmentMetrics.temperature;
-          meshNode.humidity = data.environmentMetrics.relativeHumidity;
-          meshNode.pressure = data.environmentMetrics.barometricPressure;
-          meshNode.gasResistance = data.environmentMetrics.gasResistance;
-          meshNode.iaq = data.environmentMetrics.iaq;
+          update.temperature = data.environmentMetrics.temperature;
+          update.humidity = data.environmentMetrics.relativeHumidity;
+          update.pressure = data.environmentMetrics.barometricPressure;
+          update.gasResistance = data.environmentMetrics.gasResistance;
+          update.iaq = data.environmentMetrics.iaq;
         }
 
         // Power metrics
         if (data.powerMetrics) {
-          meshNode.ch1Voltage = data.powerMetrics.ch1Voltage;
-          meshNode.ch1Current = data.powerMetrics.ch1Current;
-          meshNode.ch2Voltage = data.powerMetrics.ch2Voltage;
-          meshNode.ch2Current = data.powerMetrics.ch2Current;
-          meshNode.ch3Voltage = data.powerMetrics.ch3Voltage;
-          meshNode.ch3Current = data.powerMetrics.ch3Current;
+          update.ch1Voltage = data.powerMetrics.ch1Voltage;
+          update.ch1Current = data.powerMetrics.ch1Current;
+          update.ch2Voltage = data.powerMetrics.ch2Voltage;
+          update.ch2Current = data.powerMetrics.ch2Current;
+          update.ch3Voltage = data.powerMetrics.ch3Voltage;
+          update.ch3Current = data.powerMetrics.ch3Current;
         }
 
         // Air quality metrics
         if (data.airQualityMetrics) {
-          meshNode.pm10Standard = data.airQualityMetrics.pm10Standard;
-          meshNode.pm25Standard = data.airQualityMetrics.pm25Standard;
-          meshNode.pm100Standard = data.airQualityMetrics.pm100Standard;
+          update.pm10Standard = data.airQualityMetrics.pm10Standard;
+          update.pm25Standard = data.airQualityMetrics.pm25Standard;
+          update.pm100Standard = data.airQualityMetrics.pm100Standard;
         }
 
-        // Log what telemetry data we're emitting
-        const telemetryDetails = [];
-        if (meshNode.batteryLevel !== undefined) telemetryDetails.push(`Battery: ${meshNode.batteryLevel}%`);
-        if (meshNode.voltage !== undefined) telemetryDetails.push(`Voltage: ${meshNode.voltage}V`);
-        if (meshNode.temperature !== undefined) telemetryDetails.push(`Temp: ${meshNode.temperature}°C`);
-        if (meshNode.humidity !== undefined) telemetryDetails.push(`Humidity: ${meshNode.humidity}%`);
-        if (meshNode.pressure !== undefined) telemetryDetails.push(`Pressure: ${meshNode.pressure}hPa`);
-        console.log(`[Meshtastic] ✅ Emitting telemetry for ${nodeId}: ${telemetryDetails.join(', ')}`);
+        // Update catalog with telemetry data
+        const catalogedNode = this.updateNodeCatalog(telemetryPacket.from, update, 'TelemetryPacket');
 
-        this.emit('node', meshNode);
+        // Log what telemetry data we're emitting
+        if (catalogedNode) {
+          const telemetryDetails = [];
+          if (catalogedNode.batteryLevel !== undefined) telemetryDetails.push(`Battery: ${catalogedNode.batteryLevel}%`);
+          if (catalogedNode.voltage !== undefined) telemetryDetails.push(`Voltage: ${catalogedNode.voltage}V`);
+          if (catalogedNode.temperature !== undefined) telemetryDetails.push(`Temp: ${catalogedNode.temperature}°C`);
+          if (catalogedNode.humidity !== undefined) telemetryDetails.push(`Humidity: ${catalogedNode.humidity}%`);
+          if (catalogedNode.pressure !== undefined) telemetryDetails.push(`Pressure: ${catalogedNode.pressure}hPa`);
+          console.log(`[Meshtastic] ✅ Catalog updated for ${catalogedNode.longName} (${nodeId}): ${telemetryDetails.join(', ')}`);
+
+          this.emit('node', catalogedNode);
+        }
       } catch (error) {
         console.error('[Meshtastic] Error handling telemetry packet:', error);
       }
@@ -351,15 +469,16 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] User packet:`, userPacket);
       try {
         if (userPacket.data) {
-          const meshNode = {
-            nodeId: this.normalizeNodeId(userPacket.from),
-            num: userPacket.from,
-            longName: userPacket.data.longName || 'Unknown',
-            shortName: userPacket.data.shortName || '????',
-            hwModel: this.getHwModelName(userPacket.data.hwModel) || 'Unknown',
-            lastHeard: new Date()
+          const update = {
+            longName: userPacket.data.longName,
+            shortName: userPacket.data.shortName,
+            hwModel: this.getHwModelName(userPacket.data.hwModel)
           };
-          this.emit('node', meshNode);
+
+          const catalogedNode = this.updateNodeCatalog(userPacket.from, update, 'UserPacket');
+          if (catalogedNode) {
+            this.emit('node', catalogedNode);
+          }
         }
       } catch (error) {
         console.error('[Meshtastic] Error handling user packet:', error);
@@ -575,14 +694,11 @@ export class MeshtasticProtocol extends BaseProtocol {
           return;
         }
 
-        // Build complete node info from device.nodes cache
-        const meshNode = {
-          nodeId: nodeId,
-          num: nodeNum,
-          longName: node.user.longName || 'Unknown',
-          shortName: node.user.shortName || '????',
-          hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown',
-          lastHeard: node.lastHeard ? new Date(node.lastHeard * 1000) : new Date(),
+        // Build update object from device.nodes cache
+        const update = {
+          longName: node.user.longName,
+          shortName: node.user.shortName,
+          hwModel: this.getHwModelName(node.user.hwModel),
           snr: node.snr,
           position: node.position && node.position.latitudeI && node.position.longitudeI ? {
             latitude: node.position.latitudeI / 1e7,
@@ -599,9 +715,12 @@ export class MeshtasticProtocol extends BaseProtocol {
           pressure: node.environmentMetrics?.barometricPressure,
         };
 
-        console.log(`[Meshtastic] ✅ Emitting node: ${meshNode.longName} (${nodeId})`);
-        this.emit('node', meshNode);
-        emittedCount++;
+        const catalogedNode = this.updateNodeCatalog(nodeNum, update, 'NodeScan');
+        if (catalogedNode) {
+          console.log(`[Meshtastic] ✅ Emitting node: ${catalogedNode.longName} (${nodeId})`);
+          this.emit('node', catalogedNode);
+          emittedCount++;
+        }
       });
 
       console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes, skipped ${skippedNoUser} (no user data)`);
