@@ -706,6 +706,14 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   /**
+   * Update and emit node info for this radio
+   */
+  updateNodeInfo(nodeInfo) {
+    this.nodeInfo = nodeInfo;
+    this.emit('nodeInfo', nodeInfo);
+  }
+
+  /**
    * Scan device.nodes and emit updates for all known nodes
    * This proactively extracts node information from the library's cache
    * even if NodeInfoPacket events aren't firing
