@@ -33,6 +33,9 @@ export function EnvironmentalSensors({ environmentalData }: EnvironmentalSensors
                 <div className="text-2xl font-bold text-orange-400">
                   {sensor.temperature.toFixed(1)}°C
                 </div>
+                <div className="text-sm text-slate-400">
+                  {((sensor.temperature * 9/5) + 32).toFixed(1)}°F
+                </div>
               </div>
             )}
 

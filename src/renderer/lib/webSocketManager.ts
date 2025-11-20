@@ -240,6 +240,7 @@ export class WebSocketRadioManager {
 
       case 'radio-connecting':
         // Radio is connecting (before configuration completes)
+        console.log('[WebSocket] 📻 Radio connecting:', data.radio.id, 'on', data.radio.port);
         this.radios.set(data.radio.id, data.radio);
         this.statistics.radioStats[data.radio.id] = { received: 0, sent: 0, errors: 0 };
         this.emit('radio-status-change', Array.from(this.radios.values()));
@@ -248,6 +249,7 @@ export class WebSocketRadioManager {
 
       case 'radio-connected':
         // Radio fully connected (after configuration completes)
+        console.log('[WebSocket] ✅ Radio connected:', data.radio.id, 'on', data.radio.port, '- Name:', data.radio.name);
         this.radios.set(data.radio.id, data.radio);
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
@@ -255,6 +257,7 @@ export class WebSocketRadioManager {
 
       case 'radio-disconnected':
         // Radio disconnected
+        console.log('[WebSocket] 🔌 Radio disconnected:', data.radioId);
         this.radios.delete(data.radioId);
         delete this.statistics.radioStats[data.radioId];
         this.emit('radio-status-change', Array.from(this.radios.values()));
@@ -264,6 +267,7 @@ export class WebSocketRadioManager {
       case 'radio-updated':
         // Radio information updated (nodeInfo, channels, config, stats)
         if (data.radio) {
+          console.log('[WebSocket] 🔄 Radio updated:', data.radio.id, '- Name:', data.radio.name, 'HasNodeInfo:', !!data.radio.nodeInfo);
           this.radios.set(data.radio.id, data.radio);
           this.emit('radio-status-change', Array.from(this.radios.values()));
           this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');

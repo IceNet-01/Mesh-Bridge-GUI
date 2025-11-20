@@ -133,7 +133,7 @@ export function NodeDetailModal({ node, onClose }: NodeDetailModalProps) {
                 {node.temperature !== undefined && (
                   <InfoCard
                     label="Temperature"
-                    value={`${node.temperature.toFixed(1)}°C`}
+                    value={`${node.temperature.toFixed(1)}°C / ${((node.temperature * 9/5) + 32).toFixed(1)}°F`}
                     valueColor={
                       node.temperature < 0 ? 'text-blue-400' :
                       node.temperature < 25 ? 'text-green-400' :
