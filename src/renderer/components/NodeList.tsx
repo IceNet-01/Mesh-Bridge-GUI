@@ -332,7 +332,7 @@ function NodeList({ nodes, radios }: NodeListProps) {
                             node.temperature < 35 ? 'text-yellow-400' :
                             node.temperature < 50 ? 'text-orange-400' : 'text-red-400'
                           }`}>
-                            {node.temperature.toFixed(1)}°C
+                            {node.temperature.toFixed(1)}°C / {((node.temperature * 9/5) + 32).toFixed(1)}°F
                           </div>
                         ) : (
                           <span className="text-slate-500">-</span>

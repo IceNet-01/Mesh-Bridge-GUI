@@ -494,7 +494,7 @@ All devices must use the EXACT same PSK and channel index.`;
                       <div><strong>Signal (SNR):</strong> {node.snr} dB</div>
                     )}
                     {node.temperature !== undefined && (
-                      <div><strong>Temperature:</strong> {node.temperature.toFixed(1)}°C</div>
+                      <div><strong>Temperature:</strong> {node.temperature.toFixed(1)}°C / {((node.temperature * 9/5) + 32).toFixed(1)}°F</div>
                     )}
                   </div>
                 </div>
