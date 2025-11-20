@@ -708,8 +708,15 @@ class MeshtasticBridgeServer {
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.nodeInfo = nodeInfo;
-          radio.nodeNum = parseInt(nodeInfo.nodeId);
-          console.log(`✅ Radio ${radioId} node info updated`);
+          // Parse nodeId correctly - it's in format "!e3d5b1aa" (hex with ! prefix)
+          radio.nodeNum = parseInt(nodeInfo.nodeId.substring(1), 16);
+          console.log(`✅ Radio ${radioId} node info updated:`, {
+            longName: nodeInfo.longName,
+            shortName: nodeInfo.shortName,
+            nodeId: nodeInfo.nodeId,
+            nodeNum: radio.nodeNum,
+            hwModel: nodeInfo.hwModel
+          });
 
           // Check device time if available and auto-sync if wrong
           const metadata = protocolHandler.getProtocolMetadata();
@@ -744,9 +751,18 @@ class MeshtasticBridgeServer {
           }
 
           // Broadcast updated radio info to clients
+          const radioInfo = this.getRadioInfo(radioId);
+          console.log(`📡 Broadcasting radio-updated for ${radioId}:`, {
+            id: radioInfo.id,
+            name: radioInfo.name,
+            hasNodeInfo: !!radioInfo.nodeInfo,
+            nodeInfo: radioInfo.nodeInfo,
+            hasProtocolMetadata: !!radioInfo.protocolMetadata,
+            protocolMetadata: radioInfo.protocolMetadata
+          });
           this.broadcast({
             type: 'radio-updated',
-            radio: this.getRadioInfo(radioId)
+            radio: radioInfo
           });
         }
       });
