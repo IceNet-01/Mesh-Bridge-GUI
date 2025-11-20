@@ -704,12 +704,27 @@ class MeshtasticBridgeServer {
       });
 
       protocolHandler.on('nodeInfo', async (nodeInfo) => {
-        console.log(`🆔 Radio ${radioId} node info:`, nodeInfo);
+        console.log(`🆔 Radio ${radioId} node info received:`, nodeInfo);
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.nodeInfo = nodeInfo;
-          // Parse nodeId correctly - it's in format "!e3d5b1aa" (hex with ! prefix)
-          radio.nodeNum = parseInt(nodeInfo.nodeId.substring(1), 16);
+
+          // Parse nodeId correctly - handle different formats
+          try {
+            if (nodeInfo.nodeId) {
+              if (nodeInfo.nodeId.startsWith('!')) {
+                // Format: "!e3d5b1aa" (hex with ! prefix)
+                radio.nodeNum = parseInt(nodeInfo.nodeId.substring(1), 16);
+              } else {
+                // Try parsing as-is
+                radio.nodeNum = parseInt(nodeInfo.nodeId, 16);
+              }
+            }
+          } catch (error) {
+            console.error(`❌ Failed to parse nodeId "${nodeInfo.nodeId}":`, error);
+            radio.nodeNum = null;
+          }
+
           console.log(`✅ Radio ${radioId} node info updated:`, {
             longName: nodeInfo.longName,
             shortName: nodeInfo.shortName,
@@ -901,9 +916,18 @@ class MeshtasticBridgeServer {
       console.log(`✅ Radio ${radioId} connected successfully`);
 
       // Notify all clients that connection is complete
+      const connectedRadioInfo = this.getRadioInfo(radioId);
+      console.log(`📡 Broadcasting radio-connected for ${radioId}:`, {
+        id: connectedRadioInfo.id,
+        name: connectedRadioInfo.name,
+        hasNodeInfo: !!connectedRadioInfo.nodeInfo,
+        nodeInfo: connectedRadioInfo.nodeInfo,
+        hasProtocolMetadata: !!connectedRadioInfo.protocolMetadata,
+        protocolMetadata: connectedRadioInfo.protocolMetadata
+      });
       this.broadcast({
         type: 'radio-connected',
-        radio: this.getRadioInfo(radioId)
+        radio: connectedRadioInfo
       });
 
       // Radio is now ready and connected
