@@ -195,6 +195,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       this.connected = true;
 
       // Fetch node info with retry logic - device.nodes may not be populated immediately
+      console.log(`[Meshtastic] 🔄 Connection established, calling fetchAndEmitDeviceInfo...`);
       this.fetchAndEmitDeviceInfo(0); // Start with 0 retries
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
@@ -619,11 +620,24 @@ export class MeshtasticProtocol extends BaseProtocol {
       const maxRetries = 5;
       const retryDelay = Math.min(500 * Math.pow(2, retryCount), 5000); // Exponential backoff, max 5s
 
-      console.log(`[Meshtastic] Fetching device info from device object... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+      console.log(`[Meshtastic] 🔍 fetchAndEmitDeviceInfo called (attempt ${retryCount + 1}/${maxRetries + 1})`);
+      console.log(`[Meshtastic] Device state:`, {
+        hasDevice: !!this.device,
+        hasNodes: !!this.device?.nodes,
+        nodeNum: this.device?.nodeNum,
+        nodesSize: this.device?.nodes?.size
+      });
 
       // Get node info from device
       if (this.device && this.device.nodes) {
+        console.log(`[Meshtastic] ✅ device.nodes exists, looking for nodeNum: ${this.device.nodeNum}`);
         const myNode = this.device.nodes.get(this.device.nodeNum);
+        console.log(`[Meshtastic] myNode lookup result:`, {
+          found: !!myNode,
+          hasUser: !!myNode?.user,
+          longName: myNode?.user?.longName
+        });
+
         if (myNode && myNode.user && myNode.user.longName) {
           this.myNodeNum = this.device.nodeNum;
           const nodeInfo = {
@@ -632,29 +646,32 @@ export class MeshtasticProtocol extends BaseProtocol {
             shortName: myNode.user.shortName || '????',
             hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
           };
+          console.log(`[Meshtastic] 🎯 Calling updateNodeInfo with:`, nodeInfo);
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] Node info fetched from device.nodes:`, nodeInfo);
+          console.log(`[Meshtastic] ✅ Node info fetched from device.nodes successfully`);
         } else {
-          console.log(`[Meshtastic] My node not found in device.nodes or missing user data`);
+          console.log(`[Meshtastic] ❌ My node not found in device.nodes or missing user data`);
 
           // Retry with exponential backoff if we haven't exceeded max retries
           if (retryCount < maxRetries) {
-            console.log(`[Meshtastic] Retrying device info fetch in ${retryDelay}ms...`);
+            console.log(`[Meshtastic] ⏳ Retrying device info fetch in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
             setTimeout(() => {
               this.fetchAndEmitDeviceInfo(retryCount + 1);
             }, retryDelay);
             return; // Exit early, will retry
           } else {
-            console.log(`[Meshtastic] Max retries reached, giving up on device info fetch`);
+            console.log(`[Meshtastic] ❌ Max retries reached, giving up on device info fetch`);
           }
         }
       } else if (retryCount < maxRetries) {
         // Device or nodes not ready yet, retry
-        console.log(`[Meshtastic] Device.nodes not ready, retrying in ${retryDelay}ms...`);
+        console.log(`[Meshtastic] ⏳ Device.nodes not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
         setTimeout(() => {
           this.fetchAndEmitDeviceInfo(retryCount + 1);
         }, retryDelay);
         return; // Exit early, will retry
+      } else {
+        console.log(`[Meshtastic] ❌ Device.nodes never became ready after ${maxRetries} retries`);
       }
 
       // Get channels from device
