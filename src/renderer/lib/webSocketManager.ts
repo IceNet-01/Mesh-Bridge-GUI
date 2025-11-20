@@ -240,23 +240,32 @@ export class WebSocketRadioManager {
 
       case 'radio-connecting':
         // Radio is connecting (before configuration completes)
+        console.log('[WebSocket] 📻 Radio connecting:', data.radio.id, 'port:', data.radio.port);
+        console.log('[WebSocket] Current radios before adding:', Array.from(this.radios.keys()));
         this.radios.set(data.radio.id, data.radio);
         this.statistics.radioStats[data.radio.id] = { received: 0, sent: 0, errors: 0 };
+        console.log('[WebSocket] Current radios after adding:', Array.from(this.radios.keys()));
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connecting: ${data.radio.id} on ${data.radio.port}...`);
         break;
 
       case 'radio-connected':
         // Radio fully connected (after configuration completes)
+        console.log('[WebSocket] ✅ Radio connected:', data.radio.id, 'port:', data.radio.port);
+        console.log('[WebSocket] Current radios before setting:', Array.from(this.radios.keys()));
         this.radios.set(data.radio.id, data.radio);
+        console.log('[WebSocket] Current radios after setting:', Array.from(this.radios.keys()));
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
         break;
 
       case 'radio-disconnected':
         // Radio disconnected
+        console.log('[WebSocket] 🔌 Radio disconnected:', data.radioId);
+        console.log('[WebSocket] Current radios before deleting:', Array.from(this.radios.keys()));
         this.radios.delete(data.radioId);
         delete this.statistics.radioStats[data.radioId];
+        console.log('[WebSocket] Current radios after deleting:', Array.from(this.radios.keys()));
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('warn', `Radio disconnected: ${data.radioId}`);
         break;
