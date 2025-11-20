@@ -280,10 +280,16 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to node info updates
     this.device.events.onMyNodeInfo.subscribe((myNodeInfo) => {
-      console.log(`[Meshtastic] My node info:`, myNodeInfo);
+      console.log(`[Meshtastic] 🆔 onMyNodeInfo event fired!`, {
+        myNodeNum: myNodeInfo.myNodeNum,
+        hasUser: !!myNodeInfo.user,
+        longName: myNodeInfo.user?.longName
+      });
+
       try {
         // Store raw node number for loop prevention
         this.myNodeNum = myNodeInfo.myNodeNum;
+        console.log(`[Meshtastic] ✅ Stored myNodeNum: ${this.myNodeNum}`);
 
         // Try to get full node info from device.nodes first (most reliable)
         if (this.device && this.device.nodes && this.device.nodeNum) {
@@ -310,33 +316,42 @@ export class MeshtasticProtocol extends BaseProtocol {
             shortName: myNodeInfo.user.shortName || '????',
             hwModel: this.getHwModelName(myNodeInfo.user.hwModel) || 'Unknown'
           };
+          console.log(`[Meshtastic] 🎯 Using myNodeInfo.user directly:`, nodeInfo);
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] Node info from myNodeInfo.user:`, nodeInfo);
+          console.log(`[Meshtastic] ✅ Node info set from myNodeInfo.user`);
         } else {
           // No complete data yet - will be updated when NodeInfoPacket arrives
-          console.log(`[Meshtastic] Node number set to ${myNodeInfo.myNodeNum}, waiting for complete user info...`);
+          console.log(`[Meshtastic] ⏳ Node number set to ${myNodeInfo.myNodeNum}, waiting for complete user info...`);
         }
       } catch (error) {
-        console.error('[Meshtastic] Error handling node info:', error);
+        console.error('[Meshtastic] ❌ Error handling node info:', error);
         this.handleError(error);
       }
     });
 
     // Subscribe to node info packets (includes our own node with full user details)
     this.device.events.onNodeInfoPacket.subscribe((node) => {
-      console.log(`[Meshtastic] Node info packet:`, node);
+      console.log(`[Meshtastic] 📱 NodeInfoPacket received for node ${node.num}`, {
+        hasUser: !!node.user,
+        longName: node.user?.longName,
+        myNodeNum: this.myNodeNum,
+        deviceNodeNum: this.device?.nodeNum
+      });
 
-      // Check if this is our own node - use device.nodeNum instead of this.myNodeNum to avoid race condition
-      if (this.device && this.device.nodeNum && node.num === this.device.nodeNum && node.user && node.user.longName) {
-        console.log(`[Meshtastic] Received full node info for our own radio!`);
+      // Check if this is our own node - use this.myNodeNum which is set by onMyNodeInfo
+      if (this.myNodeNum && node.num === this.myNodeNum && node.user && node.user.longName) {
+        console.log(`[Meshtastic] 🎉 Received full node info for our own radio!`);
         const nodeInfo = {
           nodeId: this.normalizeNodeId(node.num),
           longName: node.user.longName,
           shortName: node.user.shortName || '????',
           hwModel: this.getHwModelName(node.user.hwModel) || 'Unknown'
         };
+        console.log(`[Meshtastic] 🎯 Calling updateNodeInfo for our radio:`, nodeInfo);
         this.updateNodeInfo(nodeInfo);
-        console.log(`[Meshtastic] Updated our node info:`, nodeInfo);
+        console.log(`[Meshtastic] ✅ Successfully updated our radio's node info`);
+      } else if (node.num === this.myNodeNum) {
+        console.log(`[Meshtastic] ⏳ NodeInfoPacket for our node but missing user data yet`);
       }
 
       // Update node catalog with data from NodeInfoPacket
