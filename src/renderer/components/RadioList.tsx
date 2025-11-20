@@ -40,6 +40,16 @@ interface RadioCardProps {
 }
 
 function RadioCard({ radio, onDisconnect }: RadioCardProps) {
+  // Debug logging to see what data we're receiving
+  console.log('[RadioCard] Rendering radio:', {
+    id: radio.id,
+    name: radio.name,
+    hasNodeInfo: !!radio.nodeInfo,
+    nodeInfo: radio.nodeInfo,
+    hasProtocolMetadata: !!radio.protocolMetadata,
+    protocolMetadata: radio.protocolMetadata
+  });
+
   const statusColors = {
     connected: 'border-green-500/50 bg-green-500/5',
     connecting: 'border-yellow-500/50 bg-yellow-500/5',

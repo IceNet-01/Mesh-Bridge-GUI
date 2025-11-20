@@ -264,6 +264,14 @@ export class WebSocketRadioManager {
       case 'radio-updated':
         // Radio information updated (nodeInfo, channels, config, stats)
         if (data.radio) {
+          console.log('[WebSocket] 🔄 Radio updated:', {
+            id: data.radio.id,
+            name: data.radio.name,
+            hasNodeInfo: !!data.radio.nodeInfo,
+            nodeInfo: data.radio.nodeInfo,
+            hasProtocolMetadata: !!data.radio.protocolMetadata,
+            protocolMetadata: data.radio.protocolMetadata
+          });
           this.radios.set(data.radio.id, data.radio);
           this.emit('radio-status-change', Array.from(this.radios.values()));
           this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');
