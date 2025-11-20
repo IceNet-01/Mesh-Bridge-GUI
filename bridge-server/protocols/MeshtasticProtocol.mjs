@@ -709,8 +709,17 @@ export class MeshtasticProtocol extends BaseProtocol {
    * Update and emit node info for this radio
    */
   updateNodeInfo(nodeInfo) {
+    console.log('[Meshtastic] 📝 updateNodeInfo called with:', {
+      nodeId: nodeInfo?.nodeId,
+      longName: nodeInfo?.longName,
+      shortName: nodeInfo?.shortName,
+      hwModel: nodeInfo?.hwModel
+    });
+
     this.nodeInfo = nodeInfo;
+    console.log('[Meshtastic] ✅ this.nodeInfo set, emitting nodeInfo event...');
     this.emit('nodeInfo', nodeInfo);
+    console.log('[Meshtastic] ✅ nodeInfo event emitted');
   }
 
   /**
@@ -832,7 +841,15 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
 
       // Check if device is configured
+      console.log('[Meshtastic] 🔍 Checking device configuration before send:', {
+        hasNodeInfo: !!this.nodeInfo,
+        nodeInfoKeys: this.nodeInfo ? Object.keys(this.nodeInfo) : [],
+        nodeId: this.nodeInfo?.nodeId,
+        longName: this.nodeInfo?.longName
+      });
+
       if (!this.nodeInfo || !this.nodeInfo.nodeId) {
+        console.log('[Meshtastic] ❌ Device not configured - nodeInfo check failed');
         throw new Error('Device not fully configured yet. Please wait a few seconds and try again.');
       }
 
