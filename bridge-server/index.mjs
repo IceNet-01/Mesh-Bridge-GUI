@@ -704,7 +704,7 @@ class MeshtasticBridgeServer {
       });
 
       protocolHandler.on('nodeInfo', async (nodeInfo) => {
-        console.log(`🆔 Radio ${radioId} node info received:`, nodeInfo);
+        console.log(`🆔 Radio ${radioId} node info:`, nodeInfo.nodeId, nodeInfo.longName);
         const radio = this.radios.get(radioId);
         if (radio) {
           radio.nodeInfo = nodeInfo;
@@ -725,13 +725,7 @@ class MeshtasticBridgeServer {
             radio.nodeNum = null;
           }
 
-          console.log(`✅ Radio ${radioId} node info updated:`, {
-            longName: nodeInfo.longName,
-            shortName: nodeInfo.shortName,
-            nodeId: nodeInfo.nodeId,
-            nodeNum: radio.nodeNum,
-            hwModel: nodeInfo.hwModel
-          });
+          console.log(`✅ Radio ${radioId} configured: ${nodeInfo.longName} (${nodeInfo.nodeId}), nodeNum: ${radio.nodeNum}`);
 
           // Check device time if available and auto-sync if wrong
           const metadata = protocolHandler.getProtocolMetadata();
@@ -766,18 +760,9 @@ class MeshtasticBridgeServer {
           }
 
           // Broadcast updated radio info to clients
-          const radioInfo = this.getRadioInfo(radioId);
-          console.log(`📡 Broadcasting radio-updated for ${radioId}:`, {
-            id: radioInfo.id,
-            name: radioInfo.name,
-            hasNodeInfo: !!radioInfo.nodeInfo,
-            nodeInfo: radioInfo.nodeInfo,
-            hasProtocolMetadata: !!radioInfo.protocolMetadata,
-            protocolMetadata: radioInfo.protocolMetadata
-          });
           this.broadcast({
             type: 'radio-updated',
-            radio: radioInfo
+            radio: this.getRadioInfo(radioId)
           });
         }
       });
@@ -916,18 +901,9 @@ class MeshtasticBridgeServer {
       console.log(`✅ Radio ${radioId} connected successfully`);
 
       // Notify all clients that connection is complete
-      const connectedRadioInfo = this.getRadioInfo(radioId);
-      console.log(`📡 Broadcasting radio-connected for ${radioId}:`, {
-        id: connectedRadioInfo.id,
-        name: connectedRadioInfo.name,
-        hasNodeInfo: !!connectedRadioInfo.nodeInfo,
-        nodeInfo: connectedRadioInfo.nodeInfo,
-        hasProtocolMetadata: !!connectedRadioInfo.protocolMetadata,
-        protocolMetadata: connectedRadioInfo.protocolMetadata
-      });
       this.broadcast({
         type: 'radio-connected',
-        radio: connectedRadioInfo
+        radio: this.getRadioInfo(radioId)
       });
 
       // Radio is now ready and connected
