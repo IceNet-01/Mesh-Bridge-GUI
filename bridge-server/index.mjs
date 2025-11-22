@@ -2113,7 +2113,7 @@ class MeshtasticBridgeServer {
       // Create a message record for the sent message IMMEDIATELY (before waiting for send to complete)
       const sentMessage = {
         id: `msg-sent-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date(), // Use Date object to match received messages
         radioId: radioId,
         protocol: radio.protocolType,
         from: radio.nodeInfo?.nodeId || radioId,
