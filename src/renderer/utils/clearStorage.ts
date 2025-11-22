@@ -14,8 +14,8 @@ export function clearAllStorage() {
   console.log('✅ Cleared all localStorage. Refresh the page to start fresh.');
 }
 
-// Make available globally in development
-if (import.meta.env.DEV) {
+// Make available globally (always available for debugging)
+if (typeof window !== 'undefined') {
   (window as any).clearMessageStorage = clearMessageStorage;
   (window as any).clearAllStorage = clearAllStorage;
   console.log('💡 Storage utilities available: clearMessageStorage(), clearAllStorage()');
