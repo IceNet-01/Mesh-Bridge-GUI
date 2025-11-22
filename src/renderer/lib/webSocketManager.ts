@@ -396,7 +396,7 @@ export class WebSocketRadioManager {
         // New message received (or sent by us)
         const message: Message = {
           id: data.message.id,
-          timestamp: new Date(data.message.timestamp),
+          timestamp: data.message.timestamp ? new Date(data.message.timestamp) : new Date(),
           fromRadio: data.message.radioId,
           protocol: data.message.protocol || 'meshtastic',
           from: data.message.from,
@@ -806,9 +806,15 @@ export class WebSocketRadioManager {
         const parsed = JSON.parse(stored);
         parsed.forEach((msg: any) => {
           // Restore Date objects from ISO strings
+          // Handle edge case where timestamp might be null/undefined/0
+          const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
+
+          // Validate timestamp - if it's epoch (1970), use current time instead
+          const isValidTimestamp = timestamp.getFullYear() > 2020;
+
           this.messages.set(msg.id, {
             ...msg,
-            timestamp: new Date(msg.timestamp)
+            timestamp: isValidTimestamp ? timestamp : new Date()
           });
         });
         this.log('info', `📦 Loaded ${this.messages.size} messages from storage`);

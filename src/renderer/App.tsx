@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
+import './utils/clearStorage'; // Load storage utilities in dev mode
 import { RadioIcon } from './components/icons';
 import { StatusBadge } from './components/ui/StatusBadge';
 import { NavButton } from './components/navigation/NavButton';
