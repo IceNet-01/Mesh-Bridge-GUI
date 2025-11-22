@@ -394,6 +394,14 @@ export class WebSocketRadioManager {
 
       case 'message':
         // New message received (or sent by us)
+        console.log('[DEBUG] Raw message data from backend:', {
+          timestamp: data.message.timestamp,
+          timestampType: typeof data.message.timestamp,
+          timestampValue: data.message.timestamp,
+          sent: data.message.sent,
+          text: data.message.text?.substring(0, 50)
+        });
+
         const message: Message = {
           id: data.message.id,
           timestamp: data.message.timestamp ? new Date(data.message.timestamp) : new Date(),
@@ -413,6 +421,13 @@ export class WebSocketRadioManager {
           rssi: data.message.rssi,
           snr: data.message.snr
         };
+
+        console.log('[DEBUG] Processed message:', {
+          timestamp: message.timestamp,
+          timestampISO: message.timestamp.toISOString(),
+          timestampYear: message.timestamp.getFullYear(),
+          sent: message.sent
+        });
 
         this.messages.set(message.id, message);
         this.saveMessagesToStorage(); // Persist to localStorage
