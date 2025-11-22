@@ -1990,7 +1990,7 @@ class MeshtasticBridgeServer {
           // ===== CROSS-PROTOCOL BRIDGING =====
           // Check if source and target are different protocols
           const sourceProtocol = sourceRadio.protocolType;
-          const targetProtocol = radio.protocolType;
+          const targetProtocol = radio.protocol;
 
           // ===== CHANNEL INDEX FORWARDING MODE =====
           if (this.forwardEncryptedByIndex) {
