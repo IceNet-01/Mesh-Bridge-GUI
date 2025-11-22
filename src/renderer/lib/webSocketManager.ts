@@ -30,6 +30,11 @@ export class WebSocketRadioManager {
   private readonly MESSAGE_RETENTION_DAYS = 7;
   private readonly NODE_RETENTION_DAYS = 180; // Keep node database for 6 months
 
+  // Timer IDs for cleanup
+  private statisticsTimer: NodeJS.Timeout | null = null;
+  private messagesCleanupTimer: NodeJS.Timeout | null = null;
+  private nodesCleanupTimer: NodeJS.Timeout | null = null;
+
   constructor(bridgeUrl?: string) {
     // Use provided URL, or check localStorage, or fall back to smart default
     this.bridgeUrl = bridgeUrl || this.getBridgeUrl();
@@ -58,11 +63,33 @@ export class WebSocketRadioManager {
     this.loadNodesFromStorage();
 
     // Update statistics every second
-    setInterval(() => this.updateStatistics(), 1000);
+    this.statisticsTimer = setInterval(() => this.updateStatistics(), 1000);
 
     // Clean up old messages and nodes every hour
-    setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
-    setInterval(() => this.cleanupOldNodes(), 60 * 60 * 1000);
+    this.messagesCleanupTimer = setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
+    this.nodesCleanupTimer = setInterval(() => this.cleanupOldNodes(), 60 * 60 * 1000);
+  }
+
+  /**
+   * Clean up timers and resources
+   */
+  destroy() {
+    if (this.statisticsTimer) {
+      clearInterval(this.statisticsTimer);
+      this.statisticsTimer = null;
+    }
+    if (this.messagesCleanupTimer) {
+      clearInterval(this.messagesCleanupTimer);
+      this.messagesCleanupTimer = null;
+    }
+    if (this.nodesCleanupTimer) {
+      clearInterval(this.nodesCleanupTimer);
+      this.nodesCleanupTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   // Event emitter pattern
@@ -177,7 +204,8 @@ export class WebSocketRadioManager {
           // Attempt reconnect if configured
           if (this.bridgeConfig.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+            // Cap delay at 60 seconds to avoid excessively long wait times
+            const delay = Math.min(60000, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
             this.log('info', `Reconnecting to bridge in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
             setTimeout(() => {
               this.connectToBridge();
@@ -808,7 +836,32 @@ export class WebSocketRadioManager {
       const messages = Array.from(this.messages.values());
       localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messages));
     } catch (error) {
-      this.log('error', 'Failed to save messages to storage', undefined, error);
+      // Check if it's a quota exceeded error
+      if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        this.log('warn', 'localStorage quota exceeded, pruning old messages', undefined, error);
+
+        // Remove oldest 50% of messages and try again
+        const sortedMessages = Array.from(this.messages.values())
+          .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const keepCount = Math.floor(sortedMessages.length / 2);
+        const messagesToKeep = sortedMessages.slice(-keepCount);
+
+        // Clear and rebuild messages map
+        this.messages.clear();
+        messagesToKeep.forEach(msg => this.messages.set(msg.id, msg));
+
+        // Try saving again
+        try {
+          localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messagesToKeep));
+          this.log('info', `Pruned messages to ${messagesToKeep.length} to fit localStorage quota`);
+        } catch (retryError) {
+          this.log('error', 'Failed to save messages even after pruning', undefined, retryError);
+          // Clear all messages from storage as last resort
+          localStorage.removeItem(this.MESSAGE_STORAGE_KEY);
+        }
+      } else {
+        this.log('error', 'Failed to save messages to storage', undefined, error);
+      }
     }
   }
 

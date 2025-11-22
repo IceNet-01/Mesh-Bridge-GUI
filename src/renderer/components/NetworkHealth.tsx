@@ -48,26 +48,26 @@ export default function NetworkHealth({ nodes, messages }: NetworkHealthProps) {
   // Update channel utilization history
   useEffect(() => {
     const interval = setInterval(() => {
-      nodes.forEach(node => {
-        if (node.channelUtilization !== undefined && node.channelUtilization > 0) {
-          setChannelHistory(prev => {
-            const newMetric: ChannelMetric = {
-              timestamp: new Date(),
-              utilization: node.channelUtilization!,
-              airUtilTx: node.airUtilTx || 0,
-              nodeId: node.nodeId
-            };
+      // Batch all new metrics into a single state update
+      const newMetrics: ChannelMetric[] = nodes
+        .filter(node => node.channelUtilization !== undefined && node.channelUtilization > 0)
+        .map(node => ({
+          timestamp: new Date(),
+          utilization: node.channelUtilization!,
+          airUtilTx: node.airUtilTx || 0,
+          nodeId: node.nodeId
+        }));
 
-            // Keep last 24 hours of data
-            const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-            const filtered = [...prev, newMetric].filter(
-              m => m.timestamp.getTime() > oneDayAgo
-            );
-
-            return filtered;
-          });
-        }
-      });
+      if (newMetrics.length > 0) {
+        setChannelHistory(prev => {
+          // Keep last 24 hours of data
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const filtered = [...prev, ...newMetrics].filter(
+            m => m.timestamp.getTime() > oneDayAgo
+          );
+          return filtered;
+        });
+      }
     }, 30000); // Update every 30 seconds
 
     return () => clearInterval(interval);
@@ -75,9 +75,10 @@ export default function NetworkHealth({ nodes, messages }: NetworkHealthProps) {
 
   // Check for congestion
   useEffect(() => {
-    const currentUtilization = nodes
-      .filter(n => n.channelUtilization !== undefined)
-      .reduce((sum, n) => sum + (n.channelUtilization || 0), 0) / nodes.length;
+    const validNodes = nodes.filter(n => n.channelUtilization !== undefined);
+    const currentUtilization = validNodes.length > 0
+      ? validNodes.reduce((sum, n) => sum + (n.channelUtilization || 0), 0) / validNodes.length
+      : 0;
 
     setShowCongestionAlert(currentUtilization > congestionThreshold);
   }, [nodes, congestionThreshold]);
