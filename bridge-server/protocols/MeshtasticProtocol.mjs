@@ -291,21 +291,19 @@ export class MeshtasticProtocol extends BaseProtocol {
         this.myNodeNum = myNodeInfo.myNodeNum;
         console.log(`[Meshtastic] ✅ Stored myNodeNum: ${this.myNodeNum}`);
 
-        // Try to get full node info from device.nodes first (most reliable)
-        if (this.device && this.device.nodes && this.device.nodeNum) {
-          const myNode = this.device.nodes.get(this.device.nodeNum);
-          if (myNode && myNode.user && myNode.user.longName) {
-            // Have complete node info from device.nodes - use it!
-            const nodeInfo = {
-              nodeId: this.normalizeNodeId(this.device.nodeNum),
-              longName: myNode.user.longName,
-              shortName: myNode.user.shortName || '????',
-              hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
-            };
-            this.updateNodeInfo(nodeInfo);
-            console.log(`[Meshtastic] Node info from device.nodes:`, nodeInfo);
-            return; // Done - have complete info
-          }
+        // Try to get full node info from our catalog first (most reliable)
+        const myNode = this.nodeCatalog.get(myNodeInfo.myNodeNum);
+        if (myNode && myNode.longName) {
+          // Have complete node info from catalog - use it!
+          const nodeInfo = {
+            nodeId: this.normalizeNodeId(myNodeInfo.myNodeNum),
+            longName: myNode.longName,
+            shortName: myNode.shortName || '????',
+            hwModel: myNode.hwModel || 'Unknown'
+          };
+          this.updateNodeInfo(nodeInfo);
+          console.log(`[Meshtastic] Node info from catalog:`, nodeInfo);
+          return; // Done - have complete info
         }
 
         // Fallback: Use myNodeInfo.user if available (may be incomplete)
@@ -638,34 +636,33 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 🔍 fetchAndEmitDeviceInfo called (attempt ${retryCount + 1}/${maxRetries + 1})`);
       console.log(`[Meshtastic] Device state:`, {
         hasDevice: !!this.device,
-        hasNodes: !!this.device?.nodes,
-        nodeNum: this.device?.nodeNum,
-        nodesSize: this.device?.nodes?.size
+        deviceNodeNum: this.device?.nodeNum,
+        myNodeNum: this.myNodeNum,
+        catalogSize: this.nodeCatalog.size
       });
 
-      // Get node info from device
-      if (this.device && this.device.nodes) {
-        console.log(`[Meshtastic] ✅ device.nodes exists, looking for nodeNum: ${this.device.nodeNum}`);
-        const myNode = this.device.nodes.get(this.device.nodeNum);
-        console.log(`[Meshtastic] myNode lookup result:`, {
-          found: !!myNode,
-          hasUser: !!myNode?.user,
-          longName: myNode?.user?.longName
-        });
+      // Check if we have device.nodeNum (our radio's node number)
+      if (this.device && this.device.nodeNum) {
+        console.log(`[Meshtastic] ✅ device.nodeNum exists: ${this.device.nodeNum}`);
 
-        if (myNode && myNode.user && myNode.user.longName) {
-          this.myNodeNum = this.device.nodeNum;
+        // Store our node number for loop prevention
+        this.myNodeNum = this.device.nodeNum;
+
+        // Try to get node info from our catalog first
+        const myNode = this.nodeCatalog.get(this.device.nodeNum);
+
+        if (myNode && myNode.longName) {
           const nodeInfo = {
             nodeId: this.normalizeNodeId(this.device.nodeNum),
-            longName: myNode.user.longName,
-            shortName: myNode.user.shortName || '????',
-            hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
+            longName: myNode.longName,
+            shortName: myNode.shortName || '????',
+            hwModel: myNode.hwModel || 'Unknown'
           };
           console.log(`[Meshtastic] 🎯 Calling updateNodeInfo with:`, nodeInfo);
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] ✅ Node info fetched from device.nodes successfully`);
+          console.log(`[Meshtastic] ✅ Node info fetched from catalog successfully`);
         } else {
-          console.log(`[Meshtastic] ❌ My node not found in device.nodes or missing user data`);
+          console.log(`[Meshtastic] ⏳ My node not in catalog yet (will be populated by events)`);
 
           // Retry with exponential backoff if we haven't exceeded max retries
           if (retryCount < maxRetries) {
@@ -675,18 +672,18 @@ export class MeshtasticProtocol extends BaseProtocol {
             }, retryDelay);
             return; // Exit early, will retry
           } else {
-            console.log(`[Meshtastic] ❌ Max retries reached, giving up on device info fetch`);
+            console.log(`[Meshtastic] ⚠️  Max retries reached, node info will be set when NodeInfoPacket arrives`);
           }
         }
       } else if (retryCount < maxRetries) {
-        // Device or nodes not ready yet, retry
-        console.log(`[Meshtastic] ⏳ Device.nodes not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+        // device.nodeNum not ready yet, retry
+        console.log(`[Meshtastic] ⏳ device.nodeNum not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
         setTimeout(() => {
           this.fetchAndEmitDeviceInfo(retryCount + 1);
         }, retryDelay);
         return; // Exit early, will retry
       } else {
-        console.log(`[Meshtastic] ❌ Device.nodes never became ready after ${maxRetries} retries`);
+        console.log(`[Meshtastic] ⚠️  device.nodeNum never became ready after ${maxRetries} retries`);
       }
 
       // Get channels from device
@@ -755,83 +752,41 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   /**
-   * Scan device.nodes and emit updates for all known nodes
-   * This proactively extracts node information from the library's cache
-   * even if NodeInfoPacket events aren't firing
+   * Scan node catalog and re-emit all known nodes
+   * This ensures clients get periodic updates for all nodes we know about
    */
   scanAndEmitNodes() {
     try {
-      if (!this.device || !this.device.nodes) {
-        console.log(`[Meshtastic] 🔍 Node scan skipped - device.nodes not available`);
+      if (this.nodeCatalog.size === 0) {
+        console.log(`[Meshtastic] 🔍 Node scan skipped - catalog empty (nodes will be added via events)`);
         return;
       }
 
-      console.log(`[Meshtastic] 🔍 Scanning ${this.device.nodes.size} nodes in device.nodes...`);
+      console.log(`[Meshtastic] 🔍 Scanning ${this.nodeCatalog.size} nodes in catalog...`);
       let emittedCount = 0;
-      let skippedNoUser = 0;
 
-      this.device.nodes.forEach((node, nodeNum) => {
+      this.nodeCatalog.forEach((node, nodeNum) => {
         const nodeId = this.normalizeNodeId(nodeNum);
 
-        // DEBUG: Log what data is available for this node
-        if (node.environmentMetrics) {
-          console.log(`[Meshtastic] 🌡️ Node ${nodeId} environmentMetrics keys:`, Object.keys(node.environmentMetrics));
-        }
-
         console.log(`[Meshtastic] 🔍 Node ${nodeId}:`, {
-          hasUser: !!node.user,
-          longName: node.user?.longName,
-          shortName: node.user?.shortName,
-          hwModel: node.user?.hwModel,
-          hasPosition: !!(node.position?.latitudeI),
-          hasDeviceMetrics: !!node.deviceMetrics,
-          hasEnvironmentMetrics: !!node.environmentMetrics,
-          // Show actual environmental values - try both camelCase and snake_case
-          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
-          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
-          batteryLevel: node.deviceMetrics?.batteryLevel,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          hasPosition: !!(node.position?.latitude),
+          temperature: node.temperature,
+          humidity: node.humidity,
+          pressure: node.pressure,
+          batteryLevel: node.batteryLevel,
           lastHeard: node.lastHeard
         });
 
-        // Skip if node doesn't have user data
-        if (!node.user) {
-          console.log(`[Meshtastic] ⚠️  Skipping ${nodeId} - no user data`);
-          skippedNoUser++;
-          return;
-        }
-
-        // Build update object from device.nodes cache
-        const update = {
-          longName: node.user.longName,
-          shortName: node.user.shortName,
-          hwModel: this.getHwModelName(node.user.hwModel),
-          snr: node.snr,
-          position: node.position && node.position.latitudeI && node.position.longitudeI ? {
-            latitude: node.position.latitudeI / 1e7,
-            longitude: node.position.longitudeI / 1e7,
-            altitude: node.position.altitude,
-            time: node.position.time ? new Date(node.position.time * 1000) : undefined
-          } : undefined,
-          batteryLevel: node.deviceMetrics?.batteryLevel,
-          voltage: node.deviceMetrics?.voltage,
-          channelUtilization: node.deviceMetrics?.channelUtilization,
-          airUtilTx: node.deviceMetrics?.airUtilTx,
-          // Try both camelCase and snake_case field names for environmental data
-          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
-          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
-        };
-
-        const catalogedNode = this.updateNodeCatalog(nodeNum, update, 'NodeScan');
-        if (catalogedNode) {
-          console.log(`[Meshtastic] ✅ Emitting node: ${catalogedNode.longName} (${nodeId})`);
-          this.emit('node', catalogedNode);
-          emittedCount++;
-        }
+        // Emit the cataloged node
+        console.log(`[Meshtastic] ✅ Emitting node: ${node.longName} (${nodeId})`);
+        this.emit('node', node);
+        emittedCount++;
       });
 
-      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes, skipped ${skippedNoUser} (no user data)`);
+      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes from catalog`);
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
