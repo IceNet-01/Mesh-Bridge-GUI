@@ -63,7 +63,7 @@ export default function NetworkHealth({ nodes, messages }: NetworkHealthProps) {
           // Keep last 24 hours of data
           const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
           const filtered = [...prev, ...newMetrics].filter(
-            m => m.timestamp.getTime() > oneDayAgo
+            m => new Date(m.timestamp).getTime() > oneDayAgo
           );
           return filtered;
         });

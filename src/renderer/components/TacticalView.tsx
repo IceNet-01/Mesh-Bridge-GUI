@@ -79,7 +79,7 @@ export default function TacticalView({ nodes, radios }: TacticalViewProps) {
         // Keep only positions within the breadcrumb age window
         const cutoffTime = Date.now() - breadcrumbAge * 60 * 1000;
         trail.positions = trail.positions.filter(
-          p => p.timestamp.getTime() > cutoffTime
+          p => new Date(p.timestamp).getTime() > cutoffTime
         );
       }
 

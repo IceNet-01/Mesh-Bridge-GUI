@@ -328,7 +328,6 @@ export class WebSocketRadioManager {
               if (node.num === data.node.num) {
                 existingNode = node;
                 oldNodeId = key; // Track old key for cleanup
-                console.log(`[WebSocket] Found duplicate node: ${key} → ${data.node.nodeId} (num: ${data.node.num})`);
                 break;
               }
             }
@@ -369,7 +368,6 @@ export class WebSocketRadioManager {
           // Remove old duplicate entry if nodeId format changed
           if (oldNodeId && oldNodeId !== data.node.nodeId) {
             this.nodes.delete(oldNodeId);
-            console.log(`[WebSocket] Removed duplicate node entry: ${oldNodeId}`);
           }
 
           this.nodes.set(node.nodeId, node);
@@ -388,14 +386,6 @@ export class WebSocketRadioManager {
           // Enhanced logging to help debug map issues
           if (node.position) {
             this.log('info', `📍 Node ${node.shortName} (${node.nodeId}) @ ${node.position.latitude.toFixed(6)}, ${node.position.longitude.toFixed(6)}`, 'node');
-            console.log('[WebSocketManager] Node with position:', {
-              nodeId: node.nodeId,
-              shortName: node.shortName,
-              lat: node.position.latitude,
-              lon: node.position.longitude,
-              totalNodes: this.nodes.size,
-              nodesWithPosition: Array.from(this.nodes.values()).filter(n => n.position).length
-            });
           } else {
             this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) no location`, 'node');
           }

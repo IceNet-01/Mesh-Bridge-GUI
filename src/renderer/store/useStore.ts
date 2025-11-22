@@ -188,7 +188,7 @@ export const useStore = create<AppStore>((set, get) => {
         // Keep last 24 hours of snapshots (assuming ~5min intervals = 288 snapshots/day)
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         const filteredSnapshots = updatedSnapshots.filter(
-          s => s.timestamp.getTime() > oneDayAgo
+          s => new Date(s.timestamp).getTime() > oneDayAgo
         );
 
         newHistory.set(node.nodeId, filteredSnapshots);

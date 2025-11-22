@@ -76,7 +76,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
           // Check if we already have this emergency
           const existingEmergency = prev.find(e =>
             e.nodeId === msg.from &&
-            Math.abs(e.timestamp.getTime() - new Date(msg.timestamp).getTime()) < 60000 // Within 1 minute
+            Math.abs(new Date(e.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 60000 // Within 1 minute
           );
 
           if (existingEmergency) {
@@ -185,7 +185,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
 
   // Get emergency duration
   const getEmergencyDuration = (emergency: EmergencyEvent): string => {
-    const duration = Date.now() - emergency.timestamp.getTime();
+    const duration = Date.now() - new Date(emergency.timestamp).getTime();
     const minutes = Math.floor(duration / 60000);
     const hours = Math.floor(minutes / 60);
 
