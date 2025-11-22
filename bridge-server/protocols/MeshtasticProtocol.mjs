@@ -200,6 +200,18 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
 
+      // ALWAYS sync time on connection to ensure radio has correct timestamp
+      // This fixes the "1969" timestamp issue on sent messages
+      console.log(`[Meshtastic] ⏰ Syncing time to radio to prevent 1969 timestamps...`);
+      setTimeout(async () => {
+        try {
+          await this.syncTime();
+          console.log(`[Meshtastic] ✅ Time synced successfully`);
+        } catch (error) {
+          console.error(`[Meshtastic] ⚠️  Time sync failed (messages will have incorrect timestamps):`, error.message);
+        }
+      }, 3000); // Wait 3 seconds for device to be ready
+
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
       return true;
