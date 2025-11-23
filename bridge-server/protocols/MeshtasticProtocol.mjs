@@ -1100,6 +1100,109 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   /**
+   * Get channel configuration from the radio
+   * @param {number} channelIndex - Channel index (0-7)
+   * @returns {Promise<Object>} Channel configuration
+   */
+  async getChannel(channelIndex) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Channel Config] 📻 Getting channel ${channelIndex} configuration...`);
+
+      // Create AdminMessage with get_channel_request
+      // Index is 1-based in protobuf (0 = primary channel)
+      const getChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'getChannelRequest',
+          value: channelIndex + 1  // Convert to 1-based index
+        }
+      });
+
+      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(getChannelMessage, null, 2));
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, getChannelMessage);
+
+      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
+
+      // Send to radio and request response
+      console.log(`[Channel Config] 📡 Sending get channel request...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck
+        true    // wantResponse - we need the channel config back
+      );
+
+      console.log(`[Channel Config] ✅ Request sent, packet ID: ${packetId}`);
+
+      // Note: Response will come via onChannelPacket event
+      return { success: true, packetId };
+    } catch (error) {
+      console.error('[Channel Config] ❌ Error getting channel:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set channel configuration on the radio
+   * @param {Object} channelConfig - Channel configuration object
+   * @returns {Promise<boolean>} Success status
+   */
+  async setChannel(channelConfig) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Channel Config] 📻 Setting channel configuration...`);
+      console.log(`[Channel Config] 📦 Channel config:`, JSON.stringify(channelConfig, null, 2));
+
+      // Create Channel protobuf message
+      const channelMessage = create(Protobuf.Channel.ChannelSchema, channelConfig);
+
+      // Create AdminMessage with set_channel
+      const setChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setChannel',
+          value: channelMessage
+        }
+      });
+
+      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(setChannelMessage, null, 2));
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setChannelMessage);
+
+      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
+      console.log(`[Channel Config] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+      // Send to radio
+      console.log(`[Channel Config] 📡 Sending set channel request...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck
+        false   // wantResponse
+      );
+
+      console.log(`[Channel Config] ✅ Channel configuration sent, packet ID: ${packetId}`);
+
+      return true;
+    } catch (error) {
+      console.error('[Channel Config] ❌ Error setting channel:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Reboot the radio device
    * This will restart the Meshtastic radio
    */

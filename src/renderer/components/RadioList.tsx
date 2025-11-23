@@ -1,12 +1,15 @@
 import { Radio } from '../types';
+import ChannelConfig from './ChannelConfig';
 
 interface RadioListProps {
   radios: Radio[];
   onDisconnect: (radioId: string) => void;
   onReboot: (radioId: string) => void;
+  onGetChannel: (radioId: string, channelIndex: number) => void;
+  onSetChannel: (radioId: string, channelConfig: any) => void;
 }
 
-function RadioList({ radios, onDisconnect, onReboot }: RadioListProps) {
+function RadioList({ radios, onDisconnect, onReboot, onGetChannel, onSetChannel }: RadioListProps) {
   return (
     <div className="space-y-6">
       <div>
@@ -27,7 +30,14 @@ function RadioList({ radios, onDisconnect, onReboot }: RadioListProps) {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {radios.map((radio) => (
-            <RadioCard key={radio.id} radio={radio} onDisconnect={onDisconnect} onReboot={onReboot} />
+            <RadioCard
+              key={radio.id}
+              radio={radio}
+              onDisconnect={onDisconnect}
+              onReboot={onReboot}
+              onGetChannel={onGetChannel}
+              onSetChannel={onSetChannel}
+            />
           ))}
         </div>
       )}
@@ -39,9 +49,11 @@ interface RadioCardProps {
   radio: Radio;
   onDisconnect: (radioId: string) => void;
   onReboot: (radioId: string) => void;
+  onGetChannel: (radioId: string, channelIndex: number) => void;
+  onSetChannel: (radioId: string, channelConfig: any) => void;
 }
 
-function RadioCard({ radio, onDisconnect, onReboot }: RadioCardProps) {
+function RadioCard({ radio, onDisconnect, onReboot, onGetChannel, onSetChannel }: RadioCardProps) {
   const statusColors = {
     connected: 'border-green-500/50 bg-green-500/5',
     connecting: 'border-yellow-500/50 bg-yellow-500/5',
@@ -253,6 +265,15 @@ function RadioCard({ radio, onDisconnect, onReboot }: RadioCardProps) {
             </div>
           )}
         </div>
+      )}
+
+      {/* Channel Configuration - Only for Meshtastic radios */}
+      {radio.protocol === 'meshtastic' && radio.status === 'connected' && (
+        <ChannelConfig
+          radioId={radio.id}
+          onGetChannel={(channelIndex) => onGetChannel(radio.id, channelIndex)}
+          onSetChannel={(channelConfig) => onSetChannel(radio.id, channelConfig)}
+        />
       )}
 
       {radio.lastSeen && (

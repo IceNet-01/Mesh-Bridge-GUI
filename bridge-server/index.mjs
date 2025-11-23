@@ -548,6 +548,14 @@ class MeshtasticBridgeServer {
           await this.rebootRadio(ws, message.radioId);
           break;
 
+        case 'get-channel':
+          await this.getChannel(ws, message.radioId, message.channelIndex);
+          break;
+
+        case 'set-channel':
+          await this.setChannel(ws, message.radioId, message.channelConfig);
+          break;
+
         case 'send-text':
           await this.sendText(ws, message.radioId, message.text, message.channel);
           break;
@@ -2281,6 +2289,96 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Reboot failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Get channel configuration from a radio
+   */
+  async getChannel(ws, radioId, channelIndex) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Getting channel ${channelIndex} from radio ${radioId}...`);
+
+      // Get channel using protocol handler
+      if (radio.protocol && typeof radio.protocol.getChannel === 'function') {
+        const result = await radio.protocol.getChannel(channelIndex);
+
+        console.log(`✅ Channel ${channelIndex} request sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'get-channel-success',
+          radioId: radioId,
+          channelIndex: channelIndex,
+          message: 'Channel request sent. Response will arrive via channel-update event.'
+        }));
+
+      } else {
+        throw new Error('Channel configuration not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Get channel error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Get channel failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set channel configuration on a radio
+   */
+  async setChannel(ws, radioId, channelConfig) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Setting channel configuration on radio ${radioId}...`);
+      console.log(`📦 Channel config:`, JSON.stringify(channelConfig, null, 2));
+
+      // Set channel using protocol handler
+      if (radio.protocol && typeof radio.protocol.setChannel === 'function') {
+        await radio.protocol.setChannel(channelConfig);
+
+        console.log(`✅ Channel configuration sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'set-channel-success',
+          radioId: radioId,
+          message: 'Channel configuration sent successfully.'
+        }));
+
+        // Broadcast to all clients that channel was updated
+        this.broadcast({
+          type: 'channel-configuration-updated',
+          radioId: radioId
+        });
+
+      } else {
+        throw new Error('Channel configuration not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Set channel error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Set channel failed: ${error.message}`
       }));
     }
   }
