@@ -25,10 +25,15 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Timers for periodic tasks
     this.nodesScanInterval = null;
-    this.timeSyncInterval = null;
+    this.radioTimeUpdateInterval = null;
 
     // Track last message time for device time fallback
     this.lastMessageTime = null;
+
+    // Track radio's actual time (updated from packets)
+    this.radioTime = null;
+    this.radioTimeSource = null;
+    this.radioTimeUpdated = null; // When we last updated radio time
   }
 
   getProtocolName() {
@@ -201,18 +206,14 @@ export class MeshtasticProtocol extends BaseProtocol {
       }, 60000); // Scan every 60 seconds
       console.log(`[Meshtastic] Periodic node scan enabled (60s interval)`);
 
-      // Set up periodic time sync to keep radio clock accurate
-      // Sync every 30 minutes to prevent drift
-      this.timeSyncInterval = setInterval(async () => {
-        try {
-          console.log(`[Meshtastic] ⏰ Periodic time sync...`);
-          await this.syncTime();
-          console.log(`[Meshtastic] ✅ Periodic time sync successful`);
-        } catch (error) {
-          console.error(`[Meshtastic] ⚠️  Periodic time sync failed:`, error.message);
+      // Set up periodic radio status updates to keep UI time display fresh
+      // Emit radio update every 10 seconds to refresh device time display
+      this.radioTimeUpdateInterval = setInterval(() => {
+        if (this.nodeInfo) {
+          this.updateNodeInfo(this.nodeInfo);
         }
-      }, 30 * 60 * 1000); // Every 30 minutes
-      console.log(`[Meshtastic] Periodic time sync enabled (30min interval)`);
+      }, 10000); // Every 10 seconds
+      console.log(`[Meshtastic] Periodic radio time updates enabled (10s interval)`);
 
       this.connected = true;
 
@@ -221,18 +222,6 @@ export class MeshtasticProtocol extends BaseProtocol {
       this.fetchAndEmitDeviceInfo(0); // Start with 0 retries
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
-
-      // ALWAYS sync time on connection to ensure radio has correct timestamp
-      // This fixes the "1969" timestamp issue on sent messages
-      console.log(`[Meshtastic] ⏰ Syncing time to radio to prevent 1969 timestamps...`);
-      setTimeout(async () => {
-        try {
-          await this.syncTime();
-          console.log(`[Meshtastic] ✅ Time synced successfully`);
-        } catch (error) {
-          console.error(`[Meshtastic] ⚠️  Time sync failed (messages will have incorrect timestamps):`, error.message);
-        }
-      }, 3000); // Wait 3 seconds for device to be ready
 
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
@@ -432,6 +421,13 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device.events.onPositionPacket.subscribe((positionPacket) => {
       console.log(`[Meshtastic] Position packet:`, positionPacket);
       try {
+        // If this is from our own radio and has GPS time, update radio time (silent)
+        if (this.myNodeNum && positionPacket.from === this.myNodeNum && positionPacket.data?.time) {
+          this.radioTime = new Date(positionPacket.data.time * 1000);
+          this.radioTimeSource = 'gps';
+          this.radioTimeUpdated = new Date();
+        }
+
         if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
           // Update node catalog with position data
           const update = {
@@ -461,6 +457,13 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
 
       try {
+        // If this is from our own radio, update radio time (silent)
+        if (this.myNodeNum && telemetryPacket.from === this.myNodeNum) {
+          this.radioTime = new Date();
+          this.radioTimeSource = 'telemetry';
+          this.radioTimeUpdated = new Date();
+        }
+
         // Log the COMPLETE telemetry packet structure
         console.log(`[Meshtastic] 🔍 FULL TelemetryPacket structure:`, JSON.stringify(telemetryPacket, null, 2));
 
@@ -775,17 +778,8 @@ export class MeshtasticProtocol extends BaseProtocol {
    * Update and emit node info for this radio
    */
   updateNodeInfo(nodeInfo) {
-    console.log('[Meshtastic] 📝 updateNodeInfo called with:', {
-      nodeId: nodeInfo?.nodeId,
-      longName: nodeInfo?.longName,
-      shortName: nodeInfo?.shortName,
-      hwModel: nodeInfo?.hwModel
-    });
-
     this.nodeInfo = nodeInfo;
-    console.log('[Meshtastic] ✅ this.nodeInfo set, emitting nodeInfo event...');
     this.emit('nodeInfo', nodeInfo);
-    console.log('[Meshtastic] ✅ nodeInfo event emitted');
   }
 
   /**
@@ -817,13 +811,12 @@ export class MeshtasticProtocol extends BaseProtocol {
           lastHeard: node.lastHeard
         });
 
-        // Emit the cataloged node
-        console.log(`[Meshtastic] ✅ Emitting node: ${node.longName} (${nodeId})`);
+        // Emit the cataloged node (silent)
         this.emit('node', node);
         emittedCount++;
       });
 
-      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes from catalog`);
+      // Node scan complete (silent - ${emittedCount} nodes)
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
@@ -840,11 +833,11 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic node scan disabled`);
       }
 
-      // Clear periodic time sync interval
-      if (this.timeSyncInterval) {
-        clearInterval(this.timeSyncInterval);
-        this.timeSyncInterval = null;
-        console.log(`[Meshtastic] Periodic time sync disabled`);
+      // Clear periodic radio time update interval
+      if (this.radioTimeUpdateInterval) {
+        clearInterval(this.radioTimeUpdateInterval);
+        this.radioTimeUpdateInterval = null;
+        console.log(`[Meshtastic] Periodic radio time updates disabled`);
       }
 
       if (this.device) {
@@ -986,76 +979,104 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   /**
-   * Sync the current time to the radio
-   * This sets the radio's clock to match the system time
+   * Get channel configuration from the radio
+   * @param {number} channelIndex - Channel index (0-7)
+   * @returns {Promise<Object>} Channel configuration
    */
-  /**
-   * Sync time to the radio using AdminMessage.set_time_only
-   * This is the CORRECT method for setting time on Meshtastic devices
-   */
-  async syncTime() {
+  async getChannel(channelIndex) {
     try {
       if (!this.connected || !this.device) {
         throw new Error('Device not connected');
       }
 
-      // ============================================================
-      console.log('\n╔════════════════════════════════════════════════════════════╗');
-      console.log('║              TIME SYNC OPERATION STARTING                  ║');
-      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.log(`[Channel Config] 📻 Getting channel ${channelIndex} configuration...`);
 
-      // Get current time in Unix timestamp (seconds)
-      const currentTimeSeconds = Math.floor(Date.now() / 1000);
-      const currentDate = new Date(currentTimeSeconds * 1000);
-
-      console.log(`[TIME SYNC] 🕐 Host Time: ${currentDate.toLocaleString()}`);
-      console.log(`[TIME SYNC] 📅 Date: ${currentDate.toDateString()}`);
-      console.log(`[TIME SYNC] 🔢 Unix Timestamp: ${currentTimeSeconds} seconds`);
-      console.log(`[TIME SYNC] ✓ Year Check: ${currentDate.getFullYear()} (should be 2025)`);
-
-      // Create AdminMessage with set_time_only field using same pattern as setFixedPosition
-      // Field 43 in the AdminMessage protobuf (fixed32)
-      console.log(`[TIME SYNC] 📝 Creating AdminMessage with setTimeOnly field...`);
-      const setTimeMessage = create(Protobuf.Admin.AdminMessageSchema, {
+      // Create AdminMessage with get_channel_request
+      // Index is 1-based in protobuf (0 = primary channel)
+      const getChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
         payloadVariant: {
-          case: 'setTimeOnly',
-          value: currentTimeSeconds
+          case: 'getChannelRequest',
+          value: channelIndex + 1  // Convert to 1-based index
         }
       });
 
-      console.log(`[TIME SYNC] 📦 AdminMessage Structure:`, JSON.stringify(setTimeMessage, null, 2));
+      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(getChannelMessage, null, 2));
 
-      // Serialize and send using exact same pattern as setFixedPosition
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setTimeMessage);
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, getChannelMessage);
 
-      console.log(`[TIME SYNC] 🔧 Serialized to ${adminBytes.length} bytes`);
-      console.log(`[TIME SYNC] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
 
-      // Send using same parameters as setFixedPosition: channel 0, wantAck true, wantResponse false
-      console.log(`[TIME SYNC] 📡 Sending to radio via ADMIN_APP port on channel 0...`);
+      // Send to radio and request response
+      console.log(`[Channel Config] 📡 Sending get channel request...`);
       const packetId = await this.device.sendPacket(
         adminBytes,
         Protobuf.Portnums.PortNum.ADMIN_APP,
         'self',
         0,
-        true,   // wantAck = true (same as setFixedPosition)
-        false   // wantResponse = false (same as setFixedPosition)
+        true,   // wantAck
+        true    // wantResponse - we need the channel config back
       );
 
-      console.log(`[TIME SYNC] ✅ SUCCESS! Packet ID: ${packetId}`);
-      console.log('╔════════════════════════════════════════════════════════════╗');
-      console.log('║           TIME SYNC OPERATION COMPLETED                    ║');
-      console.log('╚════════════════════════════════════════════════════════════╝\n');
-      // ============================================================
+      console.log(`[Channel Config] ✅ Request sent, packet ID: ${packetId}`);
+
+      // Note: Response will come via onChannelPacket event
+      return { success: true, packetId };
+    } catch (error) {
+      console.error('[Channel Config] ❌ Error getting channel:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set channel configuration on the radio
+   * @param {Object} channelConfig - Channel configuration object
+   * @returns {Promise<boolean>} Success status
+   */
+  async setChannel(channelConfig) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Channel Config] 📻 Setting channel configuration...`);
+      console.log(`[Channel Config] 📦 Channel config:`, JSON.stringify(channelConfig, null, 2));
+
+      // Create Channel protobuf message
+      const channelMessage = create(Protobuf.Channel.ChannelSchema, channelConfig);
+
+      // Create AdminMessage with set_channel
+      const setChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setChannel',
+          value: channelMessage
+        }
+      });
+
+      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(setChannelMessage, null, 2));
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setChannelMessage);
+
+      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
+      console.log(`[Channel Config] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+      // Send to radio
+      console.log(`[Channel Config] 📡 Sending set channel request...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck
+        false   // wantResponse
+      );
+
+      console.log(`[Channel Config] ✅ Channel configuration sent, packet ID: ${packetId}`);
 
       return true;
     } catch (error) {
-      console.log('\n╔════════════════════════════════════════════════════════════╗');
-      console.log('║               TIME SYNC OPERATION FAILED                   ║');
-      console.log('╚════════════════════════════════════════════════════════════╝');
-      console.error('[TIME SYNC] ❌ ERROR:', error);
-      console.error('[TIME SYNC] Error Details:', JSON.stringify(error, null, 2));
-      console.log('════════════════════════════════════════════════════════════\n');
+      console.error('[Channel Config] ❌ Error setting channel:', error);
       throw error;
     }
   }
@@ -1113,16 +1134,21 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   getProtocolMetadata() {
-    // Get device time if available (helps diagnose timestamp issues)
+    // Get device time - use tracked radio time if available
     let deviceTime = null;
     let deviceTimeSource = null;
+
     try {
-      // Try to get device time from position time
-      if (this.nodeInfo?.position?.time) {
+      if (this.radioTime) {
+        // Use tracked radio time (updated from telemetry/GPS packets)
+        deviceTime = this.radioTime;
+        deviceTimeSource = this.radioTimeSource;
+      } else if (this.nodeInfo?.position?.time) {
+        // Fallback: Try to get device time from position time
         deviceTime = new Date(this.nodeInfo.position.time * 1000);
         deviceTimeSource = 'gps';
       } else if (this.lastMessageTime) {
-        // Fallback: use time from last received message
+        // Last fallback: use time from last received message
         deviceTime = this.lastMessageTime;
         deviceTimeSource = 'message';
       }
@@ -1134,7 +1160,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
       deviceTime: deviceTime, // Device's current time (Date object or null)
-      deviceTimeSource: deviceTimeSource, // 'gps', 'message', or null
+      deviceTimeSource: deviceTimeSource, // 'gps', 'telemetry', 'message', or null
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),

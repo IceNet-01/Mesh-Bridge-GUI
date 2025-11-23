@@ -3,6 +3,7 @@ import { IconName } from '../icons';
 export type Tab =
   | 'dashboard'
   | 'radios'
+  | 'radioconfig'
   | 'nodes'
   | 'messages'
   | 'map'

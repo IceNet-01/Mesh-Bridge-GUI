@@ -28,7 +28,7 @@ export interface Radio {
     firmware?: string;
     hardware?: string;
     deviceTime?: Date;  // Current radio time
-    deviceTimeSource?: 'gps' | 'message' | null;  // Source of device time
+    deviceTimeSource?: 'gps' | 'telemetry' | 'message' | null;  // Source of device time
     loraConfig?: {
       region?: string;
       modemPreset?: string;
@@ -141,7 +141,7 @@ export interface NodeTelemetryHistory {
 export interface LogEntry {
   id?: string;
   timestamp: Date;
-  level: 'info' | 'warn' | 'error' | 'debug';
+  level: 'info' | 'warn' | 'error' | 'debug' | 'time-sync';
   message: string;
   context?: string;
   radioId?: string;
@@ -256,4 +256,30 @@ declare global {
     usbVendorId?: number;
     usbProductId?: number;
   }
+}
+
+// Meshtastic Channel Configuration Types
+export type ChannelRole = 'PRIMARY' | 'SECONDARY' | 'DISABLED';
+
+export interface ChannelSettings {
+  psk?: Uint8Array;  // Pre-shared key for encryption
+  name?: string;  // Channel name
+  id?: number;  // Channel number/ID
+  uplinkEnabled?: boolean;
+  downlinkEnabled?: boolean;
+  moduleSettings?: {
+    positionPrecision?: number;
+  };
+}
+
+export interface Channel {
+  index: number;  // Channel index (0-7)
+  settings: ChannelSettings;
+  role: ChannelRole;
+}
+
+export interface ChannelConfig {
+  index: number;
+  settings: ChannelSettings;
+  role: ChannelRole;
 }

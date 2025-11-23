@@ -2,6 +2,7 @@ import { ComponentType } from 'react';
 import { Tab } from './types';
 import Dashboard from '../Dashboard';
 import RadioList from '../RadioList';
+import RadioConfigPage from '../RadioConfigPage';
 import NodeList from '../NodeList';
 import MessageMonitor from '../MessageMonitor';
 import { MapView } from '../MapView';
@@ -28,6 +29,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   radios: {
     component: RadioList,
+  },
+  radioconfig: {
+    component: RadioConfigPage,
   },
   nodes: {
     component: NodeList,

@@ -47,9 +47,10 @@ class MeshtasticBridgeServer {
     this.radios = new Map(); // radioId -> { device, transport, port, info }
     this.clients = new Set(); // WebSocket clients
     this.messageHistory = [];
-    this.maxHistorySize = 500;
-    this.seenMessageIds = new Set(); // Track message IDs for deduplication
-    this.maxSeenMessages = 1000; // Limit size of seen messages set
+    this.maxHistorySize = 1000;              // Keep last 1000 messages (increased for high uptime)
+    this.seenMessageIds = new Set();         // Track message IDs for deduplication
+    this.maxSeenMessages = 2000;             // Limit size of seen messages set (increased)
+    this.seenMessageTimestamps = new Map();  // Track when message IDs were added for age-based cleanup
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -145,8 +146,11 @@ class MeshtasticBridgeServer {
     // ===== CONSOLE OUTPUT CAPTURE =====
     // Capture all console output and broadcast to WebSocket clients for raw log viewing
     this.consoleBuffer = [];                   // Buffer for raw console output
-    this.maxConsoleBuffer = 2000;              // Keep last 2000 lines
+    this.maxConsoleBuffer = 5000;              // Keep last 5000 lines (increased for high uptime)
     this.setupConsoleCapture();
+
+    // Periodic cleanup task for memory management (runs every 10 minutes)
+    setInterval(() => this.performMemoryCleanup(), 10 * 60 * 1000);
 
     // Load persistent configuration (AI state, etc.)
     this.loadConfig();
@@ -262,7 +266,40 @@ class MeshtasticBridgeServer {
           console.log(`📋 Loaded AI state from config: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
         }
 
-        // Can add more config options here in the future (MQTT, email, etc.)
+        // Load Email configuration
+        if (config.email) {
+          if (config.email.enabled !== undefined) this.emailEnabled = config.email.enabled;
+          if (config.email.host) this.emailHost = config.email.host;
+          if (config.email.port !== undefined) this.emailPort = config.email.port;
+          if (config.email.secure !== undefined) this.emailSecure = config.email.secure;
+          if (config.email.user) this.emailUser = config.email.user;
+          if (config.email.password) this.emailPassword = config.email.password;
+          if (config.email.from) this.emailFrom = config.email.from;
+          if (config.email.to) this.emailTo = config.email.to;
+          if (config.email.subjectPrefix) this.emailSubjectPrefix = config.email.subjectPrefix;
+          console.log(`📋 Loaded Email config: ${this.emailEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Load Discord configuration
+        if (config.discord) {
+          if (config.discord.enabled !== undefined) this.discordEnabled = config.discord.enabled;
+          if (config.discord.webhook) this.discordWebhook = config.discord.webhook;
+          if (config.discord.username) this.discordUsername = config.discord.username;
+          if (config.discord.avatarUrl) this.discordAvatarUrl = config.discord.avatarUrl;
+          console.log(`📋 Loaded Discord config: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Load MQTT configuration
+        if (config.mqtt) {
+          if (config.mqtt.enabled !== undefined) this.mqttEnabled = config.mqtt.enabled;
+          if (config.mqtt.brokerUrl) this.mqttBrokerUrl = config.mqtt.brokerUrl;
+          if (config.mqtt.username) this.mqttUsername = config.mqtt.username;
+          if (config.mqtt.password) this.mqttPassword = config.mqtt.password;
+          if (config.mqtt.topicPrefix) this.mqttTopicPrefix = config.mqtt.topicPrefix;
+          if (config.mqtt.qos !== undefined) this.mqttQos = config.mqtt.qos;
+          if (config.mqtt.retain !== undefined) this.mqttRetain = config.mqtt.retain;
+          console.log(`📋 Loaded MQTT config: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
       }
     } catch (error) {
       console.error('⚠️  Error loading config file:', error.message);
@@ -277,7 +314,32 @@ class MeshtasticBridgeServer {
     try {
       const config = {
         aiEnabled: this.aiEnabled,
-        // Can add more config options here in the future
+        email: {
+          enabled: this.emailEnabled,
+          host: this.emailHost,
+          port: this.emailPort,
+          secure: this.emailSecure,
+          user: this.emailUser,
+          password: this.emailPassword, // Stored securely in config file
+          from: this.emailFrom,
+          to: this.emailTo,
+          subjectPrefix: this.emailSubjectPrefix
+        },
+        discord: {
+          enabled: this.discordEnabled,
+          webhook: this.discordWebhook,
+          username: this.discordUsername,
+          avatarUrl: this.discordAvatarUrl
+        },
+        mqtt: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword, // Stored securely in config file
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain
+        }
       };
 
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
@@ -542,6 +604,14 @@ class MeshtasticBridgeServer {
           await this.rebootRadio(ws, message.radioId);
           break;
 
+        case 'get-channel':
+          await this.getChannel(ws, message.radioId, message.channelIndex);
+          break;
+
+        case 'set-channel':
+          await this.setChannel(ws, message.radioId, message.channelConfig);
+          break;
+
         case 'send-text':
           await this.sendText(ws, message.radioId, message.text, message.channel);
           break;
@@ -685,6 +755,11 @@ class MeshtasticBridgeServer {
     try {
       console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
+      // Generate stable radio ID based on port path
+      // This ensures reconnections on the same port reuse the same ID (prevents duplicates)
+      const portHash = portPath.replace(/[^a-zA-Z0-9]/g, '-');
+      const radioId = `radio-${portHash}`;
+
       // Check if a radio already exists for this port
       for (const [existingId, existingRadio] of this.radios.entries()) {
         if (existingRadio.port === portPath) {
@@ -692,8 +767,6 @@ class MeshtasticBridgeServer {
           return; // Don't create duplicate
         }
       }
-
-      const radioId = `radio-${Date.now()}`;
 
       // Create protocol handler
       const protocolHandler = createProtocol(protocol, radioId, portPath);
@@ -730,38 +803,6 @@ class MeshtasticBridgeServer {
           }
 
           console.log(`✅ Radio ${radioId} configured: ${nodeInfo.longName} (${nodeInfo.nodeId}), nodeNum: ${radio.nodeNum}`);
-
-          // Check device time if available and auto-sync if wrong
-          const metadata = protocolHandler.getProtocolMetadata();
-          if (metadata.deviceTime) {
-            const deviceDate = new Date(metadata.deviceTime);
-            const currentDate = new Date();
-            const timeDiff = Math.abs(currentDate - deviceDate) / 1000 / 60; // minutes
-
-            console.log(`⏰ Radio ${radioId} device time: ${deviceDate.toLocaleString()}`);
-
-            if (timeDiff > 60) { // More than 1 hour difference
-              console.warn(`⚠️  WARNING: Radio ${radioId} clock is off by ${Math.round(timeDiff / 60)} hours!`);
-              console.warn(`   Device time: ${deviceDate.toLocaleString()}`);
-              console.warn(`   Current time: ${currentDate.toLocaleString()}`);
-              console.warn(`   Attempting to automatically sync time...`);
-
-              // Auto-sync time if method exists
-              if (typeof protocolHandler.syncTime === 'function') {
-                try {
-                  await protocolHandler.syncTime();
-                  console.log(`✅ Time sync initiated for ${radioId}`);
-                } catch (error) {
-                  console.error(`❌ Failed to sync time on ${radioId}:`, error.message);
-                  console.warn(`   You may need to manually sync time using the Meshtastic app`);
-                }
-              } else {
-                console.warn(`   Auto time-sync not supported for this protocol type`);
-              }
-            } else {
-              console.log(`✅ Radio ${radioId} clock is accurate (within 1 hour)`);
-            }
-          }
 
           // Broadcast updated radio info to clients
           this.broadcast({
@@ -820,9 +861,8 @@ class MeshtasticBridgeServer {
           if (meshNode.batteryLevel !== undefined) details.push(`🔋${meshNode.batteryLevel}%`);
           if (meshNode.temperature !== undefined) details.push(`🌡️${meshNode.temperature}°C`);
           console.log(`📊 Telemetry update for ${meshNode.nodeId}: ${details.join(' ')}`);
-        } else {
-          console.log(`📍 Node ${meshNode.shortName} (${meshNode.nodeId}) seen by radio ${radioId}`);
         }
+        // Nodes are logged when first discovered, don't spam on every update
 
         // Broadcast node info to clients
         this.broadcast({
@@ -860,6 +900,12 @@ class MeshtasticBridgeServer {
             radio: this.getRadioInfo(radioId)
           });
         }
+      });
+
+      // Handle disconnection (when serial port closes naturally)
+      protocolHandler.on('disconnected', () => {
+        console.log(`🔌 Radio ${radioId} disconnected (serial port closed)`);
+        this.handleRadioDisconnect(radioId);
       });
 
       // Store radio reference
@@ -1036,6 +1082,48 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Perform periodic memory cleanup to prevent unbounded growth
+   * Runs every 10 minutes to clean up old data
+   */
+  performMemoryCleanup() {
+    try {
+      const now = Date.now();
+      const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+
+      // Clean up old seen message IDs (older than 1 hour)
+      let cleanedCount = 0;
+      for (const [messageId, timestamp] of this.seenMessageTimestamps.entries()) {
+        if (timestamp < oneHourAgo) {
+          this.seenMessageIds.delete(messageId);
+          this.seenMessageTimestamps.delete(messageId);
+          cleanedCount++;
+        }
+      }
+
+      if (cleanedCount > 0) {
+        console.log(`🧹 Memory cleanup: Removed ${cleanedCount} old message IDs from deduplication cache`);
+      }
+
+      // Report current memory usage
+      const memUsage = {
+        consoleBuffer: this.consoleBuffer.length,
+        messageHistory: this.messageHistory.length,
+        seenMessageIds: this.seenMessageIds.size,
+        connectedRadios: this.radios.size,
+        wsClients: this.clients.size
+      };
+
+      console.log(`📊 Memory stats: Console=${memUsage.consoleBuffer}/${this.maxConsoleBuffer}, ` +
+                  `Messages=${memUsage.messageHistory}/${this.maxHistorySize}, ` +
+                  `Dedup=${memUsage.seenMessageIds}/${this.maxSeenMessages}, ` +
+                  `Radios=${memUsage.connectedRadios}, Clients=${memUsage.wsClients}`);
+
+    } catch (error) {
+      console.error(`❌ Error during memory cleanup:`, error);
+    }
+  }
+
+  /**
    * Handle message packets from radio (protocol-agnostic)
    * Packet is normalized by protocol handler
    */
@@ -1088,13 +1176,15 @@ class MeshtasticBridgeServer {
           return;
         }
 
-        // Mark message as seen
+        // Mark message as seen with timestamp for age-based cleanup
         this.seenMessageIds.add(packet.id);
+        this.seenMessageTimestamps.set(packet.id, Date.now());
 
         // Limit size of seen messages set to prevent memory leak
         if (this.seenMessageIds.size > this.maxSeenMessages) {
           const firstId = this.seenMessageIds.values().next().value;
           this.seenMessageIds.delete(firstId);
+          this.seenMessageTimestamps.delete(firstId);
         }
 
         const message = {
@@ -2280,6 +2370,96 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Get channel configuration from a radio
+   */
+  async getChannel(ws, radioId, channelIndex) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Getting channel ${channelIndex} from radio ${radioId}...`);
+
+      // Get channel using protocol handler
+      if (radio.protocol && typeof radio.protocol.getChannel === 'function') {
+        const result = await radio.protocol.getChannel(channelIndex);
+
+        console.log(`✅ Channel ${channelIndex} request sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'get-channel-success',
+          radioId: radioId,
+          channelIndex: channelIndex,
+          message: 'Channel request sent. Response will arrive via channel-update event.'
+        }));
+
+      } else {
+        throw new Error('Channel configuration not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Get channel error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Get channel failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set channel configuration on a radio
+   */
+  async setChannel(ws, radioId, channelConfig) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Setting channel configuration on radio ${radioId}...`);
+      console.log(`📦 Channel config:`, JSON.stringify(channelConfig, null, 2));
+
+      // Set channel using protocol handler
+      if (radio.protocol && typeof radio.protocol.setChannel === 'function') {
+        await radio.protocol.setChannel(channelConfig);
+
+        console.log(`✅ Channel configuration sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'set-channel-success',
+          radioId: radioId,
+          message: 'Channel configuration sent successfully.'
+        }));
+
+        // Broadcast to all clients that channel was updated
+        this.broadcast({
+          type: 'channel-configuration-updated',
+          radioId: radioId
+        });
+
+      } else {
+        throw new Error('Channel configuration not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Set channel error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Set channel failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
    * AI Management: Get current AI configuration
    */
   async aiGetConfig(ws) {
@@ -2618,6 +2798,9 @@ class MeshtasticBridgeServer {
       }));
 
       console.log(`📧 Email configuration updated: ${this.emailEnabled ? 'enabled' : 'disabled'}`);
+
+      // Save configuration to persist settings
+      this.saveConfig();
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'error',
@@ -2657,6 +2840,9 @@ class MeshtasticBridgeServer {
       }));
 
       console.log(`💬 Discord configuration updated: ${this.discordEnabled ? 'enabled' : 'disabled'}`);
+
+      // Save configuration to persist settings
+      this.saveConfig();
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'error',
@@ -3072,6 +3258,9 @@ class MeshtasticBridgeServer {
         await this.connectMQTT();
       }
 
+      // Save configuration to persist settings
+      this.saveConfig();
+
     } catch (error) {
       console.error('❌ Failed to update MQTT config:', error);
       ws.send(JSON.stringify({
@@ -3116,6 +3305,9 @@ class MeshtasticBridgeServer {
           connected: this.mqttClient ? this.mqttClient.connected : false
         }
       });
+
+      // Save configuration to persist settings
+      this.saveConfig();
 
     } catch (error) {
       console.error('❌ Failed to toggle MQTT:', error);

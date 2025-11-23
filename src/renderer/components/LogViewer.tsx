@@ -145,13 +145,13 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
                 <span className="text-slate-500 shrink-0">
                   {new Date(log.timestamp).toLocaleTimeString()}
                 </span>
-                <span className={`shrink-0 ${levelBadges[log.level]} uppercase`}>
+                <span className={`shrink-0 ${levelBadges[log.level as keyof typeof levelBadges]} uppercase`}>
                   {log.level}
                 </span>
                 {log.radioId && (
                   <span className="badge-info shrink-0">{log.radioId}</span>
                 )}
-                <span className={levelColors[log.level]}>{log.message}</span>
+                <span className={levelColors[log.level as keyof typeof levelColors]}>{log.message}</span>
                 {log.data && (
                   <details className="ml-4">
                     <summary className="cursor-pointer text-slate-500 hover:text-slate-400">

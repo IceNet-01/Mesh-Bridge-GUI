@@ -44,6 +44,8 @@ interface AppStore {
   setAutoScanInterval: (interval: number) => void;
   disconnectRadio: (radioId: string) => Promise<void>;
   rebootRadio: (radioId: string) => Promise<void>;
+  getChannel: (radioId: string, channelIndex: number) => Promise<void>;
+  setChannel: (radioId: string, channelConfig: any) => Promise<void>;
   sendMessage: (radioId: string, text: string, channel?: number) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
@@ -388,6 +390,14 @@ export const useStore = create<AppStore>((set, get) => {
 
     rebootRadio: async (radioId: string) => {
       await manager.rebootRadio(radioId);
+    },
+
+    getChannel: async (radioId: string, channelIndex: number) => {
+      await manager.getChannel(radioId, channelIndex);
+    },
+
+    setChannel: async (radioId: string, channelConfig: any) => {
+      await manager.setChannel(radioId, channelConfig);
     },
 
     sendMessage: async (radioId: string, text: string, channel: number = 0) => {
