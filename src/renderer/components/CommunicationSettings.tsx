@@ -28,7 +28,10 @@ function CommunicationSettings() {
     enabled: false,
     webhook: '',
     username: 'Mesh Bridge',
-    avatarUrl: ''
+    avatarUrl: '',
+    botEnabled: false,
+    botToken: '',
+    channelId: ''
   });
 
   const [emailTesting, setEmailTesting] = useState(false);
@@ -196,52 +199,111 @@ function CommunicationSettings() {
       {/* Discord Settings */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-white">💬 Discord Notifications</h3>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={discordForm.enabled}
-              onChange={(e) => setDiscordForm({ ...discordForm, enabled: e.target.checked })}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-          </label>
+          <h3 className="text-xl font-bold text-white">💬 Discord Integration</h3>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Webhook URL</label>
-            <input
-              type="text"
-              value={discordForm.webhook}
-              onChange={(e) => setDiscordForm({ ...discordForm, webhook: e.target.value })}
-              placeholder="https://discord.com/api/webhooks/..."
-              className="input w-full"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Create a webhook in your Discord server settings → Integrations
-            </p>
+        {/* Webhook Section */}
+        <div className="mb-6 p-4 bg-slate-900/50 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="text-lg font-semibold text-white">Webhook (One-Way: Mesh → Discord)</h4>
+              <p className="text-xs text-slate-400">Send mesh messages to Discord using #discord command</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={discordForm.enabled}
+                onChange={(e) => setDiscordForm({ ...discordForm, enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+            </label>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Bot Username</label>
-            <input
-              type="text"
-              value={discordForm.username}
-              onChange={(e) => setDiscordForm({ ...discordForm, username: e.target.value })}
-              placeholder="Meshtastic Bridge"
-              className="input w-full"
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Webhook URL</label>
+              <input
+                type="text"
+                value={discordForm.webhook}
+                onChange={(e) => setDiscordForm({ ...discordForm, webhook: e.target.value })}
+                placeholder="https://discord.com/api/webhooks/..."
+                className="input w-full"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Create a webhook in your Discord server settings → Integrations
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Bot Username</label>
+              <input
+                type="text"
+                value={discordForm.username}
+                onChange={(e) => setDiscordForm({ ...discordForm, username: e.target.value })}
+                placeholder="Meshtastic Bridge"
+                className="input w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Bot Section */}
+        <div className="mb-6 p-4 bg-slate-900/50 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="text-lg font-semibold text-white">Discord Bot (Two-Way: Mesh ↔ Discord)</h4>
+              <p className="text-xs text-slate-400">Receive Discord messages and forward to mesh network</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={discordForm.botEnabled}
+                onChange={(e) => setDiscordForm({ ...discordForm, botEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+            </label>
           </div>
 
-          <div className="flex gap-2">
-            <button onClick={handleDiscordSave} className="btn-primary">
-              Save Discord Settings
-            </button>
-            <button onClick={handleDiscordTest} disabled={discordTesting || !discordForm.enabled} className="btn-secondary">
-              {discordTesting ? 'Sending...' : 'Test Discord'}
-            </button>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Bot Token</label>
+              <input
+                type="password"
+                value={discordForm.botToken}
+                onChange={(e) => setDiscordForm({ ...discordForm, botToken: e.target.value })}
+                placeholder="Your bot token from Discord Developer Portal"
+                className="input w-full"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Get this from <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:underline">Discord Developer Portal</a>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Channel ID</label>
+              <input
+                type="text"
+                value={discordForm.channelId}
+                onChange={(e) => setDiscordForm({ ...discordForm, channelId: e.target.value })}
+                placeholder="123456789012345678"
+                className="input w-full"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Right-click channel in Discord (with Developer Mode enabled) → Copy ID
+              </p>
+            </div>
           </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={handleDiscordSave} className="btn-primary">
+            Save Discord Settings
+          </button>
+          <button onClick={handleDiscordTest} disabled={discordTesting || !discordForm.enabled} className="btn-secondary">
+            {discordTesting ? 'Sending...' : 'Test Webhook'}
+          </button>
         </div>
       </div>
 
