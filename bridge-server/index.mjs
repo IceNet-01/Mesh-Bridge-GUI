@@ -26,6 +26,7 @@ import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
 import nodemailer from 'nodemailer';
 import mqtt from 'mqtt';
+import { Client, GatewayIntentBits } from 'discord.js';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 
 // Make crypto available globally for @meshtastic libraries (if not already available)
@@ -128,9 +129,15 @@ class MeshtasticBridgeServer {
 
     // ===== DISCORD CONFIGURATION =====
     this.discordEnabled = false;               // Enable/disable Discord notifications
-    this.discordWebhook = '';                  // Discord webhook URL
+    this.discordWebhook = '';                  // Discord webhook URL (one-way: mesh → Discord)
     this.discordUsername = 'Meshtastic Bridge'; // Bot username for Discord messages
     this.discordAvatarUrl = '';                // Optional avatar URL for Discord bot
+
+    // Discord Bot (two-way: mesh ↔ Discord)
+    this.discordBotEnabled = false;            // Enable/disable Discord bot
+    this.discordBotToken = '';                 // Discord bot token
+    this.discordChannelId = '';                // Discord channel ID to monitor
+    this.discordClient = null;                 // Discord.js client instance
 
     // ===== MQTT CONFIGURATION =====
     this.mqttEnabled = false;                  // Enable/disable MQTT bridge
@@ -286,7 +293,13 @@ class MeshtasticBridgeServer {
           if (config.discord.webhook) this.discordWebhook = config.discord.webhook;
           if (config.discord.username) this.discordUsername = config.discord.username;
           if (config.discord.avatarUrl) this.discordAvatarUrl = config.discord.avatarUrl;
-          console.log(`📋 Loaded Discord config: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+
+          // Load Discord bot configuration
+          if (config.discord.botEnabled !== undefined) this.discordBotEnabled = config.discord.botEnabled;
+          if (config.discord.botToken) this.discordBotToken = config.discord.botToken;
+          if (config.discord.channelId) this.discordChannelId = config.discord.channelId;
+
+          console.log(`📋 Loaded Discord config: Webhook=${this.discordEnabled ? 'ENABLED' : 'DISABLED'}, Bot=${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}`);
         }
 
         // Load MQTT configuration
@@ -329,7 +342,10 @@ class MeshtasticBridgeServer {
           enabled: this.discordEnabled,
           webhook: this.discordWebhook,
           username: this.discordUsername,
-          avatarUrl: this.discordAvatarUrl
+          avatarUrl: this.discordAvatarUrl,
+          botEnabled: this.discordBotEnabled,
+          botToken: this.discordBotToken,
+          channelId: this.discordChannelId
         },
         mqtt: {
           enabled: this.mqttEnabled,
@@ -475,6 +491,11 @@ class MeshtasticBridgeServer {
       // Connect to MQTT if enabled
       if (this.mqttEnabled && this.mqttBrokerUrl) {
         this.connectMQTT();
+      }
+
+      // Connect to Discord bot if enabled
+      if (this.discordBotEnabled && this.discordBotToken && this.discordChannelId) {
+        this.connectDiscordBot();
       }
 
       // Auto-start AI assistant if it was previously enabled
@@ -3317,6 +3338,97 @@ class MeshtasticBridgeServer {
         error: error.message
       }));
     }
+  }
+
+  /**
+   * Connect to Discord bot
+   */
+  async connectDiscordBot() {
+    try {
+      console.log('🤖 Connecting to Discord bot...');
+
+      // Create Discord client with required intents
+      this.discordClient = new Client({
+        intents: [
+          GatewayIntentBits.Guilds,
+          GatewayIntentBits.GuildMessages,
+          GatewayIntentBits.MessageContent
+        ]
+      });
+
+      // Handle ready event
+      this.discordClient.once('ready', () => {
+        console.log(`✅ Discord bot connected as ${this.discordClient.user.tag}`);
+      });
+
+      // Handle message events
+      this.discordClient.on('messageCreate', async (message) => {
+        // Ignore bot's own messages
+        if (message.author.bot) return;
+
+        // Only listen to the configured channel
+        if (message.channelId !== this.discordChannelId) return;
+
+        console.log(`📩 Discord message from ${message.author.username}: ${message.content}`);
+
+        // Forward message to mesh network on channel 0
+        try {
+          const radios = Array.from(this.radios.values());
+          if (radios.length === 0) {
+            await message.reply('⚠️ No radios connected to bridge');
+            return;
+          }
+
+          // Send to first radio (or all radios if you want broadcast)
+          const radio = radios[0];
+          await this.sendMessage(null, radio.port, 0, message.content);
+
+          // React to message to show it was sent
+          await message.react('✅');
+        } catch (error) {
+          console.error('❌ Error forwarding Discord message to mesh:', error);
+          await message.react('❌');
+        }
+      });
+
+      // Login to Discord
+      await this.discordClient.login(this.discordBotToken);
+
+    } catch (error) {
+      console.error('❌ Failed to connect Discord bot:', error);
+    }
+  }
+
+  /**
+   * Disconnect Discord bot
+   */
+  async disconnectDiscordBot() {
+    if (this.discordClient) {
+      console.log('🤖 Disconnecting Discord bot...');
+      this.discordClient.destroy();
+      this.discordClient = null;
+      console.log('✅ Discord bot disconnected');
+    }
+  }
+
+  /**
+   * Send message to Discord channel via bot
+   */
+  async sendDiscordBotMessage(text, author = 'Mesh Network') {
+    if (!this.discordClient || !this.discordChannelId) {
+      return false;
+    }
+
+    try {
+      const channel = await this.discordClient.channels.fetch(this.discordChannelId);
+      if (channel && channel.isTextBased()) {
+        await channel.send(`**${author}**: ${text}`);
+        return true;
+      }
+    } catch (error) {
+      console.error('❌ Error sending Discord bot message:', error);
+    }
+    return false;
   }
 
   /**
