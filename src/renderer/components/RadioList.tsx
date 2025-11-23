@@ -214,15 +214,33 @@ function RadioCard({ radio, onDisconnect, onReboot, onGetChannel, onSetChannel }
             const radioTime = new Date(radio.protocolMetadata.deviceTime);
             const hostTime = new Date();
             const diffMinutes = Math.abs(radioTime.getTime() - hostTime.getTime()) / 1000 / 60;
+            const isGPS = radio.protocolMetadata.deviceTimeSource === 'gps';
+
             if (diffMinutes > 5) {
               return (
-                <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
+                <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs space-y-1">
                   <p className="text-yellow-400">
                     ⚠️ Radio time differs from host by {Math.round(diffMinutes)} minutes
+                  </p>
+                  {!isGPS && (
+                    <p className="text-yellow-400">
+                      📡 GPS is required for accurate timekeeping
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (!isGPS) {
+              return (
+                <div className="mt-2 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs">
+                  <p className="text-blue-400">
+                    ℹ️ GPS is required for accurate timekeeping. Current time source is {radio.protocolMetadata.deviceTimeSource || 'unknown'}.
                   </p>
                 </div>
               );
             }
+
             return null;
           })()}
         </div>

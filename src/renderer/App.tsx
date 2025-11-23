@@ -67,6 +67,8 @@ function App() {
         return { radios, statistics, messages };
       case 'radios':
         return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onGetChannel: getChannel, onSetChannel: setChannel };
+      case 'radioconfig':
+        return { radios, onGetChannel: getChannel, onSetChannel: setChannel };
       case 'nodes':
         return { nodes, radios };
       case 'messages':

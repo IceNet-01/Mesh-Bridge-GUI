@@ -8,7 +8,7 @@ interface LogViewerProps {
 }
 
 function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
-  const [filter, setFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug' | 'time-sync'>('all');
+  const [filter, setFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'debug'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const [viewMode, setViewMode] = useState<'structured' | 'raw'>('structured');
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -20,7 +20,6 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
     warn: 'text-yellow-400',
     error: 'text-red-400',
     debug: 'text-slate-400',
-    'time-sync': 'text-purple-400',
   };
 
   const levelBadges = {
@@ -28,7 +27,6 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
     warn: 'badge-warning',
     error: 'badge-error',
     debug: 'badge bg-slate-700 text-slate-300',
-    'time-sync': 'badge bg-purple-600 text-white',
   };
 
   // Auto-scroll effect for console output
@@ -50,7 +48,6 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
     error: 'text-red-400',
     warn: 'text-yellow-400',
     info: 'text-blue-400',
-    'time-sync': 'text-purple-400',
   };
 
   return (
@@ -99,15 +96,15 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
 
         {/* Log Level Filters */}
         <div className="flex gap-2">
-          {(['all', 'info', 'warn', 'error', 'debug', 'time-sync'] as const).map((level) => (
+          {(['all', 'info', 'warn', 'error', 'debug'] as const).map((level) => (
             <button
               key={level}
               onClick={() => setFilter(level)}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              className={`px-4 py-2 rounded-lg font-medium transition-all capitalize ${
                 filter === level ? 'bg-primary-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
               }`}
             >
-              {level === 'time-sync' ? 'Time Sync' : level.charAt(0).toUpperCase() + level.slice(1)} ({level === 'all' ? logs.length : logs.filter((l) => l.level === level).length})
+              {level} ({level === 'all' ? logs.length : logs.filter((l) => l.level === level).length})
             </button>
           ))}
         </div>
@@ -149,7 +146,7 @@ function LogViewer({ logs, consoleLines, onClear }: LogViewerProps) {
                   {new Date(log.timestamp).toLocaleTimeString()}
                 </span>
                 <span className={`shrink-0 ${levelBadges[log.level as keyof typeof levelBadges]} uppercase`}>
-                  {log.level === 'time-sync' ? 'TIME SYNC' : log.level}
+                  {log.level}
                 </span>
                 {log.radioId && (
                   <span className="badge-info shrink-0">{log.radioId}</span>

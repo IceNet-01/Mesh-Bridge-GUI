@@ -196,16 +196,10 @@ class MeshtasticBridgeServer {
         typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
       ).join(' ');
 
-      // Detect TIME SYNC logs and classify them separately
-      let finalLevel = level;
-      if (message.includes('[TIME SYNC]') || message.includes('TIME SYNC')) {
-        finalLevel = 'time-sync';
-      }
-
       // Add to buffer with timestamp
       const line = {
         timestamp: new Date().toISOString(),
-        level: finalLevel,
+        level,
         message
       };
 
@@ -758,20 +752,8 @@ class MeshtasticBridgeServer {
               console.warn(`⚠️  WARNING: Radio ${radioId} clock is off by ${Math.round(timeDiff / 60)} hours!`);
               console.warn(`   Device time: ${deviceDate.toLocaleString()}`);
               console.warn(`   Current time: ${currentDate.toLocaleString()}`);
-              console.warn(`   Attempting to automatically sync time...`);
-
-              // Auto-sync time if method exists
-              if (typeof protocolHandler.syncTime === 'function') {
-                try {
-                  await protocolHandler.syncTime();
-                  console.log(`✅ Time sync initiated for ${radioId}`);
-                } catch (error) {
-                  console.error(`❌ Failed to sync time on ${radioId}:`, error.message);
-                  console.warn(`   You may need to manually sync time using the Meshtastic app`);
-                }
-              } else {
-                console.warn(`   Auto time-sync not supported for this protocol type`);
-              }
+              console.warn(`   📡 GPS is required for accurate timekeeping on Meshtastic devices`);
+              console.warn(`   Please ensure your radio has GPS reception or use the Meshtastic app to set time`);
             } else {
               console.log(`✅ Radio ${radioId} clock is accurate (within 1 hour)`);
             }

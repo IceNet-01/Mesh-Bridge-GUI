@@ -31,6 +31,12 @@ export function getNavigationConfig(
           badge: () => connectedRadios.length
         },
         {
+          id: 'radioconfig',
+          icon: 'config',
+          label: 'Radio Config',
+          badge: () => connectedRadios.length
+        },
+        {
           id: 'nodes',
           icon: 'nodes',
           label: 'Nodes',

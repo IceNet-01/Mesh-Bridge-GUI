@@ -25,7 +25,6 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Timers for periodic tasks
     this.nodesScanInterval = null;
-    this.timeSyncInterval = null;
     this.radioTimeUpdateInterval = null;
 
     // Track last message time for device time fallback
@@ -207,19 +206,6 @@ export class MeshtasticProtocol extends BaseProtocol {
       }, 60000); // Scan every 60 seconds
       console.log(`[Meshtastic] Periodic node scan enabled (60s interval)`);
 
-      // Set up periodic time sync to keep radio clock accurate
-      // Sync every 30 minutes to prevent drift
-      this.timeSyncInterval = setInterval(async () => {
-        try {
-          console.log(`[Meshtastic] ⏰ Periodic time sync...`);
-          await this.syncTime();
-          console.log(`[Meshtastic] ✅ Periodic time sync successful`);
-        } catch (error) {
-          console.error(`[Meshtastic] ⚠️  Periodic time sync failed:`, error.message);
-        }
-      }, 30 * 60 * 1000); // Every 30 minutes
-      console.log(`[Meshtastic] Periodic time sync enabled (30min interval)`);
-
       // Set up periodic radio status updates to keep UI time display fresh
       // Emit radio update every 10 seconds to refresh device time display
       this.radioTimeUpdateInterval = setInterval(() => {
@@ -236,18 +222,6 @@ export class MeshtasticProtocol extends BaseProtocol {
       this.fetchAndEmitDeviceInfo(0); // Start with 0 retries
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
-
-      // ALWAYS sync time on connection to ensure radio has correct timestamp
-      // This fixes the "1969" timestamp issue on sent messages
-      console.log(`[Meshtastic] ⏰ Syncing time to radio to prevent 1969 timestamps...`);
-      setTimeout(async () => {
-        try {
-          await this.syncTime();
-          console.log(`[Meshtastic] ✅ Time synced successfully`);
-        } catch (error) {
-          console.error(`[Meshtastic] ⚠️  Time sync failed (messages will have incorrect timestamps):`, error.message);
-        }
-      }, 3000); // Wait 3 seconds for device to be ready
 
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
@@ -872,13 +846,6 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic node scan disabled`);
       }
 
-      // Clear periodic time sync interval
-      if (this.timeSyncInterval) {
-        clearInterval(this.timeSyncInterval);
-        this.timeSyncInterval = null;
-        console.log(`[Meshtastic] Periodic time sync disabled`);
-      }
-
       // Clear periodic radio time update interval
       if (this.radioTimeUpdateInterval) {
         clearInterval(this.radioTimeUpdateInterval);
@@ -1021,81 +988,6 @@ export class MeshtasticProtocol extends BaseProtocol {
       const finalError = new Error(errorMsg);
       this.handleError(finalError);
       throw finalError;
-    }
-  }
-
-  /**
-   * Sync the current time to the radio
-   * This sets the radio's clock to match the system time
-   */
-  /**
-   * Sync time to the radio using AdminMessage.set_time_only
-   * This is the CORRECT method for setting time on Meshtastic devices
-   */
-  async syncTime() {
-    try {
-      if (!this.connected || !this.device) {
-        throw new Error('Device not connected');
-      }
-
-      // ============================================================
-      console.log('\n╔════════════════════════════════════════════════════════════╗');
-      console.log('║              TIME SYNC OPERATION STARTING                  ║');
-      console.log('╚════════════════════════════════════════════════════════════╝');
-
-      // Get current time in Unix timestamp (seconds)
-      const currentTimeSeconds = Math.floor(Date.now() / 1000);
-      const currentDate = new Date(currentTimeSeconds * 1000);
-
-      console.log(`[TIME SYNC] 🕐 Host Time: ${currentDate.toLocaleString()}`);
-      console.log(`[TIME SYNC] 📅 Date: ${currentDate.toDateString()}`);
-      console.log(`[TIME SYNC] 🔢 Unix Timestamp: ${currentTimeSeconds} seconds`);
-      console.log(`[TIME SYNC] ✓ Year Check: ${currentDate.getFullYear()} (should be 2025)`);
-
-      // Create AdminMessage with set_time_only field using same pattern as setFixedPosition
-      // Field 43 in the AdminMessage protobuf (fixed32)
-      console.log(`[TIME SYNC] 📝 Creating AdminMessage with setTimeOnly field...`);
-      const setTimeMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'setTimeOnly',
-          value: currentTimeSeconds
-        }
-      });
-
-      console.log(`[TIME SYNC] 📦 AdminMessage Structure:`, JSON.stringify(setTimeMessage, null, 2));
-
-      // Serialize and send using exact same pattern as setFixedPosition
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setTimeMessage);
-
-      console.log(`[TIME SYNC] 🔧 Serialized to ${adminBytes.length} bytes`);
-      console.log(`[TIME SYNC] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-
-      // Send using same parameters as setFixedPosition: channel 0, wantAck true, wantResponse false
-      console.log(`[TIME SYNC] 📡 Sending to radio via ADMIN_APP port on channel 0...`);
-      const packetId = await this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        true,   // wantAck = true (same as setFixedPosition)
-        false   // wantResponse = false (same as setFixedPosition)
-      );
-
-      console.log(`[TIME SYNC] ✅ SUCCESS! Packet ID: ${packetId}`);
-      console.log('╔════════════════════════════════════════════════════════════╗');
-      console.log('║           TIME SYNC OPERATION COMPLETED                    ║');
-      console.log('╚════════════════════════════════════════════════════════════╝\n');
-      // ============================================================
-
-      return true;
-    } catch (error) {
-      console.log('\n╔════════════════════════════════════════════════════════════╗');
-      console.log('║               TIME SYNC OPERATION FAILED                   ║');
-      console.log('╚════════════════════════════════════════════════════════════╝');
-      console.error('[TIME SYNC] ❌ ERROR:', error);
-      console.error('[TIME SYNC] Error Details:', JSON.stringify(error, null, 2));
-      console.log('════════════════════════════════════════════════════════════\n');
-      throw error;
     }
   }
 
