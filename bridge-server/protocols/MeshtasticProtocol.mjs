@@ -8,7 +8,7 @@ import { BaseProtocol } from './BaseProtocol.mjs';
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
 import { create, toBinary } from '@bufbuild/protobuf';
-import { Admin, Portnums } from '@meshtastic/protobufs';
+import * as Protobuf from '@meshtastic/protobufs';
 
 export class MeshtasticProtocol extends BaseProtocol {
   constructor(radioId, portPath, options = {}) {
@@ -1005,33 +1005,31 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] ⏰ Syncing time to radio: ${new Date().toLocaleString()} (Unix: ${currentTimeSeconds})`);
       console.log(`[Meshtastic] Current year should be: ${new Date(currentTimeSeconds * 1000).getFullYear()}`);
 
-      // Create AdminMessage with set_time_only field
-      // This is field 43 in the AdminMessage protobuf (fixed32)
-      const adminMsg = create(Admin.AdminMessageSchema, {
+      // Create AdminMessage with set_time_only field using same pattern as setFixedPosition
+      // Field 43 in the AdminMessage protobuf (fixed32)
+      const setTimeMessage = create(Protobuf.Admin.AdminMessageSchema, {
         payloadVariant: {
           case: 'setTimeOnly',
           value: currentTimeSeconds
         }
       });
 
-      console.log(`[Meshtastic] Created AdminMessage:`, JSON.stringify(adminMsg, null, 2));
+      console.log(`[Meshtastic] Created AdminMessage:`, JSON.stringify(setTimeMessage, null, 2));
 
-      // Serialize the AdminMessage to bytes
-      const adminBytes = toBinary(Admin.AdminMessageSchema, adminMsg);
+      // Serialize and send using exact same pattern as setFixedPosition
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setTimeMessage);
 
       console.log(`[Meshtastic] Serialized AdminMessage: ${adminBytes.length} bytes`);
       console.log(`[Meshtastic] AdminMessage hex: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
 
-      // Send the AdminMessage using ADMIN_APP portnum
-      // Try sending on primary channel (0) - admin channel (7) may not be configured
+      // Send using same parameters as setFixedPosition: channel 0, wantAck true, wantResponse false
       const packetId = await this.device.sendPacket(
         adminBytes,
-        Portnums.PortNum.ADMIN_APP,
-        'self', // Send to our own node
-        0,      // Primary channel
-        true,   // Request ACK to see if it's received
-        false,  // Don't need response
-        false,  // Don't echo
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck = true (same as setFixedPosition)
+        false   // wantResponse = false (same as setFixedPosition)
       );
 
       console.log(`[Meshtastic] ✅ Time sync AdminMessage sent to radio (packet ID: ${packetId})`);
