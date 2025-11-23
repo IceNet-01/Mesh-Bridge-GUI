@@ -1003,6 +1003,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       const currentTimeSeconds = Math.floor(Date.now() / 1000);
 
       console.log(`[Meshtastic] ⏰ Syncing time to radio: ${new Date().toLocaleString()} (Unix: ${currentTimeSeconds})`);
+      console.log(`[Meshtastic] Current year should be: ${new Date(currentTimeSeconds * 1000).getFullYear()}`);
 
       // Create AdminMessage with set_time_only field
       // This is field 43 in the AdminMessage protobuf (fixed32)
@@ -1013,28 +1014,27 @@ export class MeshtasticProtocol extends BaseProtocol {
         }
       });
 
-      console.log(`[Meshtastic] Created AdminMessage with setTimeOnly: ${currentTimeSeconds}`);
+      console.log(`[Meshtastic] Created AdminMessage:`, JSON.stringify(adminMsg, null, 2));
 
       // Serialize the AdminMessage to bytes
       const adminBytes = toBinary(Admin.AdminMessageSchema, adminMsg);
 
       console.log(`[Meshtastic] Serialized AdminMessage: ${adminBytes.length} bytes`);
+      console.log(`[Meshtastic] AdminMessage hex: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
 
       // Send the AdminMessage using ADMIN_APP portnum
-      // destination = 'self' (our own node)
-      // channel = 0 (primary channel)
-      // wantAck = false (don't need acknowledgment for time sync)
-      await this.device.sendPacket(
+      // Try sending on primary channel (0) - admin channel (7) may not be configured
+      const packetId = await this.device.sendPacket(
         adminBytes,
         Portnums.PortNum.ADMIN_APP,
         'self', // Send to our own node
         0,      // Primary channel
-        false,  // Don't need ACK
+        true,   // Request ACK to see if it's received
         false,  // Don't need response
         false,  // Don't echo
       );
 
-      console.log(`[Meshtastic] ✅ Time sync AdminMessage sent to radio`);
+      console.log(`[Meshtastic] ✅ Time sync AdminMessage sent to radio (packet ID: ${packetId})`);
       return true;
     } catch (error) {
       console.error('[Meshtastic] ❌ Error syncing time:', error);
