@@ -597,7 +597,14 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Subscribe to waypoint packets
     this.device.events.onWaypointPacket.subscribe((waypointPacket) => {
       console.log(`[Meshtastic] Waypoint packet:`, waypointPacket);
-      // Waypoint data - could be added to map
+      // Check if this is an emergency/SOS waypoint (icon 16 = SOS)
+      if (waypointPacket.data?.icon === 16) {
+        console.log(`🚨 EMERGENCY/SOS waypoint detected!`);
+        this.emit('emergency', {
+          from: waypointPacket.from,
+          waypoint: waypointPacket.data
+        });
+      }
     });
 
     // Subscribe to channel configuration packets

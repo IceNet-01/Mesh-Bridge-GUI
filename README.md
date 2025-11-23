@@ -11,6 +11,38 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 ![Version](https://img.shields.io/badge/version-Alpha%2025.11.2-orange.svg)
 ![Type](https://img.shields.io/badge/type-Web%20App-blue.svg)
 
+## Screenshots
+
+> **Note:** Add your own screenshots to showcase the application! Suggested screenshots to include:
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+*Real-time monitoring of connected radios, message traffic, and system statistics*
+
+### Message Monitor
+![Messages](docs/screenshots/messages.png)
+*Live feed of all mesh messages with timestamps and signal quality*
+
+### Network Health
+![Network Health](docs/screenshots/network-health.png)
+*Channel utilization, signal quality analysis, and network insights*
+
+### Emergency Response & Weather Alerts
+![Emergency Response](docs/screenshots/emergency.png)
+*SOS tracking, auto-response, and severe weather monitoring from NWS*
+
+### Interactive Map
+![Map View](docs/screenshots/map.png)
+*Visualize node locations and mesh network topology*
+
+### AI Assistant Configuration
+![AI Settings](docs/screenshots/ai-settings.png)
+*Configure local AI models with Ollama integration*
+
+### TAK Tactical View
+![Tactical View](docs/screenshots/tactical.png)
+*Team Awareness Kit style tactical display with breadcrumb trails*
+
 ---
 
 ## Version Alpha 25.11.2 🚀

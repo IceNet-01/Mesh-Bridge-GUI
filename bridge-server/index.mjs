@@ -138,6 +138,7 @@ class MeshtasticBridgeServer {
     this.discordBotToken = '';                 // Discord bot token
     this.discordChannelId = '';                // Discord channel ID to monitor
     this.discordClient = null;                 // Discord.js client instance
+    this.discordSendEmergency = false;         // Auto-send emergency/SOS messages to Discord
 
     // ===== MQTT CONFIGURATION =====
     this.mqttEnabled = false;                  // Enable/disable MQTT bridge
@@ -298,8 +299,9 @@ class MeshtasticBridgeServer {
           if (config.discord.botEnabled !== undefined) this.discordBotEnabled = config.discord.botEnabled;
           if (config.discord.botToken) this.discordBotToken = config.discord.botToken;
           if (config.discord.channelId) this.discordChannelId = config.discord.channelId;
+          if (config.discord.sendEmergency !== undefined) this.discordSendEmergency = config.discord.sendEmergency;
 
-          console.log(`📋 Loaded Discord config: Webhook=${this.discordEnabled ? 'ENABLED' : 'DISABLED'}, Bot=${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}`);
+          console.log(`📋 Loaded Discord config: Webhook=${this.discordEnabled ? 'ENABLED' : 'DISABLED'}, Bot=${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}, Emergency=${this.discordSendEmergency ? 'ENABLED' : 'DISABLED'}`);
         }
 
         // Load MQTT configuration
@@ -345,7 +347,8 @@ class MeshtasticBridgeServer {
           avatarUrl: this.discordAvatarUrl,
           botEnabled: this.discordBotEnabled,
           botToken: this.discordBotToken,
-          channelId: this.discordChannelId
+          channelId: this.discordChannelId,
+          sendEmergency: this.discordSendEmergency
         },
         mqtt: {
           enabled: this.mqttEnabled,
@@ -927,6 +930,34 @@ class MeshtasticBridgeServer {
       protocolHandler.on('disconnected', () => {
         console.log(`🔌 Radio ${radioId} disconnected (serial port closed)`);
         this.handleRadioDisconnect(radioId);
+      });
+
+      // Handle emergency/SOS waypoints
+      protocolHandler.on('emergency', async (emergencyData) => {
+        console.log(`🚨 Emergency detected from node ${emergencyData.from}`);
+
+        // Send to Discord if enabled
+        if (this.discordSendEmergency) {
+          const waypointInfo = emergencyData.waypoint;
+          let message = `🚨 **EMERGENCY / SOS ALERT** 🚨\n`;
+          message += `From Node: ${emergencyData.from}\n`;
+          if (waypointInfo.name) message += `Location: ${waypointInfo.name}\n`;
+          if (waypointInfo.description) message += `Details: ${waypointInfo.description}\n`;
+          if (waypointInfo.latitude && waypointInfo.longitude) {
+            message += `Coordinates: ${waypointInfo.latitude}, ${waypointInfo.longitude}\n`;
+            message += `Map: https://www.google.com/maps?q=${waypointInfo.latitude},${waypointInfo.longitude}`;
+          }
+
+          // Send via webhook if enabled
+          if (this.discordEnabled && this.discordWebhook) {
+            await this.sendToDiscord(message);
+          }
+
+          // Send via bot if enabled
+          if (this.discordBotEnabled && this.discordClient) {
+            await this.sendDiscordBotMessage(message);
+          }
+        }
       });
 
       // Store radio reference
@@ -2767,7 +2798,11 @@ class MeshtasticBridgeServer {
             enabled: this.discordEnabled,
             webhook: this.discordWebhook ? '(configured)' : '', // Don't send full webhook URL
             username: this.discordUsername,
-            avatarUrl: this.discordAvatarUrl
+            avatarUrl: this.discordAvatarUrl,
+            botEnabled: this.discordBotEnabled,
+            botToken: this.discordBotToken ? '(configured)' : '', // Don't send full bot token
+            channelId: this.discordChannelId,
+            sendEmergency: this.discordSendEmergency
           }
         }
       }));
@@ -2843,6 +2878,21 @@ class MeshtasticBridgeServer {
       this.discordUsername = config.username || 'Meshtastic Bridge';
       this.discordAvatarUrl = config.avatarUrl || '';
 
+      // Handle Discord bot configuration
+      if (config.botEnabled !== undefined) this.discordBotEnabled = config.botEnabled;
+      if (config.botToken && config.botToken !== '(configured)') {
+        this.discordBotToken = config.botToken;
+      }
+      if (config.channelId !== undefined) this.discordChannelId = config.channelId;
+      if (config.sendEmergency !== undefined) this.discordSendEmergency = config.sendEmergency;
+
+      // Connect or disconnect bot based on settings
+      if (this.discordBotEnabled && this.discordBotToken && this.discordChannelId) {
+        await this.connectDiscordBot();
+      } else if (this.discordClient) {
+        this.disconnectDiscordBot();
+      }
+
       // Broadcast updated config to all clients
       this.broadcast({
         type: 'comm-config-changed',
@@ -2851,7 +2901,11 @@ class MeshtasticBridgeServer {
             enabled: this.discordEnabled,
             webhook: this.discordWebhook ? '(configured)' : '',
             username: this.discordUsername,
-            avatarUrl: this.discordAvatarUrl
+            avatarUrl: this.discordAvatarUrl,
+            botEnabled: this.discordBotEnabled,
+            botToken: this.discordBotToken ? '(configured)' : '',
+            channelId: this.discordChannelId,
+            sendEmergency: this.discordSendEmergency
           }
         }
       });
