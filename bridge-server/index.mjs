@@ -2836,7 +2836,8 @@ class MeshtasticBridgeServer {
   async commSetDiscord(ws, config) {
     try {
       this.discordEnabled = config.enabled;
-      if (config.webhook) {
+      // Only update webhook if it's not the masked placeholder
+      if (config.webhook && config.webhook !== '(configured)') {
         this.discordWebhook = config.webhook;
       }
       this.discordUsername = config.username || 'Meshtastic Bridge';
