@@ -755,6 +755,11 @@ class MeshtasticBridgeServer {
     try {
       console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
+      // Generate stable radio ID based on port path
+      // This ensures reconnections on the same port reuse the same ID (prevents duplicates)
+      const portHash = portPath.replace(/[^a-zA-Z0-9]/g, '-');
+      const radioId = `radio-${portHash}`;
+
       // Check if a radio already exists for this port
       for (const [existingId, existingRadio] of this.radios.entries()) {
         if (existingRadio.port === portPath) {
@@ -762,8 +767,6 @@ class MeshtasticBridgeServer {
           return; // Don't create duplicate
         }
       }
-
-      const radioId = `radio-${Date.now()}`;
 
       // Create protocol handler
       const protocolHandler = createProtocol(protocol, radioId, portPath);
@@ -918,6 +921,12 @@ class MeshtasticBridgeServer {
             radio: this.getRadioInfo(radioId)
           });
         }
+      });
+
+      // Handle disconnection (when serial port closes naturally)
+      protocolHandler.on('disconnected', () => {
+        console.log(`🔌 Radio ${radioId} disconnected (serial port closed)`);
+        this.handleRadioDisconnect(radioId);
       });
 
       // Store radio reference
