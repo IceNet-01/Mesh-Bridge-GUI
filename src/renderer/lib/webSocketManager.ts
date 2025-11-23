@@ -292,6 +292,18 @@ export class WebSocketRadioManager {
         this.log('warn', `Radio disconnected: ${data.radioId}`);
         break;
 
+      case 'reboot-success':
+        // Radio reboot command successful
+        this.log('info', `✅ ${data.message}`);
+        this.emit('reboot-success', { radioId: data.radioId });
+        break;
+
+      case 'radio-rebooting':
+        // Radio is rebooting
+        this.log('info', `🔄 Radio ${data.radioId} is rebooting...`);
+        this.emit('radio-rebooting', { radioId: data.radioId });
+        break;
+
       case 'radio-updated':
         // Radio information updated (nodeInfo, channels, config, stats)
         if (data.radio) {
@@ -710,6 +722,23 @@ export class WebSocketRadioManager {
 
     this.ws.send(JSON.stringify({
       type: 'disconnect',
+      radioId
+    }));
+  }
+
+  /**
+   * Reboot a radio device
+   */
+  async rebootRadio(radioId: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `🔄 Rebooting radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'reboot-radio',
       radioId
     }));
   }

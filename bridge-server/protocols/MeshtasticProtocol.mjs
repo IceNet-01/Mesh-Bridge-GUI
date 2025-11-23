@@ -990,6 +990,33 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
   }
 
+  /**
+   * Reboot the radio device
+   * This will restart the Meshtastic radio
+   */
+  async rebootRadio() {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Meshtastic] 🔄 Rebooting radio...`);
+
+      // Send reboot command to the device
+      await this.device.reboot();
+
+      console.log(`[Meshtastic] ✅ Reboot command sent to radio`);
+
+      // The device will disconnect after reboot, so mark as disconnected
+      this.connected = false;
+
+      return true;
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error rebooting radio:', error);
+      throw error;
+    }
+  }
+
   normalizeMessagePacket(packet) {
     // The @meshtastic/core library already decodes text messages
     // packet.data contains the decoded string for text messages

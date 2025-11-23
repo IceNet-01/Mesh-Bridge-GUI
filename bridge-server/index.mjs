@@ -538,6 +538,10 @@ class MeshtasticBridgeServer {
           await this.disconnectRadio(ws, message.radioId);
           break;
 
+        case 'reboot-radio':
+          await this.rebootRadio(ws, message.radioId);
+          break;
+
         case 'send-text':
           await this.sendText(ws, message.radioId, message.text, message.channel);
           break;
@@ -2221,6 +2225,56 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Disconnect failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Reboot a radio device
+   */
+  async rebootRadio(ws, radioId) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`🔄 Rebooting radio ${radioId} (${radio.protocolType})...`);
+
+      // Reboot using protocol handler
+      if (radio.protocol && typeof radio.protocol.rebootRadio === 'function') {
+        await radio.protocol.rebootRadio();
+
+        console.log(`✅ Reboot command sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'reboot-success',
+          radioId: radioId,
+          message: 'Reboot command sent. Radio will restart shortly.'
+        }));
+
+        // Broadcast to all clients that radio is rebooting
+        this.broadcast({
+          type: 'radio-rebooting',
+          radioId: radioId
+        });
+
+        // The radio will disconnect automatically after reboot
+        // Client should attempt to reconnect after a few seconds
+
+      } else {
+        throw new Error('Reboot not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Reboot error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Reboot failed: ${error.message}`
       }));
     }
   }
