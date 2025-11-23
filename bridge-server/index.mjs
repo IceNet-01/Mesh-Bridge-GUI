@@ -1176,6 +1176,58 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Truncate message to fit within Meshtastic's 512-byte limit
+   * Accounts for UTF-8 encoding where some characters are multiple bytes
+   * @param {string} message - Message to truncate
+   * @param {number} maxBytes - Maximum bytes (default 480 to leave buffer)
+   * @returns {string} - Truncated message
+   */
+  truncateForMeshtastic(message, maxBytes = 480) {
+    if (!message) return '';
+
+    // Quick check - if message is short, no need to truncate
+    if (message.length < 200) {
+      const byteSize = Buffer.byteLength(message, 'utf8');
+      if (byteSize <= maxBytes) {
+        return message;
+      }
+    }
+
+    // Need to truncate - use smart truncation
+    const encoder = new TextEncoder();
+    let truncated = message;
+    let bytes = encoder.encode(truncated);
+
+    // If message is too long, truncate character by character until it fits
+    if (bytes.length > maxBytes) {
+      // Leave room for "..." indicator (3 bytes)
+      const targetBytes = maxBytes - 6;
+
+      // Binary search for optimal length
+      let low = 0;
+      let high = truncated.length;
+      let bestLength = 0;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const testString = truncated.substring(0, mid);
+        const testBytes = encoder.encode(testString);
+
+        if (testBytes.length <= targetBytes) {
+          bestLength = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      truncated = message.substring(0, bestLength).trim() + '…';
+    }
+
+    return truncated;
+  }
+
+  /**
    * Handle message packets from radio (protocol-agnostic)
    * Packet is normalized by protocol handler
    */
@@ -1442,9 +1494,12 @@ class MeshtasticBridgeServer {
       }
 
       if (response) {
-        console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
+        // Truncate response to fit within Meshtastic's byte limit
+        const truncatedResponse = this.truncateForMeshtastic(response);
+        console.log(`🤖 Sending response: ${truncatedResponse.substring(0, 100)}...`);
+
         try {
-          await radio.protocol.sendMessage(response, channel, { wantAck: false });
+          await radio.protocol.sendMessage(truncatedResponse, channel, { wantAck: false });
         } catch (error) {
           console.error(`❌ Failed to send command response:`, error);
         }
@@ -2254,7 +2309,10 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
+      // Truncate text to fit within Meshtastic's byte limit
+      const truncatedText = this.truncateForMeshtastic(text);
+
+      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${truncatedText}" on channel ${channel}`);
 
       // Create a message record for the sent message IMMEDIATELY (before waiting for send to complete)
       const sentMessage = {
@@ -2266,7 +2324,7 @@ class MeshtasticBridgeServer {
         to: 'broadcast',
         channel: channel,
         portnum: 1,
-        text: text,
+        text: truncatedText,
         sent: true, // Mark as sent (not received)
       };
 
@@ -2278,7 +2336,7 @@ class MeshtasticBridgeServer {
 
       // Send using the protocol handler (fire and forget - don't wait for completion)
       // The Meshtastic library's sendText may hang waiting for ACK even with wantAck:false
-      radio.protocol.sendMessage(text, channel, { wantAck: false }).then(() => {
+      radio.protocol.sendMessage(truncatedText, channel, { wantAck: false }).then(() => {
         console.log(`✅ Text sent successfully on channel ${channel}`);
 
         // Increment sent message counter
