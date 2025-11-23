@@ -20,6 +20,13 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Node Catalog - Single source of truth for all node data
     // Key: numeric node number, Value: complete node object
     this.nodeCatalog = new Map();
+
+    // Timers for periodic tasks
+    this.nodesScanInterval = null;
+    this.timeSyncInterval = null;
+
+    // Track last message time for device time fallback
+    this.lastMessageTime = null;
   }
 
   getProtocolName() {
@@ -192,6 +199,19 @@ export class MeshtasticProtocol extends BaseProtocol {
       }, 60000); // Scan every 60 seconds
       console.log(`[Meshtastic] Periodic node scan enabled (60s interval)`);
 
+      // Set up periodic time sync to keep radio clock accurate
+      // Sync every 30 minutes to prevent drift
+      this.timeSyncInterval = setInterval(async () => {
+        try {
+          console.log(`[Meshtastic] ⏰ Periodic time sync...`);
+          await this.syncTime();
+          console.log(`[Meshtastic] ✅ Periodic time sync successful`);
+        } catch (error) {
+          console.error(`[Meshtastic] ⚠️  Periodic time sync failed:`, error.message);
+        }
+      }, 30 * 60 * 1000); // Every 30 minutes
+      console.log(`[Meshtastic] Periodic time sync enabled (30min interval)`);
+
       this.connected = true;
 
       // Fetch node info with retry logic - device.nodes may not be populated immediately
@@ -281,6 +301,9 @@ export class MeshtasticProtocol extends BaseProtocol {
           console.log(`[Meshtastic] Ignoring own outgoing message from node ${packet.from}`);
           return;
         }
+
+        // Track last message time for device time fallback
+        this.lastMessageTime = new Date();
 
         const normalized = this.normalizeMessagePacket(packet);
         this.emitMessage(normalized);
@@ -815,6 +838,13 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic node scan disabled`);
       }
 
+      // Clear periodic time sync interval
+      if (this.timeSyncInterval) {
+        clearInterval(this.timeSyncInterval);
+        this.timeSyncInterval = null;
+        console.log(`[Meshtastic] Periodic time sync disabled`);
+      }
+
       if (this.device) {
         await this.device.disconnect();
         this.device = null;
@@ -1045,10 +1075,16 @@ export class MeshtasticProtocol extends BaseProtocol {
   getProtocolMetadata() {
     // Get device time if available (helps diagnose timestamp issues)
     let deviceTime = null;
+    let deviceTimeSource = null;
     try {
-      // Try to get device time from position time or calculate from rxTime
+      // Try to get device time from position time
       if (this.nodeInfo?.position?.time) {
-        deviceTime = new Date(this.nodeInfo.position.time * 1000).toISOString();
+        deviceTime = new Date(this.nodeInfo.position.time * 1000);
+        deviceTimeSource = 'gps';
+      } else if (this.lastMessageTime) {
+        // Fallback: use time from last received message
+        deviceTime = this.lastMessageTime;
+        deviceTimeSource = 'message';
       }
     } catch (e) {
       // Ignore errors getting device time
@@ -1057,7 +1093,8 @@ export class MeshtasticProtocol extends BaseProtocol {
     return {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
-      deviceTime: deviceTime, // Device's current time (null if unavailable)
+      deviceTime: deviceTime, // Device's current time (Date object or null)
+      deviceTimeSource: deviceTimeSource, // 'gps', 'message', or null
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),

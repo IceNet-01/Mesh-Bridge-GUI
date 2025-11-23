@@ -27,6 +27,8 @@ export interface Radio {
     // Meshtastic-specific
     firmware?: string;
     hardware?: string;
+    deviceTime?: Date;  // Current radio time
+    deviceTimeSource?: 'gps' | 'message' | null;  // Source of device time
     loraConfig?: {
       region?: string;
       modemPreset?: string;

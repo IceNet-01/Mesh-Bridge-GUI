@@ -167,6 +167,53 @@ function RadioCard({ radio, onDisconnect, onReboot }: RadioCardProps) {
         </div>
       )}
 
+      {/* Radio Time Display */}
+      {radio.protocol === 'meshtastic' && radio.protocolMetadata?.deviceTime && (
+        <div className="mb-4 p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+          <p className="text-slate-300 text-xs font-semibold mb-2 uppercase flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Radio Time
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <p className="text-slate-400">Current Time</p>
+              <p className="text-white font-medium font-mono text-xs">
+                {new Date(radio.protocolMetadata.deviceTime).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400">Time Source</p>
+              <p className="text-white font-medium">
+                {radio.protocolMetadata.deviceTimeSource === 'gps' ? (
+                  <span className="text-green-400">GPS</span>
+                ) : radio.protocolMetadata.deviceTimeSource === 'message' ? (
+                  <span className="text-yellow-400">Message</span>
+                ) : (
+                  <span className="text-slate-400">Unknown</span>
+                )}
+              </p>
+            </div>
+          </div>
+          {(() => {
+            const radioTime = new Date(radio.protocolMetadata.deviceTime);
+            const hostTime = new Date();
+            const diffMinutes = Math.abs(radioTime.getTime() - hostTime.getTime()) / 1000 / 60;
+            if (diffMinutes > 5) {
+              return (
+                <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
+                  <p className="text-yellow-400">
+                    ⚠️ Radio time differs from host by {Math.round(diffMinutes)} minutes
+                  </p>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <MetricItem label="Received" value={radio.messagesReceived} color="green" />
         <MetricItem label="Sent" value={radio.messagesSent} color="blue" />

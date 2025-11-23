@@ -278,6 +278,12 @@ export class WebSocketRadioManager {
       case 'radio-connected':
         // Radio fully connected (after configuration completes)
         console.log('[WebSocket] ✅ Radio connected:', data.radio.id, 'on', data.radio.port, '- Name:', data.radio.name);
+
+        // Convert deviceTime from JSON string to Date object
+        if (data.radio.protocolMetadata?.deviceTime) {
+          data.radio.protocolMetadata.deviceTime = new Date(data.radio.protocolMetadata.deviceTime);
+        }
+
         this.radios.set(data.radio.id, data.radio);
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
@@ -308,6 +314,12 @@ export class WebSocketRadioManager {
         // Radio information updated (nodeInfo, channels, config, stats)
         if (data.radio) {
           console.log('[WebSocket] 🔄 Radio updated:', data.radio.id, '- Name:', data.radio.name, 'HasNodeInfo:', !!data.radio.nodeInfo);
+
+          // Convert deviceTime from JSON string to Date object
+          if (data.radio.protocolMetadata?.deviceTime) {
+            data.radio.protocolMetadata.deviceTime = new Date(data.radio.protocolMetadata.deviceTime);
+          }
+
           this.radios.set(data.radio.id, data.radio);
           this.emit('radio-status-change', Array.from(this.radios.values()));
           this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');
