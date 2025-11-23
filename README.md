@@ -8,10 +8,44 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 
 ![License](https://img.shields.io/badge/license-Dual%20(Non--Commercial%2FCommercial)-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
-![Version](https://img.shields.io/badge/version-Alpha%2025.11-orange.svg)
+![Version](https://img.shields.io/badge/version-Alpha%2025.11.2-orange.svg)
 ![Type](https://img.shields.io/badge/type-Web%20App-blue.svg)
 
-## Version Alpha 25.11 🚀
+## Screenshots
+
+> **Note:** Add your own screenshots to showcase the application! Suggested screenshots to include:
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+*Real-time monitoring of connected radios, message traffic, and system statistics*
+
+### Message Monitor
+![Messages](docs/screenshots/messages.png)
+*Live feed of all mesh messages with timestamps and signal quality*
+
+### Network Health
+![Network Health](docs/screenshots/network-health.png)
+*Channel utilization, signal quality analysis, and network insights*
+
+### Emergency Response & Weather Alerts
+![Emergency Response](docs/screenshots/emergency.png)
+*SOS tracking, auto-response, and severe weather monitoring from NWS*
+
+### Interactive Map
+![Map View](docs/screenshots/map.png)
+*Visualize node locations and mesh network topology*
+
+### AI Assistant Configuration
+![AI Settings](docs/screenshots/ai-settings.png)
+*Configure local AI models with Ollama integration*
+
+### TAK Tactical View
+![Tactical View](docs/screenshots/tactical.png)
+*Team Awareness Kit style tactical display with breadcrumb trails*
+
+---
+
+## Version Alpha 25.11.2 🚀
 
 **NEW Architecture:**
 - 🌐 **Web-Based GUI** - accessible from any modern browser
@@ -769,6 +803,31 @@ this.channelMap = null;  // e.g., {0: 3} to force ch0→ch3 forwarding
 ## Recent Improvements (Alpha)
 
 ⚠️ **This is an ALPHA release** - expect bugs!
+
+### Version 25.11.2 (Latest) - Critical Bug Fixes
+
+**Major Fixes:**
+- ✅ **Fixed Meshtastic v2.6.7 Compatibility** - Resolved "Device.nodes not ready" initialization loop
+  - Updated to use internal node catalog instead of non-existent device.nodes Map
+  - Radio connections now complete successfully without retry failures
+  - Temperature and telemetry data now displays correctly
+- ✅ **Fixed Sent Message Timestamps** - Corrected "December 31, 1969" timestamp bug
+  - Standardized timestamp format across sent and received messages
+  - All messages now display with correct Date objects instead of ISO strings
+- ✅ **Fixed Critical Timestamp Handling** - Resolved telemetry data loss
+  - Fixed `.getTime()` calls on serialized Date objects throughout UI components
+  - Telemetry snapshots, emergency tracking, and message filtering now work correctly
+  - Network health metrics and environmental sensors display accurate data
+- ✅ **Fixed Message Forwarding** - Corrected targetProtocol reference bug
+  - Smart channel matching now forwards messages properly between radios
+- ✅ **UI Performance Improvements**
+  - Fixed broken Tailwind CSS dynamic classes in production builds
+  - Optimized Dashboard with memoization for chart calculations
+  - Corrected useEffect dependency arrays to prevent infinite loops
+  - Added memory leak prevention with proper cleanup of setInterval timers
+  - Implemented localStorage quota management for persistent data
+
+### Previously Added Features
 
 **Recently Added:**
 - ✅ **Emergency Response System** - SOS tracking with auto-response and emergency coordination

@@ -30,6 +30,11 @@ export class WebSocketRadioManager {
   private readonly MESSAGE_RETENTION_DAYS = 7;
   private readonly NODE_RETENTION_DAYS = 180; // Keep node database for 6 months
 
+  // Timer IDs for cleanup
+  private statisticsTimer: NodeJS.Timeout | null = null;
+  private messagesCleanupTimer: NodeJS.Timeout | null = null;
+  private nodesCleanupTimer: NodeJS.Timeout | null = null;
+
   constructor(bridgeUrl?: string) {
     // Use provided URL, or check localStorage, or fall back to smart default
     this.bridgeUrl = bridgeUrl || this.getBridgeUrl();
@@ -58,11 +63,33 @@ export class WebSocketRadioManager {
     this.loadNodesFromStorage();
 
     // Update statistics every second
-    setInterval(() => this.updateStatistics(), 1000);
+    this.statisticsTimer = setInterval(() => this.updateStatistics(), 1000);
 
     // Clean up old messages and nodes every hour
-    setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
-    setInterval(() => this.cleanupOldNodes(), 60 * 60 * 1000);
+    this.messagesCleanupTimer = setInterval(() => this.cleanupOldMessages(), 60 * 60 * 1000);
+    this.nodesCleanupTimer = setInterval(() => this.cleanupOldNodes(), 60 * 60 * 1000);
+  }
+
+  /**
+   * Clean up timers and resources
+   */
+  destroy() {
+    if (this.statisticsTimer) {
+      clearInterval(this.statisticsTimer);
+      this.statisticsTimer = null;
+    }
+    if (this.messagesCleanupTimer) {
+      clearInterval(this.messagesCleanupTimer);
+      this.messagesCleanupTimer = null;
+    }
+    if (this.nodesCleanupTimer) {
+      clearInterval(this.nodesCleanupTimer);
+      this.nodesCleanupTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   // Event emitter pattern
@@ -177,7 +204,8 @@ export class WebSocketRadioManager {
           // Attempt reconnect if configured
           if (this.bridgeConfig.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+            // Cap delay at 60 seconds to avoid excessively long wait times
+            const delay = Math.min(60000, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
             this.log('info', `Reconnecting to bridge in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
             setTimeout(() => {
               this.connectToBridge();
@@ -250,6 +278,12 @@ export class WebSocketRadioManager {
       case 'radio-connected':
         // Radio fully connected (after configuration completes)
         console.log('[WebSocket] ✅ Radio connected:', data.radio.id, 'on', data.radio.port, '- Name:', data.radio.name);
+
+        // Convert deviceTime from JSON string to Date object
+        if (data.radio.protocolMetadata?.deviceTime) {
+          data.radio.protocolMetadata.deviceTime = new Date(data.radio.protocolMetadata.deviceTime);
+        }
+
         this.radios.set(data.radio.id, data.radio);
         this.emit('radio-status-change', Array.from(this.radios.values()));
         this.log('info', `Radio connected: ${data.radio.id} on ${data.radio.port}`);
@@ -264,10 +298,28 @@ export class WebSocketRadioManager {
         this.log('warn', `Radio disconnected: ${data.radioId}`);
         break;
 
+      case 'reboot-success':
+        // Radio reboot command successful
+        this.log('info', `✅ ${data.message}`);
+        this.emit('reboot-success', { radioId: data.radioId });
+        break;
+
+      case 'radio-rebooting':
+        // Radio is rebooting
+        this.log('info', `🔄 Radio ${data.radioId} is rebooting...`);
+        this.emit('radio-rebooting', { radioId: data.radioId });
+        break;
+
       case 'radio-updated':
         // Radio information updated (nodeInfo, channels, config, stats)
         if (data.radio) {
           console.log('[WebSocket] 🔄 Radio updated:', data.radio.id, '- Name:', data.radio.name, 'HasNodeInfo:', !!data.radio.nodeInfo);
+
+          // Convert deviceTime from JSON string to Date object
+          if (data.radio.protocolMetadata?.deviceTime) {
+            data.radio.protocolMetadata.deviceTime = new Date(data.radio.protocolMetadata.deviceTime);
+          }
+
           this.radios.set(data.radio.id, data.radio);
           this.emit('radio-status-change', Array.from(this.radios.values()));
           this.log('debug', `Radio updated: ${data.radio.id}`, 'radio-update');
@@ -300,7 +352,6 @@ export class WebSocketRadioManager {
               if (node.num === data.node.num) {
                 existingNode = node;
                 oldNodeId = key; // Track old key for cleanup
-                console.log(`[WebSocket] Found duplicate node: ${key} → ${data.node.nodeId} (num: ${data.node.num})`);
                 break;
               }
             }
@@ -341,7 +392,6 @@ export class WebSocketRadioManager {
           // Remove old duplicate entry if nodeId format changed
           if (oldNodeId && oldNodeId !== data.node.nodeId) {
             this.nodes.delete(oldNodeId);
-            console.log(`[WebSocket] Removed duplicate node entry: ${oldNodeId}`);
           }
 
           this.nodes.set(node.nodeId, node);
@@ -360,14 +410,6 @@ export class WebSocketRadioManager {
           // Enhanced logging to help debug map issues
           if (node.position) {
             this.log('info', `📍 Node ${node.shortName} (${node.nodeId}) @ ${node.position.latitude.toFixed(6)}, ${node.position.longitude.toFixed(6)}`, 'node');
-            console.log('[WebSocketManager] Node with position:', {
-              nodeId: node.nodeId,
-              shortName: node.shortName,
-              lat: node.position.latitude,
-              lon: node.position.longitude,
-              totalNodes: this.nodes.size,
-              nodesWithPosition: Array.from(this.nodes.values()).filter(n => n.position).length
-            });
           } else {
             this.log('debug', `📍 Node ${node.shortName} (${node.nodeId}) no location`, 'node');
           }
@@ -376,9 +418,17 @@ export class WebSocketRadioManager {
 
       case 'message':
         // New message received (or sent by us)
+        console.log('[DEBUG] Raw message data from backend:', {
+          timestamp: data.message.timestamp,
+          timestampType: typeof data.message.timestamp,
+          timestampValue: data.message.timestamp,
+          sent: data.message.sent,
+          text: data.message.text?.substring(0, 50)
+        });
+
         const message: Message = {
           id: data.message.id,
-          timestamp: new Date(data.message.timestamp),
+          timestamp: data.message.timestamp ? new Date(data.message.timestamp) : new Date(),
           fromRadio: data.message.radioId,
           protocol: data.message.protocol || 'meshtastic',
           from: data.message.from,
@@ -395,6 +445,13 @@ export class WebSocketRadioManager {
           rssi: data.message.rssi,
           snr: data.message.snr
         };
+
+        console.log('[DEBUG] Processed message:', {
+          timestamp: message.timestamp,
+          timestampISO: message.timestamp.toISOString(),
+          timestampYear: message.timestamp.getFullYear(),
+          sent: message.sent
+        });
 
         this.messages.set(message.id, message);
         this.saveMessagesToStorage(); // Persist to localStorage
@@ -682,6 +739,23 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Reboot a radio device
+   */
+  async rebootRadio(radioId: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `🔄 Rebooting radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'reboot-radio',
+      radioId
+    }));
+  }
+
+  /**
    * Send text message via a radio
    */
   async sendText(radioId: string, text: string, channel: number = 0): Promise<void> {
@@ -788,9 +862,15 @@ export class WebSocketRadioManager {
         const parsed = JSON.parse(stored);
         parsed.forEach((msg: any) => {
           // Restore Date objects from ISO strings
+          // Handle edge case where timestamp might be null/undefined/0
+          const timestamp = msg.timestamp ? new Date(msg.timestamp) : new Date();
+
+          // Validate timestamp - if it's epoch (1970), use current time instead
+          const isValidTimestamp = timestamp.getFullYear() > 2020;
+
           this.messages.set(msg.id, {
             ...msg,
-            timestamp: new Date(msg.timestamp)
+            timestamp: isValidTimestamp ? timestamp : new Date()
           });
         });
         this.log('info', `📦 Loaded ${this.messages.size} messages from storage`);
@@ -808,7 +888,32 @@ export class WebSocketRadioManager {
       const messages = Array.from(this.messages.values());
       localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messages));
     } catch (error) {
-      this.log('error', 'Failed to save messages to storage', undefined, error);
+      // Check if it's a quota exceeded error
+      if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        this.log('warn', 'localStorage quota exceeded, pruning old messages', undefined, error);
+
+        // Remove oldest 50% of messages and try again
+        const sortedMessages = Array.from(this.messages.values())
+          .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const keepCount = Math.floor(sortedMessages.length / 2);
+        const messagesToKeep = sortedMessages.slice(-keepCount);
+
+        // Clear and rebuild messages map
+        this.messages.clear();
+        messagesToKeep.forEach(msg => this.messages.set(msg.id, msg));
+
+        // Try saving again
+        try {
+          localStorage.setItem(this.MESSAGE_STORAGE_KEY, JSON.stringify(messagesToKeep));
+          this.log('info', `Pruned messages to ${messagesToKeep.length} to fit localStorage quota`);
+        } catch (retryError) {
+          this.log('error', 'Failed to save messages even after pruning', undefined, retryError);
+          // Clear all messages from storage as last resort
+          localStorage.removeItem(this.MESSAGE_STORAGE_KEY);
+        }
+      } else {
+        this.log('error', 'Failed to save messages to storage', undefined, error);
+      }
     }
   }
 

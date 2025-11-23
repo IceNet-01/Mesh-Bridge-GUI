@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
+import './utils/clearStorage'; // Load storage utilities in dev mode
 import { RadioIcon } from './components/icons';
 import { StatusBadge } from './components/ui/StatusBadge';
 import { NavButton } from './components/navigation/NavButton';
@@ -24,6 +25,7 @@ function App() {
   const initialize = useStore(state => state.initialize);
   const connectToBridge = useStore(state => state.connectToBridge);
   const disconnectRadio = useStore(state => state.disconnectRadio);
+  const rebootRadio = useStore(state => state.rebootRadio);
   const sendMessage = useStore(state => state.sendMessage);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
   const clearLogs = useStore(state => state.clearLogs);
@@ -62,7 +64,7 @@ function App() {
       case 'dashboard':
         return { radios, statistics, messages };
       case 'radios':
-        return { radios, onDisconnect: disconnectRadio };
+        return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio };
       case 'nodes':
         return { nodes, radios };
       case 'messages':

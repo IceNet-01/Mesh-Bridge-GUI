@@ -7,6 +7,8 @@
 import { BaseProtocol } from './BaseProtocol.mjs';
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
+import { create, toBinary } from '@bufbuild/protobuf';
+import * as Protobuf from '@meshtastic/protobufs';
 
 export class MeshtasticProtocol extends BaseProtocol {
   constructor(radioId, portPath, options = {}) {
@@ -20,6 +22,13 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Node Catalog - Single source of truth for all node data
     // Key: numeric node number, Value: complete node object
     this.nodeCatalog = new Map();
+
+    // Timers for periodic tasks
+    this.nodesScanInterval = null;
+    this.timeSyncInterval = null;
+
+    // Track last message time for device time fallback
+    this.lastMessageTime = null;
   }
 
   getProtocolName() {
@@ -192,6 +201,19 @@ export class MeshtasticProtocol extends BaseProtocol {
       }, 60000); // Scan every 60 seconds
       console.log(`[Meshtastic] Periodic node scan enabled (60s interval)`);
 
+      // Set up periodic time sync to keep radio clock accurate
+      // Sync every 30 minutes to prevent drift
+      this.timeSyncInterval = setInterval(async () => {
+        try {
+          console.log(`[Meshtastic] ⏰ Periodic time sync...`);
+          await this.syncTime();
+          console.log(`[Meshtastic] ✅ Periodic time sync successful`);
+        } catch (error) {
+          console.error(`[Meshtastic] ⚠️  Periodic time sync failed:`, error.message);
+        }
+      }, 30 * 60 * 1000); // Every 30 minutes
+      console.log(`[Meshtastic] Periodic time sync enabled (30min interval)`);
+
       this.connected = true;
 
       // Fetch node info with retry logic - device.nodes may not be populated immediately
@@ -199,6 +221,18 @@ export class MeshtasticProtocol extends BaseProtocol {
       this.fetchAndEmitDeviceInfo(0); // Start with 0 retries
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
+
+      // ALWAYS sync time on connection to ensure radio has correct timestamp
+      // This fixes the "1969" timestamp issue on sent messages
+      console.log(`[Meshtastic] ⏰ Syncing time to radio to prevent 1969 timestamps...`);
+      setTimeout(async () => {
+        try {
+          await this.syncTime();
+          console.log(`[Meshtastic] ✅ Time synced successfully`);
+        } catch (error) {
+          console.error(`[Meshtastic] ⚠️  Time sync failed (messages will have incorrect timestamps):`, error.message);
+        }
+      }, 3000); // Wait 3 seconds for device to be ready
 
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 
@@ -270,6 +304,9 @@ export class MeshtasticProtocol extends BaseProtocol {
           return;
         }
 
+        // Track last message time for device time fallback
+        this.lastMessageTime = new Date();
+
         const normalized = this.normalizeMessagePacket(packet);
         this.emitMessage(normalized);
       } catch (error) {
@@ -291,21 +328,19 @@ export class MeshtasticProtocol extends BaseProtocol {
         this.myNodeNum = myNodeInfo.myNodeNum;
         console.log(`[Meshtastic] ✅ Stored myNodeNum: ${this.myNodeNum}`);
 
-        // Try to get full node info from device.nodes first (most reliable)
-        if (this.device && this.device.nodes && this.device.nodeNum) {
-          const myNode = this.device.nodes.get(this.device.nodeNum);
-          if (myNode && myNode.user && myNode.user.longName) {
-            // Have complete node info from device.nodes - use it!
-            const nodeInfo = {
-              nodeId: this.normalizeNodeId(this.device.nodeNum),
-              longName: myNode.user.longName,
-              shortName: myNode.user.shortName || '????',
-              hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
-            };
-            this.updateNodeInfo(nodeInfo);
-            console.log(`[Meshtastic] Node info from device.nodes:`, nodeInfo);
-            return; // Done - have complete info
-          }
+        // Try to get full node info from our catalog first (most reliable)
+        const myNode = this.nodeCatalog.get(myNodeInfo.myNodeNum);
+        if (myNode && myNode.longName) {
+          // Have complete node info from catalog - use it!
+          const nodeInfo = {
+            nodeId: this.normalizeNodeId(myNodeInfo.myNodeNum),
+            longName: myNode.longName,
+            shortName: myNode.shortName || '????',
+            hwModel: myNode.hwModel || 'Unknown'
+          };
+          this.updateNodeInfo(nodeInfo);
+          console.log(`[Meshtastic] Node info from catalog:`, nodeInfo);
+          return; // Done - have complete info
         }
 
         // Fallback: Use myNodeInfo.user if available (may be incomplete)
@@ -638,34 +673,33 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 🔍 fetchAndEmitDeviceInfo called (attempt ${retryCount + 1}/${maxRetries + 1})`);
       console.log(`[Meshtastic] Device state:`, {
         hasDevice: !!this.device,
-        hasNodes: !!this.device?.nodes,
-        nodeNum: this.device?.nodeNum,
-        nodesSize: this.device?.nodes?.size
+        deviceNodeNum: this.device?.nodeNum,
+        myNodeNum: this.myNodeNum,
+        catalogSize: this.nodeCatalog.size
       });
 
-      // Get node info from device
-      if (this.device && this.device.nodes) {
-        console.log(`[Meshtastic] ✅ device.nodes exists, looking for nodeNum: ${this.device.nodeNum}`);
-        const myNode = this.device.nodes.get(this.device.nodeNum);
-        console.log(`[Meshtastic] myNode lookup result:`, {
-          found: !!myNode,
-          hasUser: !!myNode?.user,
-          longName: myNode?.user?.longName
-        });
+      // Check if we have device.nodeNum (our radio's node number)
+      if (this.device && this.device.nodeNum) {
+        console.log(`[Meshtastic] ✅ device.nodeNum exists: ${this.device.nodeNum}`);
 
-        if (myNode && myNode.user && myNode.user.longName) {
-          this.myNodeNum = this.device.nodeNum;
+        // Store our node number for loop prevention
+        this.myNodeNum = this.device.nodeNum;
+
+        // Try to get node info from our catalog first
+        const myNode = this.nodeCatalog.get(this.device.nodeNum);
+
+        if (myNode && myNode.longName) {
           const nodeInfo = {
             nodeId: this.normalizeNodeId(this.device.nodeNum),
-            longName: myNode.user.longName,
-            shortName: myNode.user.shortName || '????',
-            hwModel: this.getHwModelName(myNode.user.hwModel) || 'Unknown'
+            longName: myNode.longName,
+            shortName: myNode.shortName || '????',
+            hwModel: myNode.hwModel || 'Unknown'
           };
           console.log(`[Meshtastic] 🎯 Calling updateNodeInfo with:`, nodeInfo);
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] ✅ Node info fetched from device.nodes successfully`);
+          console.log(`[Meshtastic] ✅ Node info fetched from catalog successfully`);
         } else {
-          console.log(`[Meshtastic] ❌ My node not found in device.nodes or missing user data`);
+          console.log(`[Meshtastic] ⏳ My node not in catalog yet (will be populated by events)`);
 
           // Retry with exponential backoff if we haven't exceeded max retries
           if (retryCount < maxRetries) {
@@ -675,18 +709,18 @@ export class MeshtasticProtocol extends BaseProtocol {
             }, retryDelay);
             return; // Exit early, will retry
           } else {
-            console.log(`[Meshtastic] ❌ Max retries reached, giving up on device info fetch`);
+            console.log(`[Meshtastic] ⚠️  Max retries reached, node info will be set when NodeInfoPacket arrives`);
           }
         }
       } else if (retryCount < maxRetries) {
-        // Device or nodes not ready yet, retry
-        console.log(`[Meshtastic] ⏳ Device.nodes not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+        // device.nodeNum not ready yet, retry
+        console.log(`[Meshtastic] ⏳ device.nodeNum not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
         setTimeout(() => {
           this.fetchAndEmitDeviceInfo(retryCount + 1);
         }, retryDelay);
         return; // Exit early, will retry
       } else {
-        console.log(`[Meshtastic] ❌ Device.nodes never became ready after ${maxRetries} retries`);
+        console.log(`[Meshtastic] ⚠️  device.nodeNum never became ready after ${maxRetries} retries`);
       }
 
       // Get channels from device
@@ -755,83 +789,41 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   /**
-   * Scan device.nodes and emit updates for all known nodes
-   * This proactively extracts node information from the library's cache
-   * even if NodeInfoPacket events aren't firing
+   * Scan node catalog and re-emit all known nodes
+   * This ensures clients get periodic updates for all nodes we know about
    */
   scanAndEmitNodes() {
     try {
-      if (!this.device || !this.device.nodes) {
-        console.log(`[Meshtastic] 🔍 Node scan skipped - device.nodes not available`);
+      if (this.nodeCatalog.size === 0) {
+        console.log(`[Meshtastic] 🔍 Node scan skipped - catalog empty (nodes will be added via events)`);
         return;
       }
 
-      console.log(`[Meshtastic] 🔍 Scanning ${this.device.nodes.size} nodes in device.nodes...`);
+      console.log(`[Meshtastic] 🔍 Scanning ${this.nodeCatalog.size} nodes in catalog...`);
       let emittedCount = 0;
-      let skippedNoUser = 0;
 
-      this.device.nodes.forEach((node, nodeNum) => {
+      this.nodeCatalog.forEach((node, nodeNum) => {
         const nodeId = this.normalizeNodeId(nodeNum);
 
-        // DEBUG: Log what data is available for this node
-        if (node.environmentMetrics) {
-          console.log(`[Meshtastic] 🌡️ Node ${nodeId} environmentMetrics keys:`, Object.keys(node.environmentMetrics));
-        }
-
         console.log(`[Meshtastic] 🔍 Node ${nodeId}:`, {
-          hasUser: !!node.user,
-          longName: node.user?.longName,
-          shortName: node.user?.shortName,
-          hwModel: node.user?.hwModel,
-          hasPosition: !!(node.position?.latitudeI),
-          hasDeviceMetrics: !!node.deviceMetrics,
-          hasEnvironmentMetrics: !!node.environmentMetrics,
-          // Show actual environmental values - try both camelCase and snake_case
-          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
-          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
-          batteryLevel: node.deviceMetrics?.batteryLevel,
+          longName: node.longName,
+          shortName: node.shortName,
+          hwModel: node.hwModel,
+          hasPosition: !!(node.position?.latitude),
+          temperature: node.temperature,
+          humidity: node.humidity,
+          pressure: node.pressure,
+          batteryLevel: node.batteryLevel,
           lastHeard: node.lastHeard
         });
 
-        // Skip if node doesn't have user data
-        if (!node.user) {
-          console.log(`[Meshtastic] ⚠️  Skipping ${nodeId} - no user data`);
-          skippedNoUser++;
-          return;
-        }
-
-        // Build update object from device.nodes cache
-        const update = {
-          longName: node.user.longName,
-          shortName: node.user.shortName,
-          hwModel: this.getHwModelName(node.user.hwModel),
-          snr: node.snr,
-          position: node.position && node.position.latitudeI && node.position.longitudeI ? {
-            latitude: node.position.latitudeI / 1e7,
-            longitude: node.position.longitudeI / 1e7,
-            altitude: node.position.altitude,
-            time: node.position.time ? new Date(node.position.time * 1000) : undefined
-          } : undefined,
-          batteryLevel: node.deviceMetrics?.batteryLevel,
-          voltage: node.deviceMetrics?.voltage,
-          channelUtilization: node.deviceMetrics?.channelUtilization,
-          airUtilTx: node.deviceMetrics?.airUtilTx,
-          // Try both camelCase and snake_case field names for environmental data
-          temperature: node.environmentMetrics?.temperature || node.deviceMetrics?.temperature,
-          humidity: node.environmentMetrics?.relativeHumidity || node.environmentMetrics?.relative_humidity,
-          pressure: node.environmentMetrics?.barometricPressure || node.environmentMetrics?.barometric_pressure,
-        };
-
-        const catalogedNode = this.updateNodeCatalog(nodeNum, update, 'NodeScan');
-        if (catalogedNode) {
-          console.log(`[Meshtastic] ✅ Emitting node: ${catalogedNode.longName} (${nodeId})`);
-          this.emit('node', catalogedNode);
-          emittedCount++;
-        }
+        // Emit the cataloged node
+        console.log(`[Meshtastic] ✅ Emitting node: ${node.longName} (${nodeId})`);
+        this.emit('node', node);
+        emittedCount++;
       });
 
-      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes, skipped ${skippedNoUser} (no user data)`);
+      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes from catalog`);
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
@@ -846,6 +838,13 @@ export class MeshtasticProtocol extends BaseProtocol {
         clearInterval(this.nodesScanInterval);
         this.nodesScanInterval = null;
         console.log(`[Meshtastic] Periodic node scan disabled`);
+      }
+
+      // Clear periodic time sync interval
+      if (this.timeSyncInterval) {
+        clearInterval(this.timeSyncInterval);
+        this.timeSyncInterval = null;
+        console.log(`[Meshtastic] Periodic time sync disabled`);
       }
 
       if (this.device) {
@@ -990,35 +989,100 @@ export class MeshtasticProtocol extends BaseProtocol {
    * Sync the current time to the radio
    * This sets the radio's clock to match the system time
    */
+  /**
+   * Sync time to the radio using AdminMessage.set_time_only
+   * This is the CORRECT method for setting time on Meshtastic devices
+   */
   async syncTime() {
     try {
       if (!this.connected || !this.device) {
         throw new Error('Device not connected');
       }
 
+      // ============================================================
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║              TIME SYNC OPERATION STARTING                  ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+
       // Get current time in Unix timestamp (seconds)
       const currentTimeSeconds = Math.floor(Date.now() / 1000);
+      const currentDate = new Date(currentTimeSeconds * 1000);
 
-      console.log(`[Meshtastic] Syncing time to radio: ${new Date().toLocaleString()}`);
+      console.log(`[TIME SYNC] 🕐 Host Time: ${currentDate.toLocaleString()}`);
+      console.log(`[TIME SYNC] 📅 Date: ${currentDate.toDateString()}`);
+      console.log(`[TIME SYNC] 🔢 Unix Timestamp: ${currentTimeSeconds} seconds`);
+      console.log(`[TIME SYNC] ✓ Year Check: ${currentDate.getFullYear()} (should be 2025)`);
 
-      // Create a minimal User object with just the time
-      // The setOwner method will sync the time to the device
-      const userWithTime = {
-        id: this.nodeInfo?.userId || '!ffffffff', // Use existing user ID or placeholder
-        longName: this.nodeInfo?.longName || 'Bridge',
-        shortName: this.nodeInfo?.shortName || 'BRG',
-        macaddr: new Uint8Array(6), // Empty MAC
-        hwModel: this.nodeInfo?.hwModel || 0,
-        isLicensed: false
-      };
+      // Create AdminMessage with set_time_only field using same pattern as setFixedPosition
+      // Field 43 in the AdminMessage protobuf (fixed32)
+      console.log(`[TIME SYNC] 📝 Creating AdminMessage with setTimeOnly field...`);
+      const setTimeMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setTimeOnly',
+          value: currentTimeSeconds
+        }
+      });
 
-      // Send the owner update which will sync the time
-      await this.device.setOwner(userWithTime);
+      console.log(`[TIME SYNC] 📦 AdminMessage Structure:`, JSON.stringify(setTimeMessage, null, 2));
 
-      console.log(`[Meshtastic] ✅ Time sync command sent to radio`);
+      // Serialize and send using exact same pattern as setFixedPosition
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setTimeMessage);
+
+      console.log(`[TIME SYNC] 🔧 Serialized to ${adminBytes.length} bytes`);
+      console.log(`[TIME SYNC] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+
+      // Send using same parameters as setFixedPosition: channel 0, wantAck true, wantResponse false
+      console.log(`[TIME SYNC] 📡 Sending to radio via ADMIN_APP port on channel 0...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck = true (same as setFixedPosition)
+        false   // wantResponse = false (same as setFixedPosition)
+      );
+
+      console.log(`[TIME SYNC] ✅ SUCCESS! Packet ID: ${packetId}`);
+      console.log('╔════════════════════════════════════════════════════════════╗');
+      console.log('║           TIME SYNC OPERATION COMPLETED                    ║');
+      console.log('╚════════════════════════════════════════════════════════════╝\n');
+      // ============================================================
+
       return true;
     } catch (error) {
-      console.error('[Meshtastic] ❌ Error syncing time:', error);
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║               TIME SYNC OPERATION FAILED                   ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.error('[TIME SYNC] ❌ ERROR:', error);
+      console.error('[TIME SYNC] Error Details:', JSON.stringify(error, null, 2));
+      console.log('════════════════════════════════════════════════════════════\n');
+      throw error;
+    }
+  }
+
+  /**
+   * Reboot the radio device
+   * This will restart the Meshtastic radio
+   */
+  async rebootRadio() {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Meshtastic] 🔄 Rebooting radio...`);
+
+      // Send reboot command to the device
+      await this.device.reboot();
+
+      console.log(`[Meshtastic] ✅ Reboot command sent to radio`);
+
+      // The device will disconnect after reboot, so mark as disconnected
+      this.connected = false;
+
+      return true;
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error rebooting radio:', error);
       throw error;
     }
   }
@@ -1051,10 +1115,16 @@ export class MeshtasticProtocol extends BaseProtocol {
   getProtocolMetadata() {
     // Get device time if available (helps diagnose timestamp issues)
     let deviceTime = null;
+    let deviceTimeSource = null;
     try {
-      // Try to get device time from position time or calculate from rxTime
+      // Try to get device time from position time
       if (this.nodeInfo?.position?.time) {
-        deviceTime = new Date(this.nodeInfo.position.time * 1000).toISOString();
+        deviceTime = new Date(this.nodeInfo.position.time * 1000);
+        deviceTimeSource = 'gps';
+      } else if (this.lastMessageTime) {
+        // Fallback: use time from last received message
+        deviceTime = this.lastMessageTime;
+        deviceTimeSource = 'message';
       }
     } catch (e) {
       // Ignore errors getting device time
@@ -1063,7 +1133,8 @@ export class MeshtasticProtocol extends BaseProtocol {
     return {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
-      deviceTime: deviceTime, // Device's current time (null if unavailable)
+      deviceTime: deviceTime, // Device's current time (Date object or null)
+      deviceTimeSource: deviceTimeSource, // 'gps', 'message', or null
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),

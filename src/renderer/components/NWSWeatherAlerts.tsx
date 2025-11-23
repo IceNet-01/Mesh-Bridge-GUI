@@ -127,7 +127,7 @@ export default function NWSWeatherAlerts({ radios, onSendMessage }: NWSWeatherAl
     const interval = setInterval(fetchWeatherAlerts, settings.updateInterval * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [settings.enabled, settings.monitorLocation, settings.selectedState, settings.latitude, settings.longitude, settings.updateInterval]);
+  }, [settings.enabled, settings.monitorLocation, settings.selectedState, settings.latitude, settings.longitude, settings.updateInterval, broadcastedAlerts, radios, settings.autoBroadcast]);
 
   // Broadcast weather alert
   const broadcastWeatherAlert = (alert: WeatherAlert) => {
@@ -153,6 +153,31 @@ export default function NWSWeatherAlerts({ radios, onSendMessage }: NWSWeatherAl
   const updateSetting = <K extends keyof NWSSettings>(key: K, value: NWSSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
+
+  // Static color class mappings for Tailwind (dynamic classes don't work with JIT)
+  const alertColorClasses = {
+    red: {
+      bg: 'bg-red-500/10',
+      border: 'border-red-500/30',
+      hover: 'hover:bg-red-500/20',
+      badge: 'bg-red-500',
+      button: 'bg-red-600 hover:bg-red-700',
+    },
+    orange: {
+      bg: 'bg-orange-500/10',
+      border: 'border-orange-500/30',
+      hover: 'hover:bg-orange-500/20',
+      badge: 'bg-orange-500',
+      button: 'bg-orange-600 hover:bg-orange-700',
+    },
+    yellow: {
+      bg: 'bg-yellow-500/10',
+      border: 'border-yellow-500/30',
+      hover: 'hover:bg-yellow-500/20',
+      badge: 'bg-yellow-500',
+      button: 'bg-yellow-600 hover:bg-yellow-700',
+    },
+  } as const;
 
   return (
     <div className="space-y-6">
@@ -321,11 +346,12 @@ export default function NWSWeatherAlerts({ radios, onSendMessage }: NWSWeatherAl
             {activeWeatherAlerts.map(alert => {
               const color = getAlertColor(alert.severity);
               const isSelected = selectedAlert === alert.id;
+              const colorClasses = alertColorClasses[color as keyof typeof alertColorClasses] || alertColorClasses.yellow;
 
               return (
                 <div
                   key={alert.id}
-                  className={`bg-${color}-500/10 border border-${color}-500/30 rounded-lg p-4 cursor-pointer hover:bg-${color}-500/20 transition-all ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                  className={`${colorClasses.bg} border ${colorClasses.border} rounded-lg p-4 cursor-pointer ${colorClasses.hover} transition-all ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
                   onClick={() => setSelectedAlert(isSelected ? null : alert.id)}
                 >
                   <div className="flex items-start gap-3">
@@ -337,7 +363,7 @@ export default function NWSWeatherAlerts({ radios, onSendMessage }: NWSWeatherAl
                           <p className="text-sm text-slate-400">{alert.areaDesc}</p>
                         </div>
                         <div className="flex gap-2">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold bg-${color}-500 text-white`}>
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${colorClasses.badge} text-white`}>
                             {alert.severity}
                           </span>
                           <span className="px-2 py-1 rounded text-xs font-semibold bg-slate-700 text-white">
@@ -368,7 +394,7 @@ export default function NWSWeatherAlerts({ radios, onSendMessage }: NWSWeatherAl
                                 e.stopPropagation();
                                 broadcastWeatherAlert(alert);
                               }}
-                              className={`bg-${color}-600 hover:bg-${color}-700 text-white px-4 py-2 rounded-lg text-sm font-semibold`}
+                              className={`${colorClasses.button} text-white px-4 py-2 rounded-lg text-sm font-semibold`}
                             >
                               📢 Broadcast Alert
                             </button>

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Radio, Statistics, Message } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -19,26 +20,29 @@ function Dashboard({ radios, statistics, messages }: DashboardProps) {
   };
 
   // Generate chart data for message rate using real message timestamps
-  const calculateMessageRate = (minutesAgo: number): number => {
-    const now = Date.now();
-    const oneMinute = 60 * 1000;
-    const startTime = now - (minutesAgo + 1) * oneMinute;
-    const endTime = now - minutesAgo * oneMinute;
+  // Memoized to avoid recalculating on every render
+  const chartData = useMemo(() => {
+    const calculateMessageRate = (minutesAgo: number): number => {
+      const now = Date.now();
+      const oneMinute = 60 * 1000;
+      const startTime = now - (minutesAgo + 1) * oneMinute;
+      const endTime = now - minutesAgo * oneMinute;
 
-    return messages.filter(msg => {
-      const msgTime = msg.timestamp instanceof Date ? msg.timestamp.getTime() : new Date(msg.timestamp).getTime();
-      return msgTime >= startTime && msgTime < endTime;
-    }).length;
-  };
+      return messages.filter(msg => {
+        const msgTime = msg.timestamp instanceof Date ? msg.timestamp.getTime() : new Date(msg.timestamp).getTime();
+        return msgTime >= startTime && msgTime < endTime;
+      }).length;
+    };
 
-  const chartData = [
-    { time: '5m ago', rate: calculateMessageRate(5) },
-    { time: '4m ago', rate: calculateMessageRate(4) },
-    { time: '3m ago', rate: calculateMessageRate(3) },
-    { time: '2m ago', rate: calculateMessageRate(2) },
-    { time: '1m ago', rate: calculateMessageRate(1) },
-    { time: 'now', rate: calculateMessageRate(0) },
-  ];
+    return [
+      { time: '5m ago', rate: calculateMessageRate(5) },
+      { time: '4m ago', rate: calculateMessageRate(4) },
+      { time: '3m ago', rate: calculateMessageRate(3) },
+      { time: '2m ago', rate: calculateMessageRate(2) },
+      { time: '1m ago', rate: calculateMessageRate(1) },
+      { time: 'now', rate: calculateMessageRate(0) },
+    ];
+  }, [messages]);
 
   return (
     <div className="space-y-6">

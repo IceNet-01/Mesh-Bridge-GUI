@@ -71,13 +71,18 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
       );
 
       if (hasEmergencyKeyword) {
-        // Check if we already have this emergency
-        const existingEmergency = emergencies.find(e =>
-          e.nodeId === msg.from &&
-          Math.abs(e.timestamp.getTime() - new Date(msg.timestamp).getTime()) < 60000 // Within 1 minute
-        );
+        // Use functional update to avoid dependency on emergencies state
+        setEmergencies(prev => {
+          // Check if we already have this emergency
+          const existingEmergency = prev.find(e =>
+            e.nodeId === msg.from &&
+            Math.abs(new Date(e.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 60000 // Within 1 minute
+          );
 
-        if (!existingEmergency) {
+          if (existingEmergency) {
+            return prev; // No change needed
+          }
+
           const node = nodes.find(n => n.nodeId === msg.from || n.num.toString() === msg.from);
 
           const newEmergency: EmergencyEvent = {
@@ -96,7 +101,6 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
             responseCount: 0,
           };
 
-          setEmergencies(prev => [newEmergency, ...prev]);
           playAlert();
 
           // Auto-respond if enabled
@@ -105,10 +109,12 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
               handleAutoResponse(newEmergency);
             }, 1000);
           }
-        }
+
+          return [newEmergency, ...prev];
+        });
       }
     });
-  }, [messages, emergencies, nodes, radios, autoRespond]);
+  }, [messages, nodes, radios, autoRespond]);
 
   // Auto-response to SOS
   const handleAutoResponse = (emergency: EmergencyEvent) => {
@@ -179,7 +185,7 @@ export default function EmergencyResponse({ nodes, radios, messages, onSendMessa
 
   // Get emergency duration
   const getEmergencyDuration = (emergency: EmergencyEvent): string => {
-    const duration = Date.now() - emergency.timestamp.getTime();
+    const duration = Date.now() - new Date(emergency.timestamp).getTime();
     const minutes = Math.floor(duration / 60000);
     const hours = Math.floor(minutes / 60);
 

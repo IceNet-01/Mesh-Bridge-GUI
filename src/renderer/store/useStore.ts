@@ -43,6 +43,7 @@ interface AppStore {
   setAutoScanEnabled: (enabled: boolean) => void;
   setAutoScanInterval: (interval: number) => void;
   disconnectRadio: (radioId: string) => Promise<void>;
+  rebootRadio: (radioId: string) => Promise<void>;
   sendMessage: (radioId: string, text: string, channel?: number) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
@@ -127,7 +128,7 @@ export const useStore = create<AppStore>((set, get) => {
         // Node ID not found, check if node with same 'num' exists
         duplicateIndex = state.nodes.findIndex(n => n.num === node.num);
         if (duplicateIndex >= 0) {
-          console.log(`[Store] Found duplicate node by num: ${state.nodes[duplicateIndex].nodeId} → ${node.nodeId} (num: ${node.num})`);
+          // Duplicate node found - merge with existing
           existingIndex = duplicateIndex; // Treat duplicate as existing node
         }
       }
@@ -176,7 +177,7 @@ export const useStore = create<AppStore>((set, get) => {
           const oldNodeId = state.nodes[duplicateIndex].nodeId;
           const oldSnapshots = newHistory.get(oldNodeId) || [];
           if (oldSnapshots.length > 0) {
-            console.log(`[Store] Merging ${oldSnapshots.length} telemetry snapshots from duplicate node ${oldNodeId}`);
+            // Merge telemetry snapshots from duplicate node
             existingSnapshots = [...oldSnapshots, ...existingSnapshots];
             newHistory.delete(oldNodeId); // Remove old history
           }
@@ -188,7 +189,7 @@ export const useStore = create<AppStore>((set, get) => {
         // Keep last 24 hours of snapshots (assuming ~5min intervals = 288 snapshots/day)
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         const filteredSnapshots = updatedSnapshots.filter(
-          s => s.timestamp.getTime() > oneDayAgo
+          s => new Date(s.timestamp).getTime() > oneDayAgo
         );
 
         newHistory.set(node.nodeId, filteredSnapshots);
@@ -281,7 +282,6 @@ export const useStore = create<AppStore>((set, get) => {
         const state = get();
         if (!state.autoScanEnabled) {
           get().setAutoScanEnabled(true);
-          console.log('🔍 Auto-scan enabled (30s interval)');
         }
       }
       return result;
@@ -301,7 +301,6 @@ export const useStore = create<AppStore>((set, get) => {
           return;
         }
 
-        console.log('🔍 Auto-scanning for new radios...');
         set({ lastScan: new Date() });
 
         const ports = await manager.scanForRadios();
@@ -315,24 +314,14 @@ export const useStore = create<AppStore>((set, get) => {
         const newPorts = ports.filter(port => !connectedPorts.includes(port.path));
 
         if (newPorts.length === 0) {
-          console.log('  ℹ️  No new radios found');
           return;
         }
 
-        console.log(`  ✨ Found ${newPorts.length} new radio(s), connecting...`);
-
         // Connect to new ports only using Meshtastic protocol
-        const results = await Promise.allSettled(
+        await Promise.allSettled(
           newPorts.map(port => manager.connectRadio(port.path, 'meshtastic'))
         );
-
-        const successCount = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
-
-        if (successCount > 0) {
-          console.log(`  ✅ Connected ${successCount} new radio(s)`);
-        }
       } catch (error) {
-        console.error('Auto-scan error:', error);
         // Don't throw - we don't want auto-scan errors to crash the app
       }
     },
@@ -359,10 +348,6 @@ export const useStore = create<AppStore>((set, get) => {
         autoScanTimer = setInterval(() => {
           get().autoScanForNewRadios();
         }, state.autoScanInterval);
-
-        console.log(`✅ Auto-scan enabled (${state.autoScanInterval/1000}s interval)`);
-      } else {
-        console.log('⏸️  Auto-scan disabled');
       }
     },
 
@@ -379,36 +364,30 @@ export const useStore = create<AppStore>((set, get) => {
 
     scanAndConnectRadio: async () => {
       const ports = await manager.scanForRadios();
-      console.log('Scanned ports:', ports);
 
       if (ports.length === 0) {
         throw new Error('No serial ports found. Make sure your radio is connected via USB and the bridge server is running.');
       }
 
       // Connect to ALL available ports using Meshtastic protocol
-      console.log(`Connecting to ${ports.length} radio(s) with Meshtastic protocol...`);
-
       const results = await Promise.allSettled(
         ports.map(port => manager.connectRadio(port.path, 'meshtastic'))
       );
 
       // Check if at least one succeeded
       const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-      const failCount = results.length - successCount;
 
       if (successCount === 0) {
         throw new Error('Failed to connect to any radios. Check logs for details.');
-      }
-
-      console.log(`✅ Connected ${successCount} radio(s), ${failCount} failed`);
-
-      if (failCount > 0) {
-        console.warn(`⚠️ ${failCount} radio(s) failed to connect`);
       }
     },
 
     disconnectRadio: async (radioId: string) => {
       await manager.disconnectRadio(radioId);
+    },
+
+    rebootRadio: async (radioId: string) => {
+      await manager.rebootRadio(radioId);
     },
 
     sendMessage: async (radioId: string, text: string, channel: number = 0) => {

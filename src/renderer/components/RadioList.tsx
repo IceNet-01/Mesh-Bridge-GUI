@@ -3,9 +3,10 @@ import { Radio } from '../types';
 interface RadioListProps {
   radios: Radio[];
   onDisconnect: (radioId: string) => void;
+  onReboot: (radioId: string) => void;
 }
 
-function RadioList({ radios, onDisconnect }: RadioListProps) {
+function RadioList({ radios, onDisconnect, onReboot }: RadioListProps) {
   return (
     <div className="space-y-6">
       <div>
@@ -26,7 +27,7 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {radios.map((radio) => (
-            <RadioCard key={radio.id} radio={radio} onDisconnect={onDisconnect} />
+            <RadioCard key={radio.id} radio={radio} onDisconnect={onDisconnect} onReboot={onReboot} />
           ))}
         </div>
       )}
@@ -37,9 +38,10 @@ function RadioList({ radios, onDisconnect }: RadioListProps) {
 interface RadioCardProps {
   radio: Radio;
   onDisconnect: (radioId: string) => void;
+  onReboot: (radioId: string) => void;
 }
 
-function RadioCard({ radio, onDisconnect }: RadioCardProps) {
+function RadioCard({ radio, onDisconnect, onReboot }: RadioCardProps) {
   const statusColors = {
     connected: 'border-green-500/50 bg-green-500/5',
     connecting: 'border-yellow-500/50 bg-yellow-500/5',
@@ -86,15 +88,26 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
             {statusLabels[radio.status]}
           </span>
           {radio.status === 'connected' && (
-            <button
-              onClick={() => onDisconnect(radio.id)}
-              className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-              title="Disconnect"
-            >
-              <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <>
+              <button
+                onClick={() => onReboot(radio.id)}
+                className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors"
+                title="Reboot Radio"
+              >
+                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button
+                onClick={() => onDisconnect(radio.id)}
+                className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                title="Disconnect"
+              >
+                <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -151,6 +164,53 @@ function RadioCard({ radio, onDisconnect }: RadioCardProps) {
           {radio.protocolMetadata.firmware && (
             <p className="text-xs text-slate-500 mt-2">Firmware: {radio.protocolMetadata.firmware}</p>
           )}
+        </div>
+      )}
+
+      {/* Radio Time Display */}
+      {radio.protocol === 'meshtastic' && radio.protocolMetadata?.deviceTime && (
+        <div className="mb-4 p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+          <p className="text-slate-300 text-xs font-semibold mb-2 uppercase flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Radio Time
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <p className="text-slate-400">Current Time</p>
+              <p className="text-white font-medium font-mono text-xs">
+                {new Date(radio.protocolMetadata.deviceTime).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400">Time Source</p>
+              <p className="text-white font-medium">
+                {radio.protocolMetadata.deviceTimeSource === 'gps' ? (
+                  <span className="text-green-400">GPS</span>
+                ) : radio.protocolMetadata.deviceTimeSource === 'message' ? (
+                  <span className="text-yellow-400">Message</span>
+                ) : (
+                  <span className="text-slate-400">Unknown</span>
+                )}
+              </p>
+            </div>
+          </div>
+          {(() => {
+            const radioTime = new Date(radio.protocolMetadata.deviceTime);
+            const hostTime = new Date();
+            const diffMinutes = Math.abs(radioTime.getTime() - hostTime.getTime()) / 1000 / 60;
+            if (diffMinutes > 5) {
+              return (
+                <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
+                  <p className="text-yellow-400">
+                    ⚠️ Radio time differs from host by {Math.round(diffMinutes)} minutes
+                  </p>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
 
