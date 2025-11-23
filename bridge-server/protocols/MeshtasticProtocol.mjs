@@ -778,17 +778,8 @@ export class MeshtasticProtocol extends BaseProtocol {
    * Update and emit node info for this radio
    */
   updateNodeInfo(nodeInfo) {
-    console.log('[Meshtastic] 📝 updateNodeInfo called with:', {
-      nodeId: nodeInfo?.nodeId,
-      longName: nodeInfo?.longName,
-      shortName: nodeInfo?.shortName,
-      hwModel: nodeInfo?.hwModel
-    });
-
     this.nodeInfo = nodeInfo;
-    console.log('[Meshtastic] ✅ this.nodeInfo set, emitting nodeInfo event...');
     this.emit('nodeInfo', nodeInfo);
-    console.log('[Meshtastic] ✅ nodeInfo event emitted');
   }
 
   /**
@@ -820,13 +811,12 @@ export class MeshtasticProtocol extends BaseProtocol {
           lastHeard: node.lastHeard
         });
 
-        // Emit the cataloged node
-        console.log(`[Meshtastic] ✅ Emitting node: ${node.longName} (${nodeId})`);
+        // Emit the cataloged node (silent)
         this.emit('node', node);
         emittedCount++;
       });
 
-      console.log(`[Meshtastic] ✅ Node scan complete - emitted ${emittedCount} nodes from catalog`);
+      // Node scan complete (silent - ${emittedCount} nodes)
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
