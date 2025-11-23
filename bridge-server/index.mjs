@@ -47,9 +47,10 @@ class MeshtasticBridgeServer {
     this.radios = new Map(); // radioId -> { device, transport, port, info }
     this.clients = new Set(); // WebSocket clients
     this.messageHistory = [];
-    this.maxHistorySize = 500;
-    this.seenMessageIds = new Set(); // Track message IDs for deduplication
-    this.maxSeenMessages = 1000; // Limit size of seen messages set
+    this.maxHistorySize = 1000;              // Keep last 1000 messages (increased for high uptime)
+    this.seenMessageIds = new Set();         // Track message IDs for deduplication
+    this.maxSeenMessages = 2000;             // Limit size of seen messages set (increased)
+    this.seenMessageTimestamps = new Map();  // Track when message IDs were added for age-based cleanup
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -145,8 +146,11 @@ class MeshtasticBridgeServer {
     // ===== CONSOLE OUTPUT CAPTURE =====
     // Capture all console output and broadcast to WebSocket clients for raw log viewing
     this.consoleBuffer = [];                   // Buffer for raw console output
-    this.maxConsoleBuffer = 2000;              // Keep last 2000 lines
+    this.maxConsoleBuffer = 5000;              // Keep last 5000 lines (increased for high uptime)
     this.setupConsoleCapture();
+
+    // Periodic cleanup task for memory management (runs every 10 minutes)
+    setInterval(() => this.performMemoryCleanup(), 10 * 60 * 1000);
 
     // Load persistent configuration (AI state, etc.)
     this.loadConfig();
@@ -1090,6 +1094,48 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Perform periodic memory cleanup to prevent unbounded growth
+   * Runs every 10 minutes to clean up old data
+   */
+  performMemoryCleanup() {
+    try {
+      const now = Date.now();
+      const oneHourAgo = now - (60 * 60 * 1000); // 1 hour in milliseconds
+
+      // Clean up old seen message IDs (older than 1 hour)
+      let cleanedCount = 0;
+      for (const [messageId, timestamp] of this.seenMessageTimestamps.entries()) {
+        if (timestamp < oneHourAgo) {
+          this.seenMessageIds.delete(messageId);
+          this.seenMessageTimestamps.delete(messageId);
+          cleanedCount++;
+        }
+      }
+
+      if (cleanedCount > 0) {
+        console.log(`🧹 Memory cleanup: Removed ${cleanedCount} old message IDs from deduplication cache`);
+      }
+
+      // Report current memory usage
+      const memUsage = {
+        consoleBuffer: this.consoleBuffer.length,
+        messageHistory: this.messageHistory.length,
+        seenMessageIds: this.seenMessageIds.size,
+        connectedRadios: this.radios.size,
+        wsClients: this.clients.size
+      };
+
+      console.log(`📊 Memory stats: Console=${memUsage.consoleBuffer}/${this.maxConsoleBuffer}, ` +
+                  `Messages=${memUsage.messageHistory}/${this.maxHistorySize}, ` +
+                  `Dedup=${memUsage.seenMessageIds}/${this.maxSeenMessages}, ` +
+                  `Radios=${memUsage.connectedRadios}, Clients=${memUsage.wsClients}`);
+
+    } catch (error) {
+      console.error(`❌ Error during memory cleanup:`, error);
+    }
+  }
+
+  /**
    * Handle message packets from radio (protocol-agnostic)
    * Packet is normalized by protocol handler
    */
@@ -1142,13 +1188,15 @@ class MeshtasticBridgeServer {
           return;
         }
 
-        // Mark message as seen
+        // Mark message as seen with timestamp for age-based cleanup
         this.seenMessageIds.add(packet.id);
+        this.seenMessageTimestamps.set(packet.id, Date.now());
 
         // Limit size of seen messages set to prevent memory leak
         if (this.seenMessageIds.size > this.maxSeenMessages) {
           const firstId = this.seenMessageIds.values().next().value;
           this.seenMessageIds.delete(firstId);
+          this.seenMessageTimestamps.delete(firstId);
         }
 
         const message = {
