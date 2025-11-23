@@ -262,7 +262,40 @@ class MeshtasticBridgeServer {
           console.log(`📋 Loaded AI state from config: ${this.aiEnabled ? 'ENABLED' : 'DISABLED'}`);
         }
 
-        // Can add more config options here in the future (MQTT, email, etc.)
+        // Load Email configuration
+        if (config.email) {
+          if (config.email.enabled !== undefined) this.emailEnabled = config.email.enabled;
+          if (config.email.host) this.emailHost = config.email.host;
+          if (config.email.port !== undefined) this.emailPort = config.email.port;
+          if (config.email.secure !== undefined) this.emailSecure = config.email.secure;
+          if (config.email.user) this.emailUser = config.email.user;
+          if (config.email.password) this.emailPassword = config.email.password;
+          if (config.email.from) this.emailFrom = config.email.from;
+          if (config.email.to) this.emailTo = config.email.to;
+          if (config.email.subjectPrefix) this.emailSubjectPrefix = config.email.subjectPrefix;
+          console.log(`📋 Loaded Email config: ${this.emailEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Load Discord configuration
+        if (config.discord) {
+          if (config.discord.enabled !== undefined) this.discordEnabled = config.discord.enabled;
+          if (config.discord.webhook) this.discordWebhook = config.discord.webhook;
+          if (config.discord.username) this.discordUsername = config.discord.username;
+          if (config.discord.avatarUrl) this.discordAvatarUrl = config.discord.avatarUrl;
+          console.log(`📋 Loaded Discord config: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
+
+        // Load MQTT configuration
+        if (config.mqtt) {
+          if (config.mqtt.enabled !== undefined) this.mqttEnabled = config.mqtt.enabled;
+          if (config.mqtt.brokerUrl) this.mqttBrokerUrl = config.mqtt.brokerUrl;
+          if (config.mqtt.username) this.mqttUsername = config.mqtt.username;
+          if (config.mqtt.password) this.mqttPassword = config.mqtt.password;
+          if (config.mqtt.topicPrefix) this.mqttTopicPrefix = config.mqtt.topicPrefix;
+          if (config.mqtt.qos !== undefined) this.mqttQos = config.mqtt.qos;
+          if (config.mqtt.retain !== undefined) this.mqttRetain = config.mqtt.retain;
+          console.log(`📋 Loaded MQTT config: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
       }
     } catch (error) {
       console.error('⚠️  Error loading config file:', error.message);
@@ -277,7 +310,32 @@ class MeshtasticBridgeServer {
     try {
       const config = {
         aiEnabled: this.aiEnabled,
-        // Can add more config options here in the future
+        email: {
+          enabled: this.emailEnabled,
+          host: this.emailHost,
+          port: this.emailPort,
+          secure: this.emailSecure,
+          user: this.emailUser,
+          password: this.emailPassword, // Stored securely in config file
+          from: this.emailFrom,
+          to: this.emailTo,
+          subjectPrefix: this.emailSubjectPrefix
+        },
+        discord: {
+          enabled: this.discordEnabled,
+          webhook: this.discordWebhook,
+          username: this.discordUsername,
+          avatarUrl: this.discordAvatarUrl
+        },
+        mqtt: {
+          enabled: this.mqttEnabled,
+          brokerUrl: this.mqttBrokerUrl,
+          username: this.mqttUsername,
+          password: this.mqttPassword, // Stored securely in config file
+          topicPrefix: this.mqttTopicPrefix,
+          qos: this.mqttQos,
+          retain: this.mqttRetain
+        }
       };
 
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
@@ -2704,6 +2762,9 @@ class MeshtasticBridgeServer {
       }));
 
       console.log(`📧 Email configuration updated: ${this.emailEnabled ? 'enabled' : 'disabled'}`);
+
+      // Save configuration to persist settings
+      this.saveConfig();
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'error',
@@ -2743,6 +2804,9 @@ class MeshtasticBridgeServer {
       }));
 
       console.log(`💬 Discord configuration updated: ${this.discordEnabled ? 'enabled' : 'disabled'}`);
+
+      // Save configuration to persist settings
+      this.saveConfig();
     } catch (error) {
       ws.send(JSON.stringify({
         type: 'error',
@@ -3158,6 +3222,9 @@ class MeshtasticBridgeServer {
         await this.connectMQTT();
       }
 
+      // Save configuration to persist settings
+      this.saveConfig();
+
     } catch (error) {
       console.error('❌ Failed to update MQTT config:', error);
       ws.send(JSON.stringify({
@@ -3202,6 +3269,9 @@ class MeshtasticBridgeServer {
           connected: this.mqttClient ? this.mqttClient.connected : false
         }
       });
+
+      // Save configuration to persist settings
+      this.saveConfig();
 
     } catch (error) {
       console.error('❌ Failed to toggle MQTT:', error);
