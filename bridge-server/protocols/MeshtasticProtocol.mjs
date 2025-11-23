@@ -999,14 +999,23 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error('Device not connected');
       }
 
+      // ============================================================
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║              TIME SYNC OPERATION STARTING                  ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+
       // Get current time in Unix timestamp (seconds)
       const currentTimeSeconds = Math.floor(Date.now() / 1000);
+      const currentDate = new Date(currentTimeSeconds * 1000);
 
-      console.log(`[Meshtastic] ⏰ Syncing time to radio: ${new Date().toLocaleString()} (Unix: ${currentTimeSeconds})`);
-      console.log(`[Meshtastic] Current year should be: ${new Date(currentTimeSeconds * 1000).getFullYear()}`);
+      console.log(`[TIME SYNC] 🕐 Host Time: ${currentDate.toLocaleString()}`);
+      console.log(`[TIME SYNC] 📅 Date: ${currentDate.toDateString()}`);
+      console.log(`[TIME SYNC] 🔢 Unix Timestamp: ${currentTimeSeconds} seconds`);
+      console.log(`[TIME SYNC] ✓ Year Check: ${currentDate.getFullYear()} (should be 2025)`);
 
       // Create AdminMessage with set_time_only field using same pattern as setFixedPosition
       // Field 43 in the AdminMessage protobuf (fixed32)
+      console.log(`[TIME SYNC] 📝 Creating AdminMessage with setTimeOnly field...`);
       const setTimeMessage = create(Protobuf.Admin.AdminMessageSchema, {
         payloadVariant: {
           case: 'setTimeOnly',
@@ -1014,15 +1023,16 @@ export class MeshtasticProtocol extends BaseProtocol {
         }
       });
 
-      console.log(`[Meshtastic] Created AdminMessage:`, JSON.stringify(setTimeMessage, null, 2));
+      console.log(`[TIME SYNC] 📦 AdminMessage Structure:`, JSON.stringify(setTimeMessage, null, 2));
 
       // Serialize and send using exact same pattern as setFixedPosition
       const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setTimeMessage);
 
-      console.log(`[Meshtastic] Serialized AdminMessage: ${adminBytes.length} bytes`);
-      console.log(`[Meshtastic] AdminMessage hex: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+      console.log(`[TIME SYNC] 🔧 Serialized to ${adminBytes.length} bytes`);
+      console.log(`[TIME SYNC] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
 
       // Send using same parameters as setFixedPosition: channel 0, wantAck true, wantResponse false
+      console.log(`[TIME SYNC] 📡 Sending to radio via ADMIN_APP port on channel 0...`);
       const packetId = await this.device.sendPacket(
         adminBytes,
         Protobuf.Portnums.PortNum.ADMIN_APP,
@@ -1032,10 +1042,20 @@ export class MeshtasticProtocol extends BaseProtocol {
         false   // wantResponse = false (same as setFixedPosition)
       );
 
-      console.log(`[Meshtastic] ✅ Time sync AdminMessage sent to radio (packet ID: ${packetId})`);
+      console.log(`[TIME SYNC] ✅ SUCCESS! Packet ID: ${packetId}`);
+      console.log('╔════════════════════════════════════════════════════════════╗');
+      console.log('║           TIME SYNC OPERATION COMPLETED                    ║');
+      console.log('╚════════════════════════════════════════════════════════════╝\n');
+      // ============================================================
+
       return true;
     } catch (error) {
-      console.error('[Meshtastic] ❌ Error syncing time:', error);
+      console.log('\n╔════════════════════════════════════════════════════════════╗');
+      console.log('║               TIME SYNC OPERATION FAILED                   ║');
+      console.log('╚════════════════════════════════════════════════════════════╝');
+      console.error('[TIME SYNC] ❌ ERROR:', error);
+      console.error('[TIME SYNC] Error Details:', JSON.stringify(error, null, 2));
+      console.log('════════════════════════════════════════════════════════════\n');
       throw error;
     }
   }
