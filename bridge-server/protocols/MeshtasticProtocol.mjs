@@ -7,6 +7,8 @@
 import { BaseProtocol } from './BaseProtocol.mjs';
 import { TransportNodeSerial } from '@meshtastic/transport-node-serial';
 import { MeshDevice } from '@meshtastic/core';
+import { create, toBinary } from '@bufbuild/protobuf';
+import { Admin, Portnums } from '@meshtastic/protobufs';
 
 export class MeshtasticProtocol extends BaseProtocol {
   constructor(radioId, portPath, options = {}) {
@@ -987,6 +989,10 @@ export class MeshtasticProtocol extends BaseProtocol {
    * Sync the current time to the radio
    * This sets the radio's clock to match the system time
    */
+  /**
+   * Sync time to the radio using AdminMessage.set_time_only
+   * This is the CORRECT method for setting time on Meshtastic devices
+   */
   async syncTime() {
     try {
       if (!this.connected || !this.device) {
@@ -996,23 +1002,39 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Get current time in Unix timestamp (seconds)
       const currentTimeSeconds = Math.floor(Date.now() / 1000);
 
-      console.log(`[Meshtastic] Syncing time to radio: ${new Date().toLocaleString()}`);
+      console.log(`[Meshtastic] ⏰ Syncing time to radio: ${new Date().toLocaleString()} (Unix: ${currentTimeSeconds})`);
 
-      // Create a minimal User object with just the time
-      // The setOwner method will sync the time to the device
-      const userWithTime = {
-        id: this.nodeInfo?.userId || '!ffffffff', // Use existing user ID or placeholder
-        longName: this.nodeInfo?.longName || 'Bridge',
-        shortName: this.nodeInfo?.shortName || 'BRG',
-        macaddr: new Uint8Array(6), // Empty MAC
-        hwModel: this.nodeInfo?.hwModel || 0,
-        isLicensed: false
-      };
+      // Create AdminMessage with set_time_only field
+      // This is field 43 in the AdminMessage protobuf (fixed32)
+      const adminMsg = create(Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setTimeOnly',
+          value: currentTimeSeconds
+        }
+      });
 
-      // Send the owner update which will sync the time
-      await this.device.setOwner(userWithTime);
+      console.log(`[Meshtastic] Created AdminMessage with setTimeOnly: ${currentTimeSeconds}`);
 
-      console.log(`[Meshtastic] ✅ Time sync command sent to radio`);
+      // Serialize the AdminMessage to bytes
+      const adminBytes = toBinary(Admin.AdminMessageSchema, adminMsg);
+
+      console.log(`[Meshtastic] Serialized AdminMessage: ${adminBytes.length} bytes`);
+
+      // Send the AdminMessage using ADMIN_APP portnum
+      // destination = 'self' (our own node)
+      // channel = 0 (primary channel)
+      // wantAck = false (don't need acknowledgment for time sync)
+      await this.device.sendPacket(
+        adminBytes,
+        Portnums.PortNum.ADMIN_APP,
+        'self', // Send to our own node
+        0,      // Primary channel
+        false,  // Don't need ACK
+        false,  // Don't need response
+        false,  // Don't echo
+      );
+
+      console.log(`[Meshtastic] ✅ Time sync AdminMessage sent to radio`);
       return true;
     } catch (error) {
       console.error('[Meshtastic] ❌ Error syncing time:', error);
