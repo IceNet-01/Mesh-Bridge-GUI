@@ -26,9 +26,15 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Timers for periodic tasks
     this.nodesScanInterval = null;
     this.timeSyncInterval = null;
+    this.radioTimeUpdateInterval = null;
 
     // Track last message time for device time fallback
     this.lastMessageTime = null;
+
+    // Track radio's actual time (updated from packets)
+    this.radioTime = null;
+    this.radioTimeSource = null;
+    this.radioTimeUpdated = null; // When we last updated radio time
   }
 
   getProtocolName() {
@@ -213,6 +219,15 @@ export class MeshtasticProtocol extends BaseProtocol {
         }
       }, 30 * 60 * 1000); // Every 30 minutes
       console.log(`[Meshtastic] Periodic time sync enabled (30min interval)`);
+
+      // Set up periodic radio status updates to keep UI time display fresh
+      // Emit radio update every 10 seconds to refresh device time display
+      this.radioTimeUpdateInterval = setInterval(() => {
+        if (this.nodeInfo) {
+          this.updateNodeInfo(this.nodeInfo);
+        }
+      }, 10000); // Every 10 seconds
+      console.log(`[Meshtastic] Periodic radio time updates enabled (10s interval)`);
 
       this.connected = true;
 
@@ -432,6 +447,14 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device.events.onPositionPacket.subscribe((positionPacket) => {
       console.log(`[Meshtastic] Position packet:`, positionPacket);
       try {
+        // If this is from our own radio and has GPS time, update radio time
+        if (this.myNodeNum && positionPacket.from === this.myNodeNum && positionPacket.data?.time) {
+          this.radioTime = new Date(positionPacket.data.time * 1000);
+          this.radioTimeSource = 'gps';
+          this.radioTimeUpdated = new Date();
+          console.log(`[Meshtastic] ⏰ Updated radio time from GPS: ${this.radioTime.toISOString()}`);
+        }
+
         if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
           // Update node catalog with position data
           const update = {
@@ -461,6 +484,15 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
 
       try {
+        // If this is from our own radio, update radio time
+        if (this.myNodeNum && telemetryPacket.from === this.myNodeNum) {
+          // Telemetry from our own radio means "now" - update radio time
+          this.radioTime = new Date();
+          this.radioTimeSource = 'telemetry';
+          this.radioTimeUpdated = new Date();
+          console.log(`[Meshtastic] ⏰ Updated radio time from own telemetry: ${this.radioTime.toISOString()}`);
+        }
+
         // Log the COMPLETE telemetry packet structure
         console.log(`[Meshtastic] 🔍 FULL TelemetryPacket structure:`, JSON.stringify(telemetryPacket, null, 2));
 
@@ -847,6 +879,13 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic time sync disabled`);
       }
 
+      // Clear periodic radio time update interval
+      if (this.radioTimeUpdateInterval) {
+        clearInterval(this.radioTimeUpdateInterval);
+        this.radioTimeUpdateInterval = null;
+        console.log(`[Meshtastic] Periodic radio time updates disabled`);
+      }
+
       if (this.device) {
         await this.device.disconnect();
         this.device = null;
@@ -1113,16 +1152,21 @@ export class MeshtasticProtocol extends BaseProtocol {
   }
 
   getProtocolMetadata() {
-    // Get device time if available (helps diagnose timestamp issues)
+    // Get device time - use tracked radio time if available
     let deviceTime = null;
     let deviceTimeSource = null;
+
     try {
-      // Try to get device time from position time
-      if (this.nodeInfo?.position?.time) {
+      if (this.radioTime) {
+        // Use tracked radio time (updated from telemetry/GPS packets)
+        deviceTime = this.radioTime;
+        deviceTimeSource = this.radioTimeSource;
+      } else if (this.nodeInfo?.position?.time) {
+        // Fallback: Try to get device time from position time
         deviceTime = new Date(this.nodeInfo.position.time * 1000);
         deviceTimeSource = 'gps';
       } else if (this.lastMessageTime) {
-        // Fallback: use time from last received message
+        // Last fallback: use time from last received message
         deviceTime = this.lastMessageTime;
         deviceTimeSource = 'message';
       }
@@ -1134,7 +1178,7 @@ export class MeshtasticProtocol extends BaseProtocol {
       firmware: this.device?.deviceStatus?.firmware || 'unknown',
       hardware: this.nodeInfo?.hwModel || 'unknown',
       deviceTime: deviceTime, // Device's current time (Date object or null)
-      deviceTimeSource: deviceTimeSource, // 'gps', 'message', or null
+      deviceTimeSource: deviceTimeSource, // 'gps', 'telemetry', 'message', or null
       loraConfig: this.loraConfig ? {
         region: this.getRegionName(this.loraConfig.region),
         modemPreset: this.getModemPresetName(this.loraConfig.modemPreset),

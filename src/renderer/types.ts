@@ -28,7 +28,7 @@ export interface Radio {
     firmware?: string;
     hardware?: string;
     deviceTime?: Date;  // Current radio time
-    deviceTimeSource?: 'gps' | 'message' | null;  // Source of device time
+    deviceTimeSource?: 'gps' | 'telemetry' | 'message' | null;  // Source of device time
     loraConfig?: {
       region?: string;
       modemPreset?: string;
@@ -141,7 +141,7 @@ export interface NodeTelemetryHistory {
 export interface LogEntry {
   id?: string;
   timestamp: Date;
-  level: 'info' | 'warn' | 'error' | 'debug';
+  level: 'info' | 'warn' | 'error' | 'debug' | 'time-sync';
   message: string;
   context?: string;
   radioId?: string;

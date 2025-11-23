@@ -196,10 +196,16 @@ class MeshtasticBridgeServer {
         typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
       ).join(' ');
 
+      // Detect TIME SYNC logs and classify them separately
+      let finalLevel = level;
+      if (message.includes('[TIME SYNC]') || message.includes('TIME SYNC')) {
+        finalLevel = 'time-sync';
+      }
+
       // Add to buffer with timestamp
       const line = {
         timestamp: new Date().toISOString(),
-        level,
+        level: finalLevel,
         message
       };
 

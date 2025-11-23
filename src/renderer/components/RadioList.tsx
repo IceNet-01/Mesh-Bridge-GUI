@@ -188,6 +188,8 @@ function RadioCard({ radio, onDisconnect, onReboot }: RadioCardProps) {
               <p className="text-white font-medium">
                 {radio.protocolMetadata.deviceTimeSource === 'gps' ? (
                   <span className="text-green-400">GPS</span>
+                ) : radio.protocolMetadata.deviceTimeSource === 'telemetry' ? (
+                  <span className="text-blue-400">Telemetry</span>
                 ) : radio.protocolMetadata.deviceTimeSource === 'message' ? (
                   <span className="text-yellow-400">Message</span>
                 ) : (
