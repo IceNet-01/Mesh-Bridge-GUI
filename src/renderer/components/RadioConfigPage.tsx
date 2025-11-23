@@ -17,7 +17,6 @@ interface ChannelFormData {
 
 function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPageProps) {
   const [selectedRadioId, setSelectedRadioId] = useState<string>('');
-  const [selectedChannelIndex, setSelectedChannelIndex] = useState(0);
   const [channels, setChannels] = useState<Record<number, ChannelFormData>>({});
   const [activeTab, setActiveTab] = useState<'channels' | 'settings'>('channels');
 
@@ -48,7 +47,6 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPage
     }
   }, [radios, selectedRadioId]);
 
-  const selectedRadio = radios.find((r) => r.id === selectedRadioId);
   const connectedMeshtasticRadios = radios.filter(
     (r) => r.protocol === 'meshtastic' && r.status === 'connected'
   );

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Channel, ChannelRole } from '../types';
+import { ChannelRole } from '../types';
 
 interface ChannelConfigProps {
   radioId: string;
@@ -7,7 +7,7 @@ interface ChannelConfigProps {
   onSetChannel: (channelConfig: any) => void;
 }
 
-function ChannelConfig({ radioId, onGetChannel, onSetChannel }: ChannelConfigProps) {
+function ChannelConfig({ onGetChannel, onSetChannel }: ChannelConfigProps) {
   const [selectedChannel, setSelectedChannel] = useState(0);
   const [channelName, setChannelName] = useState('');
   const [pskBase64, setPskBase64] = useState('');
