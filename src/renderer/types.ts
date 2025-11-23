@@ -197,6 +197,9 @@ export interface DiscordConfig {
   webhook: string;
   username: string;
   avatarUrl: string;
+  botEnabled: boolean;
+  botToken: string;
+  channelId: string;
 }
 
 export interface MQTTConfig {
