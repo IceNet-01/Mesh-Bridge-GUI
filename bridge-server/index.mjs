@@ -182,7 +182,20 @@ class MeshtasticBridgeServer {
     if (this.emailEnabled) {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
-    console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Discord webhook: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Discord bot: ${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.discordBotEnabled) {
+      console.log(`   Discord bot status: ${this.discordClient ? 'CONNECTED' : 'NOT CONNECTED'}`);
+      if (!this.discordClient) {
+        if (!this.discordBotToken) {
+          console.log(`   Discord bot issue: Missing bot token`);
+        } else if (!this.discordChannelId) {
+          console.log(`   Discord bot issue: Missing channel ID`);
+        } else {
+          console.log(`   Discord bot issue: Connection failed (check token/permissions)`);
+        }
+      }
+    }
     console.log(`   MQTT bridge: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
     if (this.mqttEnabled) {
       console.log(`   MQTT broker: ${this.mqttBrokerUrl}`);
@@ -2001,17 +2014,25 @@ class MeshtasticBridgeServer {
       }
 
       // Send to Discord bot if enabled
-      if (this.discordBotEnabled && this.discordClient && this.discordChannelId) {
-        try {
-          await this.sendDiscordBotMessage(`📡 **From ${nodeName}** (\`${fromNode.toString(16)}\`)\n${message}`);
-          botSent = true;
-          console.log(`💬 Discord bot message sent`);
-        } catch (error) {
-          console.error('Discord bot error:', error);
+      if (this.discordBotEnabled) {
+        if (!this.discordBotToken) {
+          console.log('💬 Discord bot enabled but no bot token configured');
+        } else if (!this.discordChannelId) {
+          console.log('💬 Discord bot enabled but no channel ID configured');
+        } else if (!this.discordClient) {
+          console.log('💬 Discord bot enabled but not connected. Check bot token and permissions.');
+        } else {
+          try {
+            await this.sendDiscordBotMessage(`📡 **From ${nodeName}** (\`${fromNode.toString(16)}\`)\n${message}`);
+            botSent = true;
+            console.log(`💬 Discord bot message sent`);
+          } catch (error) {
+            console.error('Discord bot error:', error);
+          }
         }
       }
 
-      // Return appropriate response
+      // Return appropriate response with better diagnostics
       if (webhookSent && botSent) {
         return `✅ Discord sent (webhook + bot)!`;
       } else if (webhookSent) {
@@ -2019,7 +2040,18 @@ class MeshtasticBridgeServer {
       } else if (botSent) {
         return `✅ Discord sent (bot)!`;
       } else {
-        return '❌ Discord send failed. Check configuration.';
+        // Provide helpful error message
+        if (this.discordBotEnabled && !this.discordBotToken) {
+          return '❌ Bot enabled but missing token. Configure in settings.';
+        } else if (this.discordBotEnabled && !this.discordChannelId) {
+          return '❌ Bot enabled but missing channel ID. Configure in settings.';
+        } else if (this.discordBotEnabled && !this.discordClient) {
+          return '❌ Bot not connected. Check token/permissions.';
+        } else if (this.discordEnabled && !this.discordWebhook) {
+          return '❌ Webhook enabled but URL missing. Configure in settings.';
+        } else {
+          return '❌ Discord send failed. Check configuration.';
+        }
       }
 
 
