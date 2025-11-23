@@ -421,12 +421,11 @@ export class MeshtasticProtocol extends BaseProtocol {
     this.device.events.onPositionPacket.subscribe((positionPacket) => {
       console.log(`[Meshtastic] Position packet:`, positionPacket);
       try {
-        // If this is from our own radio and has GPS time, update radio time
+        // If this is from our own radio and has GPS time, update radio time (silent)
         if (this.myNodeNum && positionPacket.from === this.myNodeNum && positionPacket.data?.time) {
           this.radioTime = new Date(positionPacket.data.time * 1000);
           this.radioTimeSource = 'gps';
           this.radioTimeUpdated = new Date();
-          console.log(`[Meshtastic] ⏰ Updated radio time from GPS: ${this.radioTime.toISOString()}`);
         }
 
         if (positionPacket.data && (positionPacket.data.latitudeI || positionPacket.data.longitudeI)) {
@@ -458,13 +457,11 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
 
       try {
-        // If this is from our own radio, update radio time
+        // If this is from our own radio, update radio time (silent)
         if (this.myNodeNum && telemetryPacket.from === this.myNodeNum) {
-          // Telemetry from our own radio means "now" - update radio time
           this.radioTime = new Date();
           this.radioTimeSource = 'telemetry';
           this.radioTimeUpdated = new Date();
-          console.log(`[Meshtastic] ⏰ Updated radio time from own telemetry: ${this.radioTime.toISOString()}`);
         }
 
         // Log the COMPLETE telemetry packet structure

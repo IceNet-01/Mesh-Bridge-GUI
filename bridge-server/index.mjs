@@ -804,26 +804,6 @@ class MeshtasticBridgeServer {
 
           console.log(`✅ Radio ${radioId} configured: ${nodeInfo.longName} (${nodeInfo.nodeId}), nodeNum: ${radio.nodeNum}`);
 
-          // Check device time if available and auto-sync if wrong
-          const metadata = protocolHandler.getProtocolMetadata();
-          if (metadata.deviceTime) {
-            const deviceDate = new Date(metadata.deviceTime);
-            const currentDate = new Date();
-            const timeDiff = Math.abs(currentDate - deviceDate) / 1000 / 60; // minutes
-
-            console.log(`⏰ Radio ${radioId} device time: ${deviceDate.toLocaleString()}`);
-
-            if (timeDiff > 60) { // More than 1 hour difference
-              console.warn(`⚠️  WARNING: Radio ${radioId} clock is off by ${Math.round(timeDiff / 60)} hours!`);
-              console.warn(`   Device time: ${deviceDate.toLocaleString()}`);
-              console.warn(`   Current time: ${currentDate.toLocaleString()}`);
-              console.warn(`   📡 GPS is required for accurate timekeeping on Meshtastic devices`);
-              console.warn(`   Please ensure your radio has GPS reception or use the Meshtastic app to set time`);
-            } else {
-              console.log(`✅ Radio ${radioId} clock is accurate (within 1 hour)`);
-            }
-          }
-
           // Broadcast updated radio info to clients
           this.broadcast({
             type: 'radio-updated',
