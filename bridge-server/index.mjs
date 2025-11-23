@@ -1936,9 +1936,9 @@ class MeshtasticBridgeServer {
    * Send Discord notification via webhook
    */
   async cmdDiscord(fromNode, args) {
-    // Check if Discord is enabled
-    if (!this.discordEnabled) {
-      return '💬 Discord notifications are disabled. Enable in bridge configuration.';
+    // Check if either Discord webhook OR bot is enabled
+    if (!this.discordEnabled && !this.discordBotEnabled) {
+      return '💬 Discord is disabled. Enable webhook or bot in bridge configuration.';
     }
 
     // Parse message
@@ -1953,44 +1953,75 @@ class MeshtasticBridgeServer {
       // Get node info for sender identification
       const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
 
-      // Send to Discord webhook
-      const response = await fetch(this.discordWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: this.discordUsername,
-          avatar_url: this.discordAvatarUrl || undefined,
-          embeds: [{
-            title: '📡 Meshtastic Bridge Message',
-            description: message,
-            color: 5814783, // Blurple color
-            fields: [
-              {
-                name: 'From',
-                value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
-                inline: true
-              },
-              {
-                name: 'Time',
-                value: new Date().toLocaleString(),
-                inline: true
-              }
-            ],
-            footer: {
-              text: 'Sent via Meshtastic Bridge'
-            },
-            timestamp: new Date().toISOString()
-          }]
-        })
-      });
+      let webhookSent = false;
+      let botSent = false;
 
-      if (!response.ok) {
-        console.error(`Discord API error: ${response.status}`);
-        return '❌ Discord send failed. Check webhook URL.';
+      // Send to Discord webhook if enabled
+      if (this.discordEnabled && this.discordWebhook) {
+        try {
+          const response = await fetch(this.discordWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: this.discordUsername,
+              avatar_url: this.discordAvatarUrl || undefined,
+              embeds: [{
+                title: '📡 Meshtastic Bridge Message',
+                description: message,
+                color: 5814783, // Blurple color
+                fields: [
+                  {
+                    name: 'From',
+                    value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
+                    inline: true
+                  },
+                  {
+                    name: 'Time',
+                    value: new Date().toLocaleString(),
+                    inline: true
+                  }
+                ],
+                footer: {
+                  text: 'Sent via Meshtastic Bridge'
+                },
+                timestamp: new Date().toISOString()
+              }]
+            })
+          });
+
+          if (response.ok) {
+            webhookSent = true;
+            console.log(`💬 Discord webhook message sent`);
+          } else {
+            console.error(`Discord webhook API error: ${response.status}`);
+          }
+        } catch (error) {
+          console.error('Discord webhook error:', error);
+        }
       }
 
-      console.log(`💬 Discord message sent`);
-      return `✅ Discord message sent!`;
+      // Send to Discord bot if enabled
+      if (this.discordBotEnabled && this.discordClient && this.discordChannelId) {
+        try {
+          await this.sendDiscordBotMessage(`📡 **From ${nodeName}** (\`${fromNode.toString(16)}\`)\n${message}`);
+          botSent = true;
+          console.log(`💬 Discord bot message sent`);
+        } catch (error) {
+          console.error('Discord bot error:', error);
+        }
+      }
+
+      // Return appropriate response
+      if (webhookSent && botSent) {
+        return `✅ Discord sent (webhook + bot)!`;
+      } else if (webhookSent) {
+        return `✅ Discord sent (webhook)!`;
+      } else if (botSent) {
+        return `✅ Discord sent (bot)!`;
+      } else {
+        return '❌ Discord send failed. Check configuration.';
+      }
+
 
     } catch (error) {
       console.error('Discord error:', error);
@@ -2006,8 +2037,8 @@ class MeshtasticBridgeServer {
    */
   async cmdNotify(fromNode, args) {
     // Check if at least one notification method is enabled
-    if (!this.emailEnabled && !this.discordEnabled) {
-      return '📣 No notification methods enabled. Enable email or Discord in bridge configuration.';
+    if (!this.emailEnabled && !this.discordEnabled && !this.discordBotEnabled) {
+      return '📣 No notification methods enabled. Enable email, Discord webhook, or Discord bot in bridge configuration.';
     }
 
     // Parse message
@@ -2024,8 +2055,8 @@ class MeshtasticBridgeServer {
       results.push(emailResult.includes('✅') ? 'Email ✅' : 'Email ❌');
     }
 
-    // Try Discord if enabled
-    if (this.discordEnabled) {
+    // Try Discord if webhook OR bot is enabled
+    if (this.discordEnabled || this.discordBotEnabled) {
       const discordResult = await this.cmdDiscord(fromNode, args);
       results.push(discordResult.includes('✅') ? 'Discord ✅' : 'Discord ❌');
     }
@@ -3525,7 +3556,39 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Send message to Discord channel via bot
+   * Send message to Discord via webhook
+   */
+  async sendToDiscord(text, title = '📡 Meshtastic Bridge') {
+    if (!this.discordWebhook) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          content: text
+        })
+      });
+
+      if (response.ok) {
+        console.log(`💬 Discord webhook message sent`);
+        return true;
+      } else {
+        console.error(`Discord webhook API error: ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error sending Discord webhook message:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send message to Discord via bot
    */
   async sendDiscordBotMessage(text, author = 'Mesh Network') {
     if (!this.discordClient || !this.discordChannelId) {
