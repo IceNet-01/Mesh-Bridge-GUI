@@ -138,6 +138,7 @@ class MeshtasticBridgeServer {
     this.discordBotToken = '';                 // Discord bot token
     this.discordChannelId = '';                // Discord channel ID to monitor
     this.discordClient = null;                 // Discord.js client instance
+    this.discordSendEmergency = false;         // Auto-send emergency/SOS messages to Discord
 
     // ===== MQTT CONFIGURATION =====
     this.mqttEnabled = false;                  // Enable/disable MQTT bridge
@@ -181,7 +182,20 @@ class MeshtasticBridgeServer {
     if (this.emailEnabled) {
       console.log(`   Email recipient: ${this.emailTo}`);
     }
-    console.log(`   Discord notifications: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Discord webhook: ${this.discordEnabled ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`   Discord bot: ${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}`);
+    if (this.discordBotEnabled) {
+      console.log(`   Discord bot status: ${this.discordClient ? 'CONNECTED' : 'NOT CONNECTED'}`);
+      if (!this.discordClient) {
+        if (!this.discordBotToken) {
+          console.log(`   Discord bot issue: Missing bot token`);
+        } else if (!this.discordChannelId) {
+          console.log(`   Discord bot issue: Missing channel ID`);
+        } else {
+          console.log(`   Discord bot issue: Connection failed (check token/permissions)`);
+        }
+      }
+    }
     console.log(`   MQTT bridge: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
     if (this.mqttEnabled) {
       console.log(`   MQTT broker: ${this.mqttBrokerUrl}`);
@@ -298,8 +312,9 @@ class MeshtasticBridgeServer {
           if (config.discord.botEnabled !== undefined) this.discordBotEnabled = config.discord.botEnabled;
           if (config.discord.botToken) this.discordBotToken = config.discord.botToken;
           if (config.discord.channelId) this.discordChannelId = config.discord.channelId;
+          if (config.discord.sendEmergency !== undefined) this.discordSendEmergency = config.discord.sendEmergency;
 
-          console.log(`📋 Loaded Discord config: Webhook=${this.discordEnabled ? 'ENABLED' : 'DISABLED'}, Bot=${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}`);
+          console.log(`📋 Loaded Discord config: Webhook=${this.discordEnabled ? 'ENABLED' : 'DISABLED'}, Bot=${this.discordBotEnabled ? 'ENABLED' : 'DISABLED'}, Emergency=${this.discordSendEmergency ? 'ENABLED' : 'DISABLED'}`);
         }
 
         // Load MQTT configuration
@@ -345,7 +360,8 @@ class MeshtasticBridgeServer {
           avatarUrl: this.discordAvatarUrl,
           botEnabled: this.discordBotEnabled,
           botToken: this.discordBotToken,
-          channelId: this.discordChannelId
+          channelId: this.discordChannelId,
+          sendEmergency: this.discordSendEmergency
         },
         mqtt: {
           enabled: this.mqttEnabled,
@@ -929,6 +945,34 @@ class MeshtasticBridgeServer {
         this.handleRadioDisconnect(radioId);
       });
 
+      // Handle emergency/SOS waypoints
+      protocolHandler.on('emergency', async (emergencyData) => {
+        console.log(`🚨 Emergency detected from node ${emergencyData.from}`);
+
+        // Send to Discord if enabled
+        if (this.discordSendEmergency) {
+          const waypointInfo = emergencyData.waypoint;
+          let message = `🚨 **EMERGENCY / SOS ALERT** 🚨\n`;
+          message += `From Node: ${emergencyData.from}\n`;
+          if (waypointInfo.name) message += `Location: ${waypointInfo.name}\n`;
+          if (waypointInfo.description) message += `Details: ${waypointInfo.description}\n`;
+          if (waypointInfo.latitude && waypointInfo.longitude) {
+            message += `Coordinates: ${waypointInfo.latitude}, ${waypointInfo.longitude}\n`;
+            message += `Map: https://www.google.com/maps?q=${waypointInfo.latitude},${waypointInfo.longitude}`;
+          }
+
+          // Send via webhook if enabled
+          if (this.discordEnabled && this.discordWebhook) {
+            await this.sendToDiscord(message);
+          }
+
+          // Send via bot if enabled
+          if (this.discordBotEnabled && this.discordClient) {
+            await this.sendDiscordBotMessage(message);
+          }
+        }
+      });
+
       // Store radio reference
       this.radios.set(radioId, {
         protocol: protocolHandler,
@@ -1142,6 +1186,58 @@ class MeshtasticBridgeServer {
     } catch (error) {
       console.error(`❌ Error during memory cleanup:`, error);
     }
+  }
+
+  /**
+   * Truncate message to fit within Meshtastic's 512-byte limit
+   * Accounts for UTF-8 encoding where some characters are multiple bytes
+   * @param {string} message - Message to truncate
+   * @param {number} maxBytes - Maximum bytes (default 480 to leave buffer)
+   * @returns {string} - Truncated message
+   */
+  truncateForMeshtastic(message, maxBytes = 480) {
+    if (!message) return '';
+
+    // Quick check - if message is short, no need to truncate
+    if (message.length < 200) {
+      const byteSize = Buffer.byteLength(message, 'utf8');
+      if (byteSize <= maxBytes) {
+        return message;
+      }
+    }
+
+    // Need to truncate - use smart truncation
+    const encoder = new TextEncoder();
+    let truncated = message;
+    let bytes = encoder.encode(truncated);
+
+    // If message is too long, truncate character by character until it fits
+    if (bytes.length > maxBytes) {
+      // Leave room for "..." indicator (3 bytes)
+      const targetBytes = maxBytes - 6;
+
+      // Binary search for optimal length
+      let low = 0;
+      let high = truncated.length;
+      let bestLength = 0;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const testString = truncated.substring(0, mid);
+        const testBytes = encoder.encode(testString);
+
+        if (testBytes.length <= targetBytes) {
+          bestLength = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      truncated = message.substring(0, bestLength).trim() + '…';
+    }
+
+    return truncated;
   }
 
   /**
@@ -1411,9 +1507,12 @@ class MeshtasticBridgeServer {
       }
 
       if (response) {
-        console.log(`🤖 Sending response: ${response.substring(0, 100)}...`);
+        // Truncate response to fit within Meshtastic's byte limit
+        const truncatedResponse = this.truncateForMeshtastic(response);
+        console.log(`🤖 Sending response: ${truncatedResponse.substring(0, 100)}...`);
+
         try {
-          await radio.protocol.sendMessage(response, channel, { wantAck: false });
+          await radio.protocol.sendMessage(truncatedResponse, channel, { wantAck: false });
         } catch (error) {
           console.error(`❌ Failed to send command response:`, error);
         }
@@ -1850,9 +1949,9 @@ class MeshtasticBridgeServer {
    * Send Discord notification via webhook
    */
   async cmdDiscord(fromNode, args) {
-    // Check if Discord is enabled
-    if (!this.discordEnabled) {
-      return '💬 Discord notifications are disabled. Enable in bridge configuration.';
+    // Check if either Discord webhook OR bot is enabled
+    if (!this.discordEnabled && !this.discordBotEnabled) {
+      return '💬 Discord is disabled. Enable webhook or bot in bridge configuration.';
     }
 
     // Parse message
@@ -1867,44 +1966,94 @@ class MeshtasticBridgeServer {
       // Get node info for sender identification
       const nodeName = this.getNodeName(fromNode) || `Node ${fromNode.toString(16)}`;
 
-      // Send to Discord webhook
-      const response = await fetch(this.discordWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: this.discordUsername,
-          avatar_url: this.discordAvatarUrl || undefined,
-          embeds: [{
-            title: '📡 Meshtastic Bridge Message',
-            description: message,
-            color: 5814783, // Blurple color
-            fields: [
-              {
-                name: 'From',
-                value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
-                inline: true
-              },
-              {
-                name: 'Time',
-                value: new Date().toLocaleString(),
-                inline: true
-              }
-            ],
-            footer: {
-              text: 'Sent via Meshtastic Bridge'
-            },
-            timestamp: new Date().toISOString()
-          }]
-        })
-      });
+      let webhookSent = false;
+      let botSent = false;
 
-      if (!response.ok) {
-        console.error(`Discord API error: ${response.status}`);
-        return '❌ Discord send failed. Check webhook URL.';
+      // Send to Discord webhook if enabled
+      if (this.discordEnabled && this.discordWebhook) {
+        try {
+          const response = await fetch(this.discordWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: this.discordUsername,
+              avatar_url: this.discordAvatarUrl || undefined,
+              embeds: [{
+                title: '📡 Meshtastic Bridge Message',
+                description: message,
+                color: 5814783, // Blurple color
+                fields: [
+                  {
+                    name: 'From',
+                    value: `${nodeName} (\`${fromNode.toString(16)}\`)`,
+                    inline: true
+                  },
+                  {
+                    name: 'Time',
+                    value: new Date().toLocaleString(),
+                    inline: true
+                  }
+                ],
+                footer: {
+                  text: 'Sent via Meshtastic Bridge'
+                },
+                timestamp: new Date().toISOString()
+              }]
+            })
+          });
+
+          if (response.ok) {
+            webhookSent = true;
+            console.log(`💬 Discord webhook message sent`);
+          } else {
+            console.error(`Discord webhook API error: ${response.status}`);
+          }
+        } catch (error) {
+          console.error('Discord webhook error:', error);
+        }
       }
 
-      console.log(`💬 Discord message sent`);
-      return `✅ Discord message sent!`;
+      // Send to Discord bot if enabled
+      if (this.discordBotEnabled) {
+        if (!this.discordBotToken) {
+          console.log('💬 Discord bot enabled but no bot token configured');
+        } else if (!this.discordChannelId) {
+          console.log('💬 Discord bot enabled but no channel ID configured');
+        } else if (!this.discordClient) {
+          console.log('💬 Discord bot enabled but not connected. Check bot token and permissions.');
+        } else {
+          try {
+            await this.sendDiscordBotMessage(`📡 **From ${nodeName}** (\`${fromNode.toString(16)}\`)\n${message}`);
+            botSent = true;
+            console.log(`💬 Discord bot message sent`);
+          } catch (error) {
+            console.error('Discord bot error:', error);
+          }
+        }
+      }
+
+      // Return appropriate response with better diagnostics
+      if (webhookSent && botSent) {
+        return `✅ Discord sent (webhook + bot)!`;
+      } else if (webhookSent) {
+        return `✅ Discord sent (webhook)!`;
+      } else if (botSent) {
+        return `✅ Discord sent (bot)!`;
+      } else {
+        // Provide helpful error message
+        if (this.discordBotEnabled && !this.discordBotToken) {
+          return '❌ Bot enabled but missing token. Configure in settings.';
+        } else if (this.discordBotEnabled && !this.discordChannelId) {
+          return '❌ Bot enabled but missing channel ID. Configure in settings.';
+        } else if (this.discordBotEnabled && !this.discordClient) {
+          return '❌ Bot not connected. Check token/permissions.';
+        } else if (this.discordEnabled && !this.discordWebhook) {
+          return '❌ Webhook enabled but URL missing. Configure in settings.';
+        } else {
+          return '❌ Discord send failed. Check configuration.';
+        }
+      }
+
 
     } catch (error) {
       console.error('Discord error:', error);
@@ -1920,8 +2069,8 @@ class MeshtasticBridgeServer {
    */
   async cmdNotify(fromNode, args) {
     // Check if at least one notification method is enabled
-    if (!this.emailEnabled && !this.discordEnabled) {
-      return '📣 No notification methods enabled. Enable email or Discord in bridge configuration.';
+    if (!this.emailEnabled && !this.discordEnabled && !this.discordBotEnabled) {
+      return '📣 No notification methods enabled. Enable email, Discord webhook, or Discord bot in bridge configuration.';
     }
 
     // Parse message
@@ -1938,8 +2087,8 @@ class MeshtasticBridgeServer {
       results.push(emailResult.includes('✅') ? 'Email ✅' : 'Email ❌');
     }
 
-    // Try Discord if enabled
-    if (this.discordEnabled) {
+    // Try Discord if webhook OR bot is enabled
+    if (this.discordEnabled || this.discordBotEnabled) {
       const discordResult = await this.cmdDiscord(fromNode, args);
       results.push(discordResult.includes('✅') ? 'Discord ✅' : 'Discord ❌');
     }
@@ -2223,7 +2372,10 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${text}" on channel ${channel}`);
+      // Truncate text to fit within Meshtastic's byte limit
+      const truncatedText = this.truncateForMeshtastic(text);
+
+      console.log(`📤 Sending text via ${radioId} (${radio.protocolType}): "${truncatedText}" on channel ${channel}`);
 
       // Create a message record for the sent message IMMEDIATELY (before waiting for send to complete)
       const sentMessage = {
@@ -2235,7 +2387,7 @@ class MeshtasticBridgeServer {
         to: 'broadcast',
         channel: channel,
         portnum: 1,
-        text: text,
+        text: truncatedText,
         sent: true, // Mark as sent (not received)
       };
 
@@ -2247,7 +2399,7 @@ class MeshtasticBridgeServer {
 
       // Send using the protocol handler (fire and forget - don't wait for completion)
       // The Meshtastic library's sendText may hang waiting for ACK even with wantAck:false
-      radio.protocol.sendMessage(text, channel, { wantAck: false }).then(() => {
+      radio.protocol.sendMessage(truncatedText, channel, { wantAck: false }).then(() => {
         console.log(`✅ Text sent successfully on channel ${channel}`);
 
         // Increment sent message counter
@@ -2767,7 +2919,11 @@ class MeshtasticBridgeServer {
             enabled: this.discordEnabled,
             webhook: this.discordWebhook ? '(configured)' : '', // Don't send full webhook URL
             username: this.discordUsername,
-            avatarUrl: this.discordAvatarUrl
+            avatarUrl: this.discordAvatarUrl,
+            botEnabled: this.discordBotEnabled,
+            botToken: this.discordBotToken ? '(configured)' : '', // Don't send full bot token
+            channelId: this.discordChannelId,
+            sendEmergency: this.discordSendEmergency
           }
         }
       }));
@@ -2843,6 +2999,33 @@ class MeshtasticBridgeServer {
       this.discordUsername = config.username || 'Meshtastic Bridge';
       this.discordAvatarUrl = config.avatarUrl || '';
 
+      // Handle Discord bot configuration
+      if (config.botEnabled !== undefined) this.discordBotEnabled = config.botEnabled;
+
+      // Only update bot token if a new one is provided (not empty or placeholder)
+      if (config.botToken && config.botToken !== '(configured)' && config.botToken.trim() !== '') {
+        console.log(`🔑 Updating Discord bot token (${config.botToken.substring(0, 10)}...)`);
+        this.discordBotToken = config.botToken;
+      } else if (config.botToken === '') {
+        console.log(`🔑 Empty bot token received, keeping existing token (${this.discordBotToken ? 'SET' : 'NOT SET'})`);
+      }
+
+      if (config.channelId !== undefined && config.channelId !== '') {
+        console.log(`📺 Updating Discord channel ID: ${config.channelId}`);
+        this.discordChannelId = config.channelId;
+      }
+
+      if (config.sendEmergency !== undefined) this.discordSendEmergency = config.sendEmergency;
+
+      // Connect or disconnect bot based on settings
+      console.log(`🤖 Discord bot config check: enabled=${this.discordBotEnabled}, hasToken=${!!this.discordBotToken}, hasChannelId=${!!this.discordChannelId}`);
+
+      if (this.discordBotEnabled && this.discordBotToken && this.discordChannelId) {
+        await this.connectDiscordBot();
+      } else if (this.discordClient) {
+        this.disconnectDiscordBot();
+      }
+
       // Broadcast updated config to all clients
       this.broadcast({
         type: 'comm-config-changed',
@@ -2851,7 +3034,11 @@ class MeshtasticBridgeServer {
             enabled: this.discordEnabled,
             webhook: this.discordWebhook ? '(configured)' : '',
             username: this.discordUsername,
-            avatarUrl: this.discordAvatarUrl
+            avatarUrl: this.discordAvatarUrl,
+            botEnabled: this.discordBotEnabled,
+            botToken: this.discordBotToken ? '(configured)' : '',
+            channelId: this.discordChannelId,
+            sendEmergency: this.discordSendEmergency
           }
         }
       });
@@ -3346,7 +3533,26 @@ class MeshtasticBridgeServer {
    */
   async connectDiscordBot() {
     try {
+      // Validate bot token before attempting connection
+      if (!this.discordBotToken || this.discordBotToken.trim() === '') {
+        console.error('❌ Cannot connect Discord bot: Bot token is not set');
+        this.discordClient = null;
+        return;
+      }
+
+      if (!this.discordChannelId || this.discordChannelId.trim() === '') {
+        console.error('❌ Cannot connect Discord bot: Channel ID is not set');
+        this.discordClient = null;
+        return;
+      }
+
       console.log('🤖 Connecting to Discord bot...');
+      console.log(`🤖 Using channel ID: ${this.discordChannelId}`);
+
+      // Disconnect existing client if any
+      if (this.discordClient) {
+        await this.disconnectDiscordBot();
+      }
 
       // Create Discord client with required intents
       this.discordClient = new Client({
@@ -3392,11 +3598,31 @@ class MeshtasticBridgeServer {
         }
       });
 
+      // Handle errors
+      this.discordClient.on('error', (error) => {
+        console.error('❌ Discord bot error:', error);
+      });
+
       // Login to Discord
+      console.log('🤖 Logging in to Discord...');
       await this.discordClient.login(this.discordBotToken);
 
     } catch (error) {
       console.error('❌ Failed to connect Discord bot:', error);
+
+      // Provide helpful error message for common issues
+      if (error.message && error.message.includes('disallowed intents')) {
+        console.error(`\n⚠️  DISCORD BOT SETUP REQUIRED:`);
+        console.error(`   Go to https://discord.com/developers/applications`);
+        console.error(`   Select your bot → Bot → Privileged Gateway Intents`);
+        console.error(`   Enable: ✅ Message Content Intent`);
+        console.error(`   Enable: ✅ Server Members Intent (optional)`);
+        console.error(`   Save changes and try again\n`);
+      } else if (error.message && error.message.includes('TOKEN_INVALID')) {
+        console.error(`\n⚠️  Invalid bot token. Get a new token from Discord Developer Portal\n`);
+      }
+
+      this.discordClient = null;
     }
   }
 
@@ -3413,7 +3639,39 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Send message to Discord channel via bot
+   * Send message to Discord via webhook
+   */
+  async sendToDiscord(text, title = '📡 Meshtastic Bridge') {
+    if (!this.discordWebhook) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(this.discordWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: this.discordUsername,
+          avatar_url: this.discordAvatarUrl || undefined,
+          content: text
+        })
+      });
+
+      if (response.ok) {
+        console.log(`💬 Discord webhook message sent`);
+        return true;
+      } else {
+        console.error(`Discord webhook API error: ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error sending Discord webhook message:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send message to Discord via bot
    */
   async sendDiscordBotMessage(text, author = 'Mesh Network') {
     if (!this.discordClient || !this.discordChannelId) {
@@ -3427,7 +3685,27 @@ class MeshtasticBridgeServer {
         return true;
       }
     } catch (error) {
-      console.error('❌ Error sending Discord bot message:', error);
+      // Provide helpful error messages for common issues
+      if (error.code === 50001) {
+        console.error(`\n❌ Discord Bot Error: Missing Access (Code 50001)`);
+        console.error(`   Channel ID: ${this.discordChannelId}`);
+        console.error(`\n⚠️  DISCORD BOT ACCESS REQUIRED:`);
+        console.error(`   1. Make sure bot is invited to your Discord server:`);
+        console.error(`      https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=68608&scope=bot`);
+        console.error(`   2. In Discord server settings → Roles:`);
+        console.error(`      Give your bot role these permissions:`);
+        console.error(`      ✅ View Channels`);
+        console.error(`      ✅ Send Messages`);
+        console.error(`      ✅ Read Message History`);
+        console.error(`   3. In the specific channel settings:`);
+        console.error(`      Make sure bot has access to channel #${this.discordChannelId}\n`);
+      } else if (error.code === 10003) {
+        console.error(`\n❌ Discord Bot Error: Unknown Channel (Code 10003)`);
+        console.error(`   Channel ID ${this.discordChannelId} doesn't exist or bot can't see it`);
+        console.error(`   Double-check the channel ID is correct\n`);
+      } else {
+        console.error('❌ Error sending Discord bot message:', error);
+      }
     }
     return false;
   }

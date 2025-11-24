@@ -31,7 +31,8 @@ function CommunicationSettings() {
     avatarUrl: '',
     botEnabled: false,
     botToken: '',
-    channelId: ''
+    channelId: '',
+    sendEmergency: false
   });
 
   const [emailTesting, setEmailTesting] = useState(false);
@@ -44,7 +45,7 @@ function CommunicationSettings() {
   useEffect(() => {
     if (commConfig) {
       setEmailForm(prev => ({ ...prev, ...commConfig.email, password: '' }));
-      setDiscordForm(commConfig.discord);
+      setDiscordForm(prev => ({ ...prev, ...commConfig.discord, botToken: '' }));
     }
   }, [commConfig]);
 
@@ -273,7 +274,7 @@ function CommunicationSettings() {
                 type="password"
                 value={discordForm.botToken}
                 onChange={(e) => setDiscordForm({ ...discordForm, botToken: e.target.value })}
-                placeholder="Your bot token from Discord Developer Portal"
+                placeholder="Bot token (leave blank to keep current)"
                 className="input w-full"
               />
               <p className="text-xs text-slate-400 mt-1">
@@ -295,6 +296,29 @@ function CommunicationSettings() {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Emergency Notifications */}
+        <div className="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🚨</span>
+            <div className="flex-1">
+              <h4 className="text-lg font-semibold text-white">Auto-Send Emergency/SOS to Discord</h4>
+              <p className="text-xs text-slate-400">Automatically forward emergency waypoints to Discord webhook/bot</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={discordForm.sendEmergency}
+                onChange={(e) => setDiscordForm({ ...discordForm, sendEmergency: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+            </label>
+          </div>
+          <p className="text-xs text-red-300">
+            When enabled, any SOS waypoint received by your radio will be automatically sent to Discord with location details.
+          </p>
         </div>
 
         <div className="flex gap-2">

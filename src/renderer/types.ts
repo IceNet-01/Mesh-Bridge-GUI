@@ -200,6 +200,7 @@ export interface DiscordConfig {
   botEnabled: boolean;
   botToken: string;
   channelId: string;
+  sendEmergency: boolean;
 }
 
 export interface MQTTConfig {
