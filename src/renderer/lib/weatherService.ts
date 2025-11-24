@@ -38,15 +38,30 @@ export async function fetchAlertsByPoint(
   latitude: number,
   longitude: number
 ): Promise<AlertsResponse> {
+  // Validate coordinates
+  if (latitude < -90 || latitude > 90) {
+    throw new Error(`Invalid latitude: ${latitude}. Must be between -90 and 90.`);
+  }
+  if (longitude < -180 || longitude > 180) {
+    throw new Error(`Invalid longitude: ${longitude}. Must be between -180 and 180.`);
+  }
+
   try {
     const url = `https://api.weather.gov/alerts/active?point=${latitude},${longitude}`;
+
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
         'Accept': 'application/geo+json',
       },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`NWS API error: ${response.status} ${response.statusText}`);
@@ -54,24 +69,31 @@ export async function fetchAlertsByPoint(
 
     const data = await response.json();
 
-    const alerts: WeatherAlert[] = data.features.map((feature: any) => ({
-      id: feature.properties.id,
-      event: feature.properties.event,
-      headline: feature.properties.headline,
-      description: feature.properties.description,
-      instruction: feature.properties.instruction,
-      severity: feature.properties.severity || 'Unknown',
-      certainty: feature.properties.certainty || 'Unknown',
-      urgency: feature.properties.urgency || 'Unknown',
-      areaDesc: feature.properties.areaDesc,
-      onset: new Date(feature.properties.onset),
-      expires: new Date(feature.properties.expires),
-      senderName: feature.properties.senderName,
-      status: feature.properties.status,
-      messageType: feature.properties.messageType,
-      category: feature.properties.category,
-      geometry: feature.geometry,
-    }));
+    // Validate response structure
+    if (!data || !Array.isArray(data.features)) {
+      throw new Error('Invalid response format from NWS API');
+    }
+
+    const alerts: WeatherAlert[] = data.features
+      .filter((feature: any) => feature && feature.properties) // Filter out invalid entries
+      .map((feature: any) => ({
+        id: feature.properties.id || `unknown-${Date.now()}`,
+        event: feature.properties.event || 'Unknown Event',
+        headline: feature.properties.headline || '',
+        description: feature.properties.description || '',
+        instruction: feature.properties.instruction,
+        severity: feature.properties.severity || 'Unknown',
+        certainty: feature.properties.certainty || 'Unknown',
+        urgency: feature.properties.urgency || 'Unknown',
+        areaDesc: feature.properties.areaDesc || 'Unknown area',
+        onset: feature.properties.onset ? new Date(feature.properties.onset) : new Date(),
+        expires: feature.properties.expires ? new Date(feature.properties.expires) : new Date(Date.now() + 86400000),
+        senderName: feature.properties.senderName || 'National Weather Service',
+        status: feature.properties.status || 'Actual',
+        messageType: feature.properties.messageType || 'Alert',
+        category: feature.properties.category || 'Met',
+        geometry: feature.geometry,
+      }));
 
     return {
       alerts,
@@ -79,6 +101,10 @@ export async function fetchAlertsByPoint(
       location: `${latitude}, ${longitude}`,
     };
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('NWS API request timeout');
+      throw new Error('Request timeout: NWS API took too long to respond');
+    }
     console.error('Error fetching NWS alerts:', error);
     throw error;
   }
@@ -88,47 +114,75 @@ export async function fetchAlertsByPoint(
  * Fetches active weather alerts for a specific state
  */
 export async function fetchAlertsByState(stateCode: string): Promise<AlertsResponse> {
+  // Validate state code
+  if (!stateCode || stateCode.length !== 2) {
+    throw new Error(`Invalid state code: ${stateCode}. Must be a 2-letter state code (e.g., CA, WA).`);
+  }
+
+  const upperStateCode = stateCode.toUpperCase();
+
   try {
-    const url = `https://api.weather.gov/alerts/active?area=${stateCode.toUpperCase()}`;
+    const url = `https://api.weather.gov/alerts/active?area=${upperStateCode}`;
+
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
         'Accept': 'application/geo+json',
       },
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Invalid state code: ${upperStateCode}`);
+      }
       throw new Error(`NWS API error: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
 
-    const alerts: WeatherAlert[] = data.features.map((feature: any) => ({
-      id: feature.properties.id,
-      event: feature.properties.event,
-      headline: feature.properties.headline,
-      description: feature.properties.description,
-      instruction: feature.properties.instruction,
-      severity: feature.properties.severity || 'Unknown',
-      certainty: feature.properties.certainty || 'Unknown',
-      urgency: feature.properties.urgency || 'Unknown',
-      areaDesc: feature.properties.areaDesc,
-      onset: new Date(feature.properties.onset),
-      expires: new Date(feature.properties.expires),
-      senderName: feature.properties.senderName,
-      status: feature.properties.status,
-      messageType: feature.properties.messageType,
-      category: feature.properties.category,
-      geometry: feature.geometry,
-    }));
+    // Validate response structure
+    if (!data || !Array.isArray(data.features)) {
+      throw new Error('Invalid response format from NWS API');
+    }
+
+    const alerts: WeatherAlert[] = data.features
+      .filter((feature: any) => feature && feature.properties) // Filter out invalid entries
+      .map((feature: any) => ({
+        id: feature.properties.id || `unknown-${Date.now()}`,
+        event: feature.properties.event || 'Unknown Event',
+        headline: feature.properties.headline || '',
+        description: feature.properties.description || '',
+        instruction: feature.properties.instruction,
+        severity: feature.properties.severity || 'Unknown',
+        certainty: feature.properties.certainty || 'Unknown',
+        urgency: feature.properties.urgency || 'Unknown',
+        areaDesc: feature.properties.areaDesc || 'Unknown area',
+        onset: feature.properties.onset ? new Date(feature.properties.onset) : new Date(),
+        expires: feature.properties.expires ? new Date(feature.properties.expires) : new Date(Date.now() + 86400000),
+        senderName: feature.properties.senderName || 'National Weather Service',
+        status: feature.properties.status || 'Actual',
+        messageType: feature.properties.messageType || 'Alert',
+        category: feature.properties.category || 'Met',
+        geometry: feature.geometry,
+      }));
 
     return {
       alerts,
       lastFetched: new Date(),
-      location: stateCode.toUpperCase(),
+      location: upperStateCode,
     };
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('NWS API request timeout');
+      throw new Error('Request timeout: NWS API took too long to respond');
+    }
     console.error('Error fetching NWS alerts:', error);
     throw error;
   }

@@ -1477,6 +1477,10 @@ class MeshtasticBridgeServer {
         case 'weather':
           response = await this.cmdWeather(cmdArgs);
           break;
+        case 'alerts':
+        case 'nws':
+          response = await this.cmdAlerts(cmdArgs);
+          break;
         case 'radios':
           response = await this.cmdRadios();
           break;
@@ -1574,7 +1578,8 @@ class MeshtasticBridgeServer {
       `${this.commandPrefix}time - Current date/time`,
       `${this.commandPrefix}uptime - Bridge uptime`,
       `${this.commandPrefix}version - Software version`,
-      `${this.commandPrefix}weather [city] - Get weather`,
+      `${this.commandPrefix}weather [location] - Get weather (city/state/zip)`,
+      `${this.commandPrefix}alerts [state] - Get NWS weather alerts`,
       `${this.commandPrefix}radios - List connected radios`,
       `${this.commandPrefix}channels - List bridge channels`,
       `${this.commandPrefix}stats - Message statistics`,
@@ -1651,25 +1656,165 @@ class MeshtasticBridgeServer {
 
   /**
    * Command: #weather [location] - Get weather report
+   * Supports: city name, "city, state", state code, or zipcode
+   * Examples: #weather Seattle | #weather Seattle, WA | #weather 98101
    */
   async cmdWeather(args) {
-    const location = args.length > 0 ? args.join(' ') : 'Seattle';
+    // Parse and validate location input
+    let location;
+
+    if (args.length === 0) {
+      return `❌ Please provide a location. Examples:\n` +
+             `  #weather Seattle\n` +
+             `  #weather Seattle, WA\n` +
+             `  #weather 98101\n` +
+             `  #weather New York`;
+    }
+
+    // Join args and normalize (trim, collapse multiple spaces)
+    location = args.join(' ').trim().replace(/\s+/g, ' ');
+
+    // Validate location format
+    if (!this.isValidLocation(location)) {
+      return `❌ Invalid location format. Examples:\n` +
+             `  #weather Seattle\n` +
+             `  #weather Seattle, WA\n` +
+             `  #weather 98101\n` +
+             `  #weather New York`;
+    }
 
     try {
       // Using wttr.in - free weather service, no API key needed
+      // Supports city names, "city, state", and zipcodes
       const url = `https://wttr.in/${encodeURIComponent(location)}?format=%l:+%C+%t+💧%h+💨%w`;
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'MeshBridgeGUI/1.0'
+        }
+      });
 
       if (!response.ok) {
-        return `❌ Weather service unavailable`;
+        if (response.status === 404) {
+          return `❌ Location "${location}" not found. Try:\n` +
+                 `  City: #weather Seattle\n` +
+                 `  City, State: #weather Seattle, WA\n` +
+                 `  Zipcode: #weather 98101`;
+        }
+        return `❌ Weather service unavailable (${response.status})`;
       }
 
       const weather = await response.text();
+
+      // Check if wttr.in returned an error message
+      if (weather.includes('Unknown location') || weather.trim().length === 0) {
+        return `❌ Location "${location}" not found`;
+      }
+
       return `🌤️ ${weather.trim()}`;
 
     } catch (error) {
       console.error('Weather fetch error:', error);
-      return `❌ Couldn't fetch weather for ${location}`;
+      return `❌ Couldn't fetch weather: ${error.message}`;
+    }
+  }
+
+  /**
+   * Validates location format (city, state, zipcode)
+   */
+  isValidLocation(location) {
+    if (!location || location.length === 0) {
+      return false;
+    }
+
+    // Check for overly long input (potential abuse)
+    if (location.length > 100) {
+      return false;
+    }
+
+    // Allow alphanumeric, spaces, commas, hyphens, periods (for normal location names)
+    const validPattern = /^[a-zA-Z0-9\s,.\-]+$/;
+    if (!validPattern.test(location)) {
+      return false;
+    }
+
+    // If it looks like a zipcode, validate format
+    const zipcodePattern = /^\d{5}(-\d{4})?$/;
+    if (/^\d/.test(location)) {
+      return zipcodePattern.test(location);
+    }
+
+    return true;
+  }
+
+  /**
+   * Command: #alerts [state|zipcode] - Get NWS weather alerts
+   * Examples: #alerts CA | #alerts 98101 | #alerts WA
+   */
+  async cmdAlerts(args) {
+    if (args.length === 0) {
+      return `❌ Please provide a state code or location. Examples:\n` +
+             `  #alerts CA\n` +
+             `  #alerts WA\n` +
+             `  #alerts NY`;
+    }
+
+    const location = args.join(' ').trim().toUpperCase();
+
+    // Validate state code (2 letters)
+    if (!/^[A-Z]{2}$/.test(location)) {
+      return `❌ Please use a 2-letter state code (e.g., CA, WA, NY)`;
+    }
+
+    try {
+      const url = `https://api.weather.gov/alerts/active?area=${location}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
+          'Accept': 'application/geo+json',
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return `❌ Invalid state code: ${location}`;
+        }
+        return `❌ NWS service unavailable (${response.status})`;
+      }
+
+      const data = await response.json();
+      const alerts = data.features || [];
+
+      if (alerts.length === 0) {
+        return `✅ No active weather alerts for ${location}`;
+      }
+
+      // Format top 3 alerts (to fit in message size limit)
+      const topAlerts = alerts.slice(0, 3);
+      let message = `🌩️ NWS Alerts for ${location} (${alerts.length}):\n`;
+
+      topAlerts.forEach((feature, idx) => {
+        const props = feature.properties;
+        const severity = props.severity || 'Unknown';
+        const event = props.event || 'Alert';
+        const area = props.areaDesc || 'Unknown area';
+
+        // Shorten area description if too long
+        const shortArea = area.length > 30 ? area.substring(0, 27) + '...' : area;
+
+        message += `${idx + 1}. ${event}\n`;
+        message += `   ${shortArea}\n`;
+        message += `   Severity: ${severity}\n`;
+      });
+
+      if (alerts.length > 3) {
+        message += `\n+${alerts.length - 3} more alerts`;
+      }
+
+      return message;
+
+    } catch (error) {
+      console.error('NWS alerts fetch error:', error);
+      return `❌ Couldn't fetch alerts: ${error.message}`;
     }
   }
 
