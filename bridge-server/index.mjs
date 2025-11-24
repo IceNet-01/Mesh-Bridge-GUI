@@ -3001,13 +3001,25 @@ class MeshtasticBridgeServer {
 
       // Handle Discord bot configuration
       if (config.botEnabled !== undefined) this.discordBotEnabled = config.botEnabled;
-      if (config.botToken && config.botToken !== '(configured)') {
+
+      // Only update bot token if a new one is provided (not empty or placeholder)
+      if (config.botToken && config.botToken !== '(configured)' && config.botToken.trim() !== '') {
+        console.log(`🔑 Updating Discord bot token (${config.botToken.substring(0, 10)}...)`);
         this.discordBotToken = config.botToken;
+      } else if (config.botToken === '') {
+        console.log(`🔑 Empty bot token received, keeping existing token (${this.discordBotToken ? 'SET' : 'NOT SET'})`);
       }
-      if (config.channelId !== undefined) this.discordChannelId = config.channelId;
+
+      if (config.channelId !== undefined && config.channelId !== '') {
+        console.log(`📺 Updating Discord channel ID: ${config.channelId}`);
+        this.discordChannelId = config.channelId;
+      }
+
       if (config.sendEmergency !== undefined) this.discordSendEmergency = config.sendEmergency;
 
       // Connect or disconnect bot based on settings
+      console.log(`🤖 Discord bot config check: enabled=${this.discordBotEnabled}, hasToken=${!!this.discordBotToken}, hasChannelId=${!!this.discordChannelId}`);
+
       if (this.discordBotEnabled && this.discordBotToken && this.discordChannelId) {
         await this.connectDiscordBot();
       } else if (this.discordClient) {
@@ -3521,7 +3533,26 @@ class MeshtasticBridgeServer {
    */
   async connectDiscordBot() {
     try {
+      // Validate bot token before attempting connection
+      if (!this.discordBotToken || this.discordBotToken.trim() === '') {
+        console.error('❌ Cannot connect Discord bot: Bot token is not set');
+        this.discordClient = null;
+        return;
+      }
+
+      if (!this.discordChannelId || this.discordChannelId.trim() === '') {
+        console.error('❌ Cannot connect Discord bot: Channel ID is not set');
+        this.discordClient = null;
+        return;
+      }
+
       console.log('🤖 Connecting to Discord bot...');
+      console.log(`🤖 Using channel ID: ${this.discordChannelId}`);
+
+      // Disconnect existing client if any
+      if (this.discordClient) {
+        await this.disconnectDiscordBot();
+      }
 
       // Create Discord client with required intents
       this.discordClient = new Client({
@@ -3567,11 +3598,31 @@ class MeshtasticBridgeServer {
         }
       });
 
+      // Handle errors
+      this.discordClient.on('error', (error) => {
+        console.error('❌ Discord bot error:', error);
+      });
+
       // Login to Discord
+      console.log('🤖 Logging in to Discord...');
       await this.discordClient.login(this.discordBotToken);
 
     } catch (error) {
       console.error('❌ Failed to connect Discord bot:', error);
+
+      // Provide helpful error message for common issues
+      if (error.message && error.message.includes('disallowed intents')) {
+        console.error(`\n⚠️  DISCORD BOT SETUP REQUIRED:`);
+        console.error(`   Go to https://discord.com/developers/applications`);
+        console.error(`   Select your bot → Bot → Privileged Gateway Intents`);
+        console.error(`   Enable: ✅ Message Content Intent`);
+        console.error(`   Enable: ✅ Server Members Intent (optional)`);
+        console.error(`   Save changes and try again\n`);
+      } else if (error.message && error.message.includes('TOKEN_INVALID')) {
+        console.error(`\n⚠️  Invalid bot token. Get a new token from Discord Developer Portal\n`);
+      }
+
+      this.discordClient = null;
     }
   }
 
@@ -3634,7 +3685,27 @@ class MeshtasticBridgeServer {
         return true;
       }
     } catch (error) {
-      console.error('❌ Error sending Discord bot message:', error);
+      // Provide helpful error messages for common issues
+      if (error.code === 50001) {
+        console.error(`\n❌ Discord Bot Error: Missing Access (Code 50001)`);
+        console.error(`   Channel ID: ${this.discordChannelId}`);
+        console.error(`\n⚠️  DISCORD BOT ACCESS REQUIRED:`);
+        console.error(`   1. Make sure bot is invited to your Discord server:`);
+        console.error(`      https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=68608&scope=bot`);
+        console.error(`   2. In Discord server settings → Roles:`);
+        console.error(`      Give your bot role these permissions:`);
+        console.error(`      ✅ View Channels`);
+        console.error(`      ✅ Send Messages`);
+        console.error(`      ✅ Read Message History`);
+        console.error(`   3. In the specific channel settings:`);
+        console.error(`      Make sure bot has access to channel #${this.discordChannelId}\n`);
+      } else if (error.code === 10003) {
+        console.error(`\n❌ Discord Bot Error: Unknown Channel (Code 10003)`);
+        console.error(`   Channel ID ${this.discordChannelId} doesn't exist or bot can't see it`);
+        console.error(`   Double-check the channel ID is correct\n`);
+      } else {
+        console.error('❌ Error sending Discord bot message:', error);
+      }
     }
     return false;
   }
