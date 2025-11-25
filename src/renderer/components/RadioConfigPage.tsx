@@ -247,7 +247,6 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => {
                   const hasChannelData = selectedRadio?.channels?.some(ch => ch.index === index);
-                  const channelData = selectedRadio?.channels?.find(ch => ch.index === index);
 
                   return (
                     <div key={index} className={`card p-4 ${hasChannelData ? 'border-green-500/30' : ''}`}>
@@ -376,7 +375,8 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Warning */}
