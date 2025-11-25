@@ -403,6 +403,7 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
           ) : (
             <RadioSettings
               radioId={selectedRadioId}
+              radio={selectedRadio}
               onGetConfig={onGetConfig}
               onSetConfig={onSetConfig}
             />

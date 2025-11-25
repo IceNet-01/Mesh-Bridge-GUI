@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Radio } from '../types';
 
 interface RadioSettingsProps {
   radioId: string;
+  radio?: Radio;
   onGetConfig: (radioId: string, configType: string) => void;
   onSetConfig: (radioId: string, configType: string, config: any) => void;
 }
@@ -86,7 +88,7 @@ interface BluetoothConfig {
   fixedPin: number;
 }
 
-function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps) {
+function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettingsProps) {
   const [sections, setSections] = useState<ConfigSection[]>([
     { id: 'lora', title: 'LoRa Configuration', icon: '📡', expanded: true },
     { id: 'device', title: 'Device Settings', icon: '⚙️', expanded: false },
@@ -172,6 +174,36 @@ function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps
     mode: 'RANDOM_PIN',
     fixedPin: 123456,
   });
+
+  // Map region enum values to string keys
+  const REGION_REVERSE_MAP: Record<number, string> = {
+    0: 'UNSET', 1: 'US', 2: 'EU_433', 3: 'EU_868', 4: 'CN', 5: 'JP',
+    6: 'ANZ', 7: 'KR', 8: 'TW', 9: 'RU', 10: 'IN', 11: 'NZ_865',
+    12: 'TH', 14: 'UA_433', 15: 'UA_868', 16: 'MY_433', 17: 'MY_919', 18: 'SG_923'
+  };
+
+  const MODEM_PRESET_REVERSE_MAP: Record<number, string> = {
+    0: 'LONG_FAST', 1: 'LONG_SLOW', 2: 'VERY_LONG_SLOW', 3: 'MEDIUM_SLOW',
+    4: 'MEDIUM_FAST', 5: 'SHORT_SLOW', 6: 'SHORT_FAST', 7: 'LONG_MODERATE'
+  };
+
+  // Populate config from radio data when it changes
+  useEffect(() => {
+    if (radio?.protocolMetadata?.loraConfig) {
+      const lora = radio.protocolMetadata.loraConfig;
+      console.log('[RadioSettings] Loading LoRa config from radio:', lora);
+
+      setLoraConfig(prev => ({
+        ...prev,
+        region: typeof lora.region === 'string' ? lora.region : (REGION_REVERSE_MAP[lora.region] || 'US'),
+        modemPreset: typeof lora.modemPreset === 'string' ? lora.modemPreset : (MODEM_PRESET_REVERSE_MAP[lora.modemPreset] || 'LONG_FAST'),
+        hopLimit: lora.hopLimit ?? prev.hopLimit,
+        txEnabled: lora.txEnabled ?? prev.txEnabled,
+        txPower: lora.txPower ?? prev.txPower,
+        channelNum: lora.channelNum ?? prev.channelNum,
+      }));
+    }
+  }, [radio?.protocolMetadata?.loraConfig]);
 
   const toggleSection = (id: string) => {
     setSections(sections.map(s =>
