@@ -792,6 +792,43 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Get radio configuration
+   */
+  async getRadioConfig(radioId: string, configType: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `📻 Getting ${configType} configuration from radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'get-config',
+      radioId,
+      configType
+    }));
+  }
+
+  /**
+   * Set radio configuration
+   */
+  async setRadioConfig(radioId: string, configType: string, config: any): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `📻 Setting ${configType} configuration on radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'set-config',
+      radioId,
+      configType,
+      config
+    }));
+  }
+
+  /**
    * Send text message via a radio
    */
   async sendText(radioId: string, text: string, channel: number = 0): Promise<void> {
