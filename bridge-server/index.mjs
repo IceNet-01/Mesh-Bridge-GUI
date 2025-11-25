@@ -881,9 +881,11 @@ class MeshtasticBridgeServer {
       });
 
       protocolHandler.on('nodeInfo', async (nodeInfo) => {
-        console.log(`🆔 Radio ${radioId} node info:`, nodeInfo.nodeId, nodeInfo.longName);
         const radio = this.radios.get(radioId);
         if (radio) {
+          // Check if this is the first time we're setting nodeInfo (initial configuration)
+          const isInitialConfig = !radio.nodeInfo;
+
           radio.nodeInfo = nodeInfo;
 
           // Parse nodeId correctly - handle different formats
@@ -902,9 +904,12 @@ class MeshtasticBridgeServer {
             radio.nodeNum = null;
           }
 
-          console.log(`✅ Radio ${radioId} configured: ${nodeInfo.longName} (${nodeInfo.nodeId}), nodeNum: ${radio.nodeNum}`);
+          // Only log on initial configuration, not on periodic updates
+          if (isInitialConfig) {
+            console.log(`✅ Radio ${radioId} configured: ${nodeInfo.longName} (${nodeInfo.nodeId}), nodeNum: ${radio.nodeNum}`);
+          }
 
-          // Broadcast updated radio info to clients
+          // Broadcast updated radio info to clients (for UI refresh)
           this.broadcast({
             type: 'radio-updated',
             radio: this.getRadioInfo(radioId)
@@ -1827,7 +1832,19 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error('Weather fetch error:', error);
-      return `❌ Couldn't fetch weather: ${error.message}`;
+
+      // Provide short, actionable error messages for Meshtastic's message limit
+      if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+        return `❌ No internet connection or DNS failure`;
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+        return `❌ Weather service timeout/unreachable`;
+      } else if (error.message.includes('SSL') || error.message.includes('TLS') || error.message.includes('certificate')) {
+        return `❌ SSL/network error. Try again or check proxy settings`;
+      } else {
+        // Truncate error message to fit Meshtastic limit
+        const shortError = error.message.substring(0, 50);
+        return `❌ Weather error: ${shortError}...`;
+      }
     }
   }
 
@@ -2817,23 +2834,68 @@ class MeshtasticBridgeServer {
         return;
       }
 
-      console.log(`📻 Getting channel ${channelIndex} from radio ${radioId}...`);
-
-      // Get channel using protocol handler
-      if (radio.protocol && typeof radio.protocol.getChannel === 'function') {
-        const result = await radio.protocol.getChannel(channelIndex);
-
-        console.log(`✅ Channel ${channelIndex} request sent to radio ${radioId}`);
+      // First check if we already have this channel cached from initial connection
+      // This avoids overwhelming the radio with repeated requests
+      if (radio.channels && radio.channels.has(channelIndex)) {
+        const cachedChannel = radio.channels.get(channelIndex);
+        console.log(`📻 Returning cached channel ${channelIndex} for radio ${radioId}`);
 
         ws.send(JSON.stringify({
           type: 'get-channel-success',
           radioId: radioId,
           channelIndex: channelIndex,
-          message: 'Channel request sent. Response will arrive via channel-update event.'
+          channel: cachedChannel,
+          cached: true,
+          message: 'Channel data from cache (loaded during initial connection).'
         }));
+        return;
+      }
 
-      } else {
-        throw new Error('Channel configuration not supported for this radio type');
+      console.log(`📻 Requesting channel ${channelIndex} from radio ${radioId}...`);
+
+      // Channel not cached, request from radio with rate limiting
+      // Initialize rate limiter for this radio if not exists
+      if (!radio.channelRequestLimiter) {
+        radio.channelRequestLimiter = { queue: [], processing: false };
+      }
+
+      // Add request to queue
+      radio.channelRequestLimiter.queue.push({ ws, channelIndex });
+
+      // Process queue with delays to avoid overwhelming radio
+      if (!radio.channelRequestLimiter.processing) {
+        radio.channelRequestLimiter.processing = true;
+
+        while (radio.channelRequestLimiter.queue.length > 0) {
+          const request = radio.channelRequestLimiter.queue.shift();
+
+          try {
+            if (radio.protocol && typeof radio.protocol.getChannel === 'function') {
+              await radio.protocol.getChannel(request.channelIndex);
+              console.log(`✅ Channel ${request.channelIndex} request sent to radio ${radioId}`);
+
+              request.ws.send(JSON.stringify({
+                type: 'get-channel-success',
+                radioId: radioId,
+                channelIndex: request.channelIndex,
+                message: 'Channel request sent. Response will arrive via channel-update event.'
+              }));
+            }
+          } catch (err) {
+            console.error(`❌ Failed to request channel ${request.channelIndex}:`, err);
+            request.ws.send(JSON.stringify({
+              type: 'error',
+              error: `Get channel ${request.channelIndex} failed: ${err.message}`
+            }));
+          }
+
+          // Wait 500ms between requests to avoid overwhelming radio
+          if (radio.channelRequestLimiter.queue.length > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+
+        radio.channelRequestLimiter.processing = false;
       }
 
     } catch (error) {
@@ -4026,8 +4088,8 @@ class MeshtasticBridgeServer {
         ]
       });
 
-      // Handle ready event
-      this.discordClient.once('ready', () => {
+      // Handle clientReady event (renamed from 'ready' in Discord.js v14+)
+      this.discordClient.once('clientReady', () => {
         console.log(`✅ Discord bot connected as ${this.discordClient.user.tag}`);
       });
 
