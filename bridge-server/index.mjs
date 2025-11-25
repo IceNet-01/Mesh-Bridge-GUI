@@ -885,7 +885,7 @@ class MeshtasticBridgeServer {
    * @param {string} portPath - Serial port path
    * @param {string} protocol - Protocol type (default: 'meshtastic')
    */
-  async connectRadio(ws, portPath, protocol = 'meshtastic') {
+  async connectRadio(ws, portPath, protocol = 'meshtastic', existingDevice = null, existingTransport = null) {
     try {
       console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
@@ -902,8 +902,13 @@ class MeshtasticBridgeServer {
         }
       }
 
-      // Create protocol handler
-      const protocolHandler = createProtocol(protocol, radioId, portPath);
+      // Create protocol handler with optional existing device/transport for connection reuse
+      const options = {};
+      if (existingDevice && existingTransport) {
+        options.device = existingDevice;
+        options.transport = existingTransport;
+      }
+      const protocolHandler = createProtocol(protocol, radioId, portPath, options);
 
       // Subscribe to protocol events
       protocolHandler.on('message', (packet) => {
@@ -1178,7 +1183,7 @@ class MeshtasticBridgeServer {
   /**
    * Check if a port is available and appears to be a Meshtastic device
    * @param {string} portPath - Serial port path to check
-   * @returns {Promise<boolean>} True if port appears to be available Meshtastic device
+   * @returns {Promise<{isMeshtastic: boolean, device?: any, transport?: any}>} Result with optional device/transport to reuse
    */
   async isMeshtasticDevice(portPath) {
     let testPort = null;
@@ -1233,14 +1238,15 @@ class MeshtasticBridgeServer {
 
         await Promise.race([configPromise, timeoutPromise]);
 
-        console.log(`✅ ${portPath} appears to be a Meshtastic device`);
+        console.log(`✅ ${portPath} is a Meshtastic device - keeping connection alive for reuse`);
 
-        // Clean up test device
-        await testDevice.disconnect();
-        testTransport = null;
-        testDevice = null;
-
-        return true;
+        // DON'T disconnect - return the device and transport to be reused
+        // This avoids the port lock issue from disconnect/reconnect cycle
+        return {
+          isMeshtastic: true,
+          device: testDevice,
+          transport: testTransport
+        };
       } catch (configError) {
         console.log(`⚠️  ${portPath} did not respond as Meshtastic device: ${configError.message}`);
 
@@ -1279,7 +1285,7 @@ class MeshtasticBridgeServer {
         testTransport = null;
         testDevice = null;
 
-        return false;
+        return { isMeshtastic: false };
       }
 
     } catch (error) {
@@ -1305,7 +1311,7 @@ class MeshtasticBridgeServer {
         } catch {}
       }
 
-      return false;
+      return { isMeshtastic: false };
     }
   }
 
@@ -1348,12 +1354,13 @@ class MeshtasticBridgeServer {
 
         if (!alreadyConnected) {
           // First, check if this port is available and appears to be a Meshtastic device
-          const isMeshtastic = await this.isMeshtasticDevice(port.path);
+          const result = await this.isMeshtasticDevice(port.path);
 
-          if (isMeshtastic) {
+          if (result.isMeshtastic) {
             console.log(`🔌 Auto-connecting to Meshtastic device on ${port.path}...`);
             // Call connectRadio without websocket (headless mode)
-            await this.connectRadio(null, port.path, 'meshtastic');
+            // Pass the existing device/transport to avoid reconnection
+            await this.connectRadio(null, port.path, 'meshtastic', result.device, result.transport);
           } else {
             console.log(`⏭️  Skipping ${port.path} - not a Meshtastic device or port in use`);
           }
