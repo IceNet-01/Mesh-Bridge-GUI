@@ -649,6 +649,14 @@ class MeshtasticBridgeServer {
           await this.setChannel(ws, message.radioId, message.channelConfig);
           break;
 
+        case 'get-config':
+          await this.getRadioConfig(ws, message.radioId, message.configType);
+          break;
+
+        case 'set-config':
+          await this.setRadioConfig(ws, message.radioId, message.configType, message.config);
+          break;
+
         case 'send-text':
           await this.sendText(ws, message.radioId, message.text, message.channel);
           break;
@@ -2773,6 +2781,98 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Set channel failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Get radio configuration
+   */
+  async getRadioConfig(ws, radioId, configType) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Getting ${configType} configuration from radio ${radioId}...`);
+
+      // Get config using protocol handler
+      if (radio.protocol && typeof radio.protocol.getConfig === 'function') {
+        await radio.protocol.getConfig(configType);
+
+        console.log(`✅ Config request sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'get-config-success',
+          radioId: radioId,
+          configType: configType,
+          message: 'Configuration request sent. Response will arrive separately.'
+        }));
+
+      } else {
+        throw new Error('Configuration retrieval not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Get config error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Get config failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set radio configuration
+   */
+  async setRadioConfig(ws, radioId, configType, config) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`📻 Setting ${configType} configuration on radio ${radioId}...`);
+      console.log(`📦 Config data:`, JSON.stringify(config, null, 2));
+
+      // Set config using protocol handler
+      if (radio.protocol && typeof radio.protocol.setConfig === 'function') {
+        await radio.protocol.setConfig(configType, config);
+
+        console.log(`✅ Configuration sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'set-config-success',
+          radioId: radioId,
+          configType: configType,
+          message: 'Configuration sent successfully.'
+        }));
+
+        // Broadcast to all clients that config was updated
+        this.broadcast({
+          type: 'radio-configuration-updated',
+          radioId: radioId,
+          configType: configType
+        });
+
+      } else {
+        throw new Error('Configuration setting not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Set config error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Set config failed: ${error.message}`
       }));
     }
   }

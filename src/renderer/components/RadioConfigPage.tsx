@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Radio } from '../types';
+import RadioSettings from './RadioSettings';
 
 interface RadioConfigPageProps {
   radios: Radio[];
   onGetChannel: (radioId: string, channelIndex: number) => void;
   onSetChannel: (radioId: string, channelConfig: any) => void;
+  onGetConfig: (radioId: string, configType: string) => void;
+  onSetConfig: (radioId: string, configType: string, config: any) => void;
 }
 
 interface ChannelFormData {
@@ -15,7 +18,7 @@ interface ChannelFormData {
   downlinkEnabled: boolean;
 }
 
-function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPageProps) {
+function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSetConfig }: RadioConfigPageProps) {
   const [selectedRadioId, setSelectedRadioId] = useState<string>('');
   const [channels, setChannels] = useState<Record<number, ChannelFormData>>({});
   const [activeTab, setActiveTab] = useState<'channels' | 'settings'>('channels');
@@ -353,9 +356,11 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPage
               </div>
             </div>
           ) : (
-            <div className="card p-8 text-center">
-              <p className="text-slate-400">Additional radio settings will be available here in the future</p>
-            </div>
+            <RadioSettings
+              radioId={selectedRadioId}
+              onGetConfig={onGetConfig}
+              onSetConfig={onSetConfig}
+            />
           )}
         </>
       )}

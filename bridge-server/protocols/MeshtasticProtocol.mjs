@@ -1143,6 +1143,166 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
   }
 
+  /**
+   * Get radio configuration
+   * @param {string} configType - Type of config (lora, device, position, power, network, display, bluetooth)
+   * @returns {Promise<Object>} Configuration object
+   */
+  async getConfig(configType) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Radio Config] 📻 Getting ${configType} configuration...`);
+
+      // Map config type to protobuf enum
+      const configTypeMap = {
+        'device': Protobuf.Admin.AdminMessage_ConfigType.DEVICE_CONFIG,
+        'position': Protobuf.Admin.AdminMessage_ConfigType.POSITION_CONFIG,
+        'power': Protobuf.Admin.AdminMessage_ConfigType.POWER_CONFIG,
+        'network': Protobuf.Admin.AdminMessage_ConfigType.NETWORK_CONFIG,
+        'display': Protobuf.Admin.AdminMessage_ConfigType.DISPLAY_CONFIG,
+        'lora': Protobuf.Admin.AdminMessage_ConfigType.LORA_CONFIG,
+        'bluetooth': Protobuf.Admin.AdminMessage_ConfigType.BLUETOOTH_CONFIG,
+      };
+
+      const configTypeEnum = configTypeMap[configType.toLowerCase()];
+      if (!configTypeEnum) {
+        throw new Error(`Unknown config type: ${configType}`);
+      }
+
+      // Create AdminMessage with get_config_request
+      const getConfigMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'getConfigRequest',
+          value: configTypeEnum
+        }
+      });
+
+      console.log(`[Radio Config] 📦 AdminMessage Structure:`, JSON.stringify(getConfigMessage, null, 2));
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, getConfigMessage);
+
+      console.log(`[Radio Config] 🔧 Serialized to ${adminBytes.length} bytes`);
+
+      // Send to radio and request response
+      console.log(`[Radio Config] 📡 Sending get config request...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck
+        true    // wantResponse - we need the config back
+      );
+
+      console.log(`[Radio Config] ✅ Request sent, packet ID: ${packetId}`);
+
+      // Note: Response will come via admin message handler
+      return { success: true, packetId };
+    } catch (error) {
+      console.error('[Radio Config] ❌ Error getting config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set radio configuration
+   * @param {string} configType - Type of config (lora, device, position, power, network, display, bluetooth)
+   * @param {Object} config - Configuration object
+   * @returns {Promise<boolean>} Success status
+   */
+  async setConfig(configType, config) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Radio Config] 📻 Setting ${configType} configuration...`);
+      console.log(`[Radio Config] 📦 Config data:`, JSON.stringify(config, null, 2));
+
+      // Create config message based on type
+      let configMessage;
+      let configCase;
+
+      switch (configType.toLowerCase()) {
+        case 'device':
+          configMessage = create(Protobuf.Config.Config_DeviceConfigSchema, config);
+          configCase = 'device';
+          break;
+        case 'position':
+          configMessage = create(Protobuf.Config.Config_PositionConfigSchema, config);
+          configCase = 'position';
+          break;
+        case 'power':
+          configMessage = create(Protobuf.Config.Config_PowerConfigSchema, config);
+          configCase = 'power';
+          break;
+        case 'network':
+          configMessage = create(Protobuf.Config.Config_NetworkConfigSchema, config);
+          configCase = 'network';
+          break;
+        case 'display':
+          configMessage = create(Protobuf.Config.Config_DisplayConfigSchema, config);
+          configCase = 'display';
+          break;
+        case 'lora':
+          configMessage = create(Protobuf.Config.Config_LoRaConfigSchema, config);
+          configCase = 'lora';
+          break;
+        case 'bluetooth':
+          configMessage = create(Protobuf.Config.Config_BluetoothConfigSchema, config);
+          configCase = 'bluetooth';
+          break;
+        default:
+          throw new Error(`Unknown config type: ${configType}`);
+      }
+
+      // Wrap in Config message
+      const fullConfig = create(Protobuf.Config.ConfigSchema, {
+        payloadVariant: {
+          case: configCase,
+          value: configMessage
+        }
+      });
+
+      // Create AdminMessage with set_config
+      const setConfigMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setConfig',
+          value: fullConfig
+        }
+      });
+
+      console.log(`[Radio Config] 📦 AdminMessage Structure:`, JSON.stringify(setConfigMessage, null, 2));
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setConfigMessage);
+
+      console.log(`[Radio Config] 🔧 Serialized to ${adminBytes.length} bytes`);
+
+      // Send to radio
+      console.log(`[Radio Config] 📡 Sending set config request...`);
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        true,   // wantAck
+        false   // wantResponse
+      );
+
+      console.log(`[Radio Config] ✅ Configuration sent, packet ID: ${packetId}`);
+
+      return true;
+    } catch (error) {
+      console.error('[Radio Config] ❌ Error setting config:', error);
+      throw error;
+    }
+  }
+
   normalizeMessagePacket(packet) {
     // The @meshtastic/core library already decodes text messages
     // packet.data contains the decoded string for text messages

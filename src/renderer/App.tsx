@@ -28,6 +28,8 @@ function App() {
   const rebootRadio = useStore(state => state.rebootRadio);
   const getChannel = useStore(state => state.getChannel);
   const setChannel = useStore(state => state.setChannel);
+  const getRadioConfig = useStore(state => state.getRadioConfig);
+  const setRadioConfig = useStore(state => state.setRadioConfig);
   const sendMessage = useStore(state => state.sendMessage);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
   const clearLogs = useStore(state => state.clearLogs);
@@ -68,7 +70,7 @@ function App() {
       case 'radios':
         return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onGetChannel: getChannel, onSetChannel: setChannel };
       case 'radioconfig':
-        return { radios, onGetChannel: getChannel, onSetChannel: setChannel };
+        return { radios, onGetChannel: getChannel, onSetChannel: setChannel, onGetConfig: getRadioConfig, onSetConfig: setRadioConfig };
       case 'nodes':
         return { nodes, radios };
       case 'messages':
