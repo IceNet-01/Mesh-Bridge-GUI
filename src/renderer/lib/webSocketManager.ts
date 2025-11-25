@@ -623,6 +623,30 @@ export class WebSocketRadioManager {
         this.log('error', `MQTT error: ${data.error}`);
         break;
 
+      case 'adbot-config':
+        // Advertisement bot configuration
+        this.emit('adbot-config-update', data.config);
+        break;
+
+      case 'adbot-config-changed':
+        // Advertisement bot configuration changed (broadcast from server)
+        this.emit('adbot-config-changed', data.config);
+        this.log('info', 'Advertisement bot configuration updated');
+        break;
+
+      case 'adbot-config-updated':
+        this.log('info', data.success ? 'Advertisement bot configuration saved' : `Advertisement bot config error: ${data.error}`);
+        break;
+
+      case 'adbot-test-result':
+        // Test result for advertisement bot
+        if (data.success) {
+          this.log('info', '✅ Advertisement bot test successful - message sent');
+        } else {
+          this.log('error', `❌ Advertisement bot test failed: ${data.error}`);
+        }
+        break;
+
       case 'reticulum-status':
         // Reticulum Network Stack status update
         this.emit('reticulum-status-update', data.status);
@@ -1334,6 +1358,58 @@ export class WebSocketRadioManager {
     }
 
     this.ws.send(JSON.stringify({ type: 'mqtt-test' }));
+  }
+
+  /**
+   * Get advertisement bot configuration
+   */
+  async getAdBotConfig(): Promise<any | null> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const handler = (config: any) => {
+        this.off('adbot-config-update', handler);
+        resolve(config);
+      };
+
+      this.on('adbot-config-update', handler);
+      this.ws!.send(JSON.stringify({ type: 'adbot-get-config' }));
+
+      setTimeout(() => {
+        this.off('adbot-config-update', handler);
+        resolve(null);
+      }, 5000);
+    });
+  }
+
+  /**
+   * Set advertisement bot configuration
+   */
+  async setAdBotConfig(config: any): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'adbot-set-config',
+      config
+    }));
+  }
+
+  /**
+   * Test advertisement bot by sending an immediate advertisement
+   */
+  async testAdBot(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'adbot-test' }));
   }
 
   /**

@@ -120,6 +120,11 @@ export function getNavigationConfig(
           icon: 'mqtt',
           label: 'MQTT'
         },
+        {
+          id: 'adbot',
+          icon: 'megaphone',
+          label: 'Advertisement Bot'
+        },
       ]
     },
     {

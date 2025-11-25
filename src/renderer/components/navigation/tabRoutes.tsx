@@ -16,6 +16,7 @@ import { BridgeServerSettings } from '../BridgeServerSettings';
 import AISettings from '../AISettings';
 import CommunicationSettings from '../CommunicationSettings';
 import MQTTSettings from '../MQTTSettings';
+import AdvertisementBotSettings from '../AdvertisementBotSettings';
 import LogViewer from '../LogViewer';
 
 interface TabRoute {
@@ -73,6 +74,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   mqtt: {
     component: MQTTSettings,
+  },
+  adbot: {
+    component: AdvertisementBotSettings,
   },
   logs: {
     component: LogViewer,

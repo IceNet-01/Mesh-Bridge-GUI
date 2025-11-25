@@ -151,6 +151,17 @@ class MeshtasticBridgeServer {
     this.mqttRetain = false;                   // Retain messages
     this.mqttClient = null;                    // MQTT client instance
 
+    // ===== ADVERTISEMENT BOT CONFIGURATION =====
+    // Periodically send advertisement messages to inform users about the bot
+    this.adBotEnabled = false;                 // Enable/disable advertisement bot
+    this.adBotInterval = 3600000;              // Default: 1 hour (in milliseconds)
+    this.adBotMessages = [];                   // Array of messages to rotate through
+    this.adBotTargetRadios = [];               // Target radios (empty = all radios)
+    this.adBotChannel = 0;                     // Channel to send on (0 = public)
+    this.adBotLastSent = new Map();            // Track last send time per radio
+    this.adBotTimer = null;                    // Interval timer reference
+    this.adBotMessageIndex = 0;                // Current message index for rotation
+
     // ===== CONSOLE OUTPUT CAPTURE =====
     // Capture all console output and broadcast to WebSocket clients for raw log viewing
     this.consoleBuffer = [];                   // Buffer for raw console output
@@ -328,6 +339,16 @@ class MeshtasticBridgeServer {
           if (config.mqtt.retain !== undefined) this.mqttRetain = config.mqtt.retain;
           console.log(`📋 Loaded MQTT config: ${this.mqttEnabled ? 'ENABLED' : 'DISABLED'}`);
         }
+
+        // Load Advertisement Bot configuration
+        if (config.advertisementBot) {
+          if (config.advertisementBot.enabled !== undefined) this.adBotEnabled = config.advertisementBot.enabled;
+          if (config.advertisementBot.interval !== undefined) this.adBotInterval = config.advertisementBot.interval;
+          if (Array.isArray(config.advertisementBot.messages)) this.adBotMessages = config.advertisementBot.messages;
+          if (Array.isArray(config.advertisementBot.targetRadios)) this.adBotTargetRadios = config.advertisementBot.targetRadios;
+          if (config.advertisementBot.channel !== undefined) this.adBotChannel = config.advertisementBot.channel;
+          console.log(`📋 Loaded Advertisement Bot config: ${this.adBotEnabled ? 'ENABLED' : 'DISABLED'}`);
+        }
       }
     } catch (error) {
       console.error('⚠️  Error loading config file:', error.message);
@@ -371,6 +392,13 @@ class MeshtasticBridgeServer {
           topicPrefix: this.mqttTopicPrefix,
           qos: this.mqttQos,
           retain: this.mqttRetain
+        },
+        advertisementBot: {
+          enabled: this.adBotEnabled,
+          interval: this.adBotInterval,
+          messages: this.adBotMessages,
+          targetRadios: this.adBotTargetRadios,
+          channel: this.adBotChannel
         }
       };
 
@@ -518,6 +546,12 @@ class MeshtasticBridgeServer {
       if (this.aiEnabled) {
         console.log('🤖 AI assistant was previously enabled, checking Ollama availability...');
         this.checkOllamaAndAutoStart();
+      }
+
+      // Start advertisement bot if enabled
+      if (this.adBotEnabled) {
+        console.log('📢 Advertisement bot enabled, starting...');
+        this.setupAdvertisementBot();
       }
 
       // Auto-scan and auto-connect to radios for headless operation
@@ -726,6 +760,19 @@ class MeshtasticBridgeServer {
 
         case 'mqtt-enable':
           await this.mqttSetEnabled(ws, message.enabled);
+          break;
+
+        // Advertisement Bot Management
+        case 'adbot-get-config':
+          await this.adBotGetConfig(ws);
+          break;
+
+        case 'adbot-set-config':
+          await this.adBotSetConfig(ws, message.config);
+          break;
+
+        case 'adbot-test':
+          await this.adBotTest(ws);
           break;
 
         default:
@@ -3778,6 +3825,106 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Get advertisement bot configuration
+   */
+  async adBotGetConfig(ws) {
+    ws.send(JSON.stringify({
+      type: 'adbot-config',
+      config: {
+        enabled: this.adBotEnabled,
+        interval: this.adBotInterval,
+        messages: this.adBotMessages,
+        targetRadios: this.adBotTargetRadios,
+        channel: this.adBotChannel
+      }
+    }));
+  }
+
+  /**
+   * Set advertisement bot configuration
+   */
+  async adBotSetConfig(ws, config) {
+    try {
+      // Stop existing timer if running
+      this.stopAdvertisementBot();
+
+      // Update configuration
+      if (config.enabled !== undefined) this.adBotEnabled = config.enabled;
+      if (config.interval !== undefined) this.adBotInterval = config.interval;
+      if (Array.isArray(config.messages)) this.adBotMessages = config.messages;
+      if (Array.isArray(config.targetRadios)) this.adBotTargetRadios = config.targetRadios;
+      if (config.channel !== undefined) this.adBotChannel = config.channel;
+
+      console.log(`✅ Advertisement bot configuration updated (enabled: ${this.adBotEnabled})`);
+
+      // Send confirmation
+      ws.send(JSON.stringify({
+        type: 'adbot-config-updated',
+        success: true
+      }));
+
+      // Broadcast updated config to all clients
+      this.broadcast({
+        type: 'adbot-config-changed',
+        config: {
+          enabled: this.adBotEnabled,
+          interval: this.adBotInterval,
+          messages: this.adBotMessages,
+          targetRadios: this.adBotTargetRadios,
+          channel: this.adBotChannel
+        }
+      });
+
+      // Restart bot if enabled
+      if (this.adBotEnabled) {
+        this.setupAdvertisementBot();
+      }
+
+      // Save configuration to persist settings
+      this.saveConfig();
+
+    } catch (error) {
+      console.error('❌ Failed to update advertisement bot config:', error);
+      ws.send(JSON.stringify({
+        type: 'adbot-config-updated',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Test advertisement bot by sending an immediate advertisement
+   */
+  async adBotTest(ws) {
+    try {
+      if (this.adBotMessages.length === 0) {
+        ws.send(JSON.stringify({
+          type: 'adbot-test-result',
+          success: false,
+          error: 'No advertisement messages configured'
+        }));
+        return;
+      }
+
+      // Send an advertisement immediately
+      await this.sendAdvertisement();
+
+      ws.send(JSON.stringify({
+        type: 'adbot-test-result',
+        success: true
+      }));
+    } catch (error) {
+      console.error('❌ Advertisement bot test failed:', error);
+      ws.send(JSON.stringify({
+        type: 'adbot-test-result',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
    * Connect to Discord bot
    */
   async connectDiscordBot() {
@@ -3960,6 +4107,87 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Setup advertisement bot interval
+   */
+  setupAdvertisementBot() {
+    // Clear any existing timer
+    if (this.adBotTimer) {
+      clearInterval(this.adBotTimer);
+      this.adBotTimer = null;
+    }
+
+    if (!this.adBotEnabled || this.adBotMessages.length === 0) {
+      console.log('⚠️  Advertisement bot enabled but no messages configured');
+      return;
+    }
+
+    console.log(`📢 Advertisement bot starting with ${this.adBotMessages.length} message(s), interval: ${this.adBotInterval / 1000}s`);
+
+    // Send first advertisement immediately
+    setTimeout(() => this.sendAdvertisement(), 5000); // Wait 5 seconds after startup
+
+    // Setup recurring advertisements
+    this.adBotTimer = setInterval(() => {
+      this.sendAdvertisement();
+    }, this.adBotInterval);
+  }
+
+  /**
+   * Send advertisement message
+   */
+  async sendAdvertisement() {
+    if (!this.adBotEnabled || this.adBotMessages.length === 0) {
+      return;
+    }
+
+    // Determine which radios to target
+    const targetRadios = this.adBotTargetRadios.length > 0
+      ? this.adBotTargetRadios
+      : Array.from(this.radios.keys());
+
+    if (targetRadios.length === 0) {
+      console.log('⚠️  No radios available for advertisement');
+      return;
+    }
+
+    // Get the next message to send (rotate through messages)
+    const message = this.adBotMessages[this.adBotMessageIndex];
+    this.adBotMessageIndex = (this.adBotMessageIndex + 1) % this.adBotMessages.length;
+
+    console.log(`📢 Sending advertisement: "${message}"`);
+
+    // Send from each target radio
+    for (const radioId of targetRadios) {
+      const radio = this.radios.get(radioId);
+      if (!radio || radio.status !== 'connected') {
+        continue;
+      }
+
+      try {
+        // Use the sendText method to send the advertisement
+        await this.sendText(null, radioId, message, this.adBotChannel);
+        console.log(`✅ Advertisement sent from radio ${radioId} on channel ${this.adBotChannel}`);
+
+        // Track last send time
+        this.adBotLastSent.set(radioId, Date.now());
+      } catch (error) {
+        console.error(`❌ Failed to send advertisement from radio ${radioId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Stop advertisement bot
+   */
+  stopAdvertisementBot() {
+    if (this.adBotTimer) {
+      clearInterval(this.adBotTimer);
+      this.adBotTimer = null;
+      console.log('📢 Advertisement bot stopped');
+    }
+  }
+
+  /**
    * Broadcast message to all connected WebSocket clients
    */
   broadcast(data) {
@@ -3980,6 +4208,9 @@ class MeshtasticBridgeServer {
    */
   async shutdown() {
     console.log('\n🛑 Shutting down bridge server...');
+
+    // Stop advertisement bot
+    this.stopAdvertisementBot();
 
     // Disconnect all radios
     for (const [radioId, radio] of this.radios.entries()) {
