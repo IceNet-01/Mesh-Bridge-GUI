@@ -493,21 +493,43 @@ class MeshtasticBridgeServer {
       const currentVersion = packageJson.version;
 
       // Get latest release from GitHub
-      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest');
+      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest', {
+        headers: {
+          'User-Agent': 'Meshtastic-Bridge-GUI'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
+      }
+
       const release = await response.json();
 
-      const latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
+      if (release.message) {
+        // GitHub API error (e.g., rate limit, not found)
+        throw new Error(`GitHub API error: ${release.message}`);
+      }
+
+      // Parse version, removing 'v' prefix and any suffix like '-alpha'
+      let latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
+
+      // Remove any suffix like '-alpha', '-beta', etc.
+      latestVersion = latestVersion.split('-')[0];
+
+      // Normalize current version (remove leading 0. if present for comparison)
+      const normalizedCurrent = currentVersion.startsWith('0.') ? currentVersion.substring(2) : currentVersion;
+      const normalizedLatest = latestVersion.startsWith('0.') ? latestVersion.substring(2) : latestVersion;
 
       // Compare versions
-      const updateAvailable = this.compareVersions(latestVersion, currentVersion) > 0;
+      const updateAvailable = this.compareVersions(normalizedLatest, normalizedCurrent) > 0;
 
       return {
         current: currentVersion,
-        latest: latestVersion,
+        latest: release.tag_name || latestVersion,
         updateAvailable,
         releaseUrl: release.html_url,
         publishedAt: release.published_at,
-        releaseNotes: release.body || ''
+        releaseNotes: release.body || 'No release notes available.'
       };
     } catch (error) {
       console.error('❌ Error checking for updates:', error);

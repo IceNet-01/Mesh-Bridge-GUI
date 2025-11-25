@@ -41,10 +41,21 @@ export function SystemUpdate() {
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/version-check`);
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+
       const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       setVersionInfo(data);
     } catch (error) {
       console.error('Failed to check for updates:', error);
+      alert(`Failed to check for updates: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the bridge server is running.`);
     } finally {
       setLoading(false);
     }
