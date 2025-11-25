@@ -216,6 +216,14 @@ export interface MQTTConfig {
   connected?: boolean;
 }
 
+export interface AdvertisementBotConfig {
+  enabled: boolean;
+  interval: number;  // milliseconds between advertisements
+  messages: string[];  // array of messages to rotate through
+  targetRadios: string[];  // radioIds to send from, empty = all radios
+  channel: number;  // 0-7, default 0 (public channel)
+}
+
 export interface CommunicationConfig {
   email: EmailConfig;
   discord: DiscordConfig;

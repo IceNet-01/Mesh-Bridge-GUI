@@ -17,6 +17,7 @@ export type Tab =
   | 'ai'
   | 'communication'
   | 'mqtt'
+  | 'adbot'
   | 'logs';
 
 export interface NavItem {

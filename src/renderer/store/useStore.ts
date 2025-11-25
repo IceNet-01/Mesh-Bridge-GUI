@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { WebSocketRadioManager } from '../lib/webSocketManager';
-import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MQTTConfig, MeshNode, TelemetrySnapshot } from '../types';
+import type { Radio, Statistics, LogEntry, BridgeConfig, Message, AIConfig, AIModel, AIStatus, AIModelPullProgress, CommunicationConfig, EmailConfig, DiscordConfig, MQTTConfig, AdvertisementBotConfig, MeshNode, TelemetrySnapshot } from '../types';
 
 interface AppStore {
   // Manager instance
@@ -33,6 +33,9 @@ interface AppStore {
 
   // MQTT State
   mqttConfig: MQTTConfig | null;
+
+  // Advertisement Bot State
+  adBotConfig: AdvertisementBotConfig | null;
 
   // Actions
   initialize: () => void;
@@ -75,6 +78,11 @@ interface AppStore {
   setMQTTConfig: (config: MQTTConfig) => Promise<void>;
   setMQTTEnabled: (enabled: boolean) => Promise<void>;
   testMQTT: () => Promise<void>;
+
+  // Advertisement Bot Actions
+  getAdBotConfig: () => Promise<void>;
+  setAdBotConfig: (config: AdvertisementBotConfig) => Promise<void>;
+  testAdBot: () => Promise<void>;
 }
 
 export const useStore = create<AppStore>((set, get) => {
@@ -268,6 +276,7 @@ export const useStore = create<AppStore>((set, get) => {
     aiPullProgress: null,
     commConfig: null,
     mqttConfig: null,
+    adBotConfig: null,
 
     initialize: () => {
       const statistics = manager.getStatistics();
@@ -515,6 +524,22 @@ export const useStore = create<AppStore>((set, get) => {
 
     testMQTT: async () => {
       await manager.testMQTT();
+    },
+
+    // Advertisement Bot Actions
+    getAdBotConfig: async () => {
+      const config = await manager.getAdBotConfig();
+      if (config) {
+        set({ adBotConfig: config });
+      }
+    },
+
+    setAdBotConfig: async (config: AdvertisementBotConfig) => {
+      await manager.setAdBotConfig(config);
+    },
+
+    testAdBot: async () => {
+      await manager.testAdBot();
     },
   };
 });
