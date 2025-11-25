@@ -683,6 +683,10 @@ class MeshtasticBridgeServer {
           await this.rebootRadio(ws, message.radioId);
           break;
 
+        case 'sync-time':
+          await this.syncRadioTime(ws, message.radioId);
+          break;
+
         case 'get-channel':
           await this.getChannel(ws, message.radioId, message.channelIndex);
           break;
@@ -2937,6 +2941,51 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Disconnect failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Sync radio device time with computer time
+   */
+  async syncRadioTime(ws, radioId) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`⏰ Syncing time for radio ${radioId} (${radio.protocolType})...`);
+
+      // Sync time using protocol handler
+      if (radio.protocol && typeof radio.protocol.syncDeviceTime === 'function') {
+        const success = await radio.protocol.syncDeviceTime();
+
+        if (success) {
+          console.log(`✅ Time sync sent to radio ${radioId}`);
+
+          ws.send(JSON.stringify({
+            type: 'sync-time-success',
+            radioId: radioId,
+            message: 'Time sync command sent successfully.'
+          }));
+        } else {
+          throw new Error('Time sync failed');
+        }
+
+      } else {
+        throw new Error('Time sync not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Sync time error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Sync time failed: ${error.message}`
       }));
     }
   }

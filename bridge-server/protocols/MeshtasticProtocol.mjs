@@ -195,9 +195,6 @@ export class MeshtasticProtocol extends BaseProtocol {
       await this.device.configure();
       console.log(`[Meshtastic] Radio configured successfully`);
 
-      // Sync device time with computer time
-      await this.syncDeviceTime();
-
       // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
       this.device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
       console.log(`[Meshtastic] Heartbeat enabled`);
@@ -225,6 +222,9 @@ export class MeshtasticProtocol extends BaseProtocol {
       this.fetchAndEmitDeviceInfo(0); // Start with 0 retries
       // Also do initial node scan after short delay
       setTimeout(() => this.scanAndEmitNodes(), 5000);
+
+      // Sync device time with computer time (after connection is fully established)
+      setTimeout(() => this.syncDeviceTime(), 2000); // Delay 2 seconds to ensure radio is ready
 
       console.log(`[Meshtastic] Successfully connected to ${this.portPath}`);
 

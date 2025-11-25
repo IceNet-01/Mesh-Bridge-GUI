@@ -26,6 +26,7 @@ function App() {
   const connectToBridge = useStore(state => state.connectToBridge);
   const disconnectRadio = useStore(state => state.disconnectRadio);
   const rebootRadio = useStore(state => state.rebootRadio);
+  const syncRadioTime = useStore(state => state.syncRadioTime);
   const getChannel = useStore(state => state.getChannel);
   const setChannel = useStore(state => state.setChannel);
   const getRadioConfig = useStore(state => state.getRadioConfig);
@@ -68,7 +69,7 @@ function App() {
       case 'dashboard':
         return { radios, statistics, messages };
       case 'radios':
-        return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onGetChannel: getChannel, onSetChannel: setChannel };
+        return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onSyncTime: syncRadioTime, onGetChannel: getChannel, onSetChannel: setChannel };
       case 'radioconfig':
         return { radios, onGetChannel: getChannel, onSetChannel: setChannel, onGetConfig: getRadioConfig, onSetConfig: setRadioConfig };
       case 'nodes':

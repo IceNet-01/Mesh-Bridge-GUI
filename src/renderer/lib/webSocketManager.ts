@@ -791,6 +791,23 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Sync radio device time with computer time
+   */
+  async syncRadioTime(radioId: string): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `⏰ Syncing time for radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'sync-time',
+      radioId
+    }));
+  }
+
+  /**
    * Get channel configuration from a radio
    */
   async getChannel(radioId: string, channelIndex: number): Promise<void> {

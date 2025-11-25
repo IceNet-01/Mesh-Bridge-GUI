@@ -5,11 +5,12 @@ interface RadioListProps {
   radios: Radio[];
   onDisconnect: (radioId: string) => void;
   onReboot: (radioId: string) => void;
+  onSyncTime: (radioId: string) => void;
   onGetChannel: (radioId: string, channelIndex: number) => void;
   onSetChannel: (radioId: string, channelConfig: any) => void;
 }
 
-function RadioList({ radios, onDisconnect, onReboot, onGetChannel, onSetChannel }: RadioListProps) {
+function RadioList({ radios, onDisconnect, onReboot, onSyncTime, onGetChannel, onSetChannel }: RadioListProps) {
   return (
     <div className="space-y-6">
       <div>
@@ -35,6 +36,7 @@ function RadioList({ radios, onDisconnect, onReboot, onGetChannel, onSetChannel 
               radio={radio}
               onDisconnect={onDisconnect}
               onReboot={onReboot}
+              onSyncTime={onSyncTime}
               onGetChannel={onGetChannel}
               onSetChannel={onSetChannel}
             />
@@ -49,11 +51,12 @@ interface RadioCardProps {
   radio: Radio;
   onDisconnect: (radioId: string) => void;
   onReboot: (radioId: string) => void;
+  onSyncTime: (radioId: string) => void;
   onGetChannel: (radioId: string, channelIndex: number) => void;
   onSetChannel: (radioId: string, channelConfig: any) => void;
 }
 
-function RadioCard({ radio, onDisconnect, onReboot, onGetChannel, onSetChannel }: RadioCardProps) {
+function RadioCard({ radio, onDisconnect, onReboot, onSyncTime, onGetChannel, onSetChannel }: RadioCardProps) {
   const statusColors = {
     connected: 'border-green-500/50 bg-green-500/5',
     connecting: 'border-yellow-500/50 bg-yellow-500/5',
@@ -108,6 +111,15 @@ function RadioCard({ radio, onDisconnect, onReboot, onGetChannel, onSetChannel }
               >
                 <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button
+                onClick={() => onSyncTime(radio.id)}
+                className="p-2 hover:bg-green-500/20 rounded-lg transition-colors"
+                title="Sync Time"
+              >
+                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </button>
               <button
