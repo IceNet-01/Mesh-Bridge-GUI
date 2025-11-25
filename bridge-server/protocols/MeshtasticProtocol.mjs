@@ -1061,6 +1061,22 @@ export class MeshtasticProtocol extends BaseProtocol {
         }
       }
 
+      // Convert role from string to enum value
+      // Meshtastic Channel.Role enum: 0 = SECONDARY, 1 = PRIMARY, 2 = DISABLED
+      if (typeof channelConfig.role === 'string') {
+        const roleMap = {
+          'PRIMARY': 1,
+          'SECONDARY': 0,
+          'DISABLED': 2
+        };
+        const roleString = channelConfig.role;
+        const roleValue = roleMap[channelConfig.role];
+        if (roleValue !== undefined) {
+          channelConfig.role = roleValue;
+          console.log(`[Channel Config] 🔧 Converted role from "${roleString}" to ${roleValue}`);
+        }
+      }
+
       // Create Channel protobuf message
       const channelMessage = create(Protobuf.Channel.ChannelSchema, channelConfig);
 
