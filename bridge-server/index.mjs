@@ -1735,7 +1735,7 @@ class MeshtasticBridgeServer {
 
   /**
    * Command: #weather [location] - Get current weather
-   * Uses Open-Meteo API (free, no rate limits, no blocking)
+   * Uses Open-Meteo API (free, no API key required, no rate limits)
    * Supports: city name, "city, state", state code
    * Examples: #weather Seattle | #weather Seattle, WA
    */
@@ -1765,7 +1765,6 @@ class MeshtasticBridgeServer {
 
       const geoResponse = await fetch(geocodeUrl, {
         headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
-        agent: this.httpsAgent,
         signal: controller.signal
       });
 
@@ -1791,7 +1790,6 @@ class MeshtasticBridgeServer {
 
       const weatherResponse = await fetch(weatherUrl, {
         headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
-        agent: this.httpsAgent,
         signal: controller.signal
       });
 
@@ -1814,7 +1812,7 @@ class MeshtasticBridgeServer {
       };
       const condition = weatherCodes[current.weather_code] || 'Unknown';
 
-      // Build compact response for Meshtastic
+      // Build compact response for Meshtastic (237 byte limit)
       let result = `🌤️ ${placeName}\n`;
       result += `${condition} ${Math.round(current.temperature_2m)}°F\n`;
       result += `💧${current.relative_humidity_2m}% 💨${Math.round(current.wind_speed_10m)}mph`;
@@ -1824,7 +1822,7 @@ class MeshtasticBridgeServer {
     } catch (error) {
       console.error('Weather fetch error:', error);
 
-      // Provide short error messages for Meshtastic limits
+      // Provide short error messages for Meshtastic 237-byte limit
       if (error.name === 'AbortError') {
         return `❌ Request timeout`;
       } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
