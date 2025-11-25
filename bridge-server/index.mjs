@@ -1760,36 +1760,18 @@ class MeshtasticBridgeServer {
     }
 
     try {
-      // Create abort controller for 10 second timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      // Step 1: Geocode location to get coordinates
-      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-
-      const geoResponse = await fetch(geocodeUrl, {
-        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
-        signal: controller.signal
-      });
-
-      if (!geoResponse.ok) {
-        clearTimeout(timeoutId);
-        return `❌ Geocoding service error`;
-      }
-
-      const geoData = await geoResponse.json();
-
-      if (!geoData.results || geoData.results.length === 0) {
-        clearTimeout(timeoutId);
+      // Step 1: Geocode location with retry logic
+      const geoResult = await this.geocodeLocation(location);
+      if (!geoResult) {
         return `❌ Location not found: ${location}`;
       }
 
-      const place = geoData.results[0];
-      const lat = place.latitude;
-      const lon = place.longitude;
-      const placeName = place.name + (place.admin1 ? `, ${place.admin1}` : '');
+      const { lat, lon, placeName } = geoResult;
 
       // Step 2: Get weather for coordinates
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
 
       const weatherResponse = await fetch(weatherUrl, {
@@ -1861,36 +1843,18 @@ class MeshtasticBridgeServer {
     }
 
     try {
-      // Create abort controller for 10 second timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      // Step 1: Geocode location to get coordinates
-      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-
-      const geoResponse = await fetch(geocodeUrl, {
-        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
-        signal: controller.signal
-      });
-
-      if (!geoResponse.ok) {
-        clearTimeout(timeoutId);
-        return `❌ Geocoding service error`;
-      }
-
-      const geoData = await geoResponse.json();
-
-      if (!geoData.results || geoData.results.length === 0) {
-        clearTimeout(timeoutId);
+      // Step 1: Geocode location with retry logic
+      const geoResult = await this.geocodeLocation(location);
+      if (!geoResult) {
         return `❌ Location not found: ${location}`;
       }
 
-      const place = geoData.results[0];
-      const lat = place.latitude;
-      const lon = place.longitude;
-      const placeName = place.name + (place.admin1 ? `, ${place.admin1}` : '');
+      const { lat, lon, placeName } = geoResult;
 
       // Step 2: Get 48-hour forecast (hourly data for next 48 hours)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,weather_code&temperature_unit=fahrenheit&forecast_days=2&timezone=auto`;
 
       const forecastResponse = await fetch(forecastUrl, {
@@ -1991,6 +1955,57 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Geocode location with retry logic (handles network hiccups)
+   * Returns: { lat, lon, placeName } or null on failure
+   */
+  async geocodeLocation(location, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+
+        const response = await fetch(geocodeUrl, {
+          headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.results || data.results.length === 0) {
+          return null; // Location not found
+        }
+
+        const place = data.results[0];
+        return {
+          lat: place.latitude,
+          lon: place.longitude,
+          placeName: place.name + (place.admin1 ? `, ${place.admin1}` : '')
+        };
+
+      } catch (error) {
+        console.error(`Geocoding attempt ${attempt}/${maxRetries} failed:`, error.message);
+
+        // If this was the last attempt, throw the error
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        // Wait before retrying (exponential backoff: 2s, 4s)
+        const delay = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  /**
    * Command: #alerts [state|zipcode] - Get NWS weather alerts
    * Examples: #alerts CA | #alerts 98101 | #alerts WA
    */
@@ -2007,36 +2022,17 @@ class MeshtasticBridgeServer {
 
       // Check if input is a 5-digit zip code
       if (/^\d{5}$/.test(location)) {
-        // Geocode zip code to get coordinates
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${location}&count=1&language=en&format=json`;
-
-        const geoResponse = await fetch(geocodeUrl, {
-          headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!geoResponse.ok) {
-          return `❌ Geocoding error for ${location}`;
-        }
-
-        const geoData = await geoResponse.json();
-
-        if (!geoData.results || geoData.results.length === 0) {
+        // Geocode zip code with retry logic
+        const geoResult = await this.geocodeLocation(location);
+        if (!geoResult) {
           return `❌ Zip code not found: ${location}`;
         }
 
-        const place = geoData.results[0];
-        const lat = place.latitude.toFixed(4);
-        const lon = place.longitude.toFixed(4);
+        const { lat, lon } = geoResult;
         locationLabel = location;
 
         // Use NWS point-based alerts API
-        url = `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
+        url = `https://api.weather.gov/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}`;
 
       } else if (/^[A-Z]{2}$/i.test(location)) {
         // State code (2 letters)
