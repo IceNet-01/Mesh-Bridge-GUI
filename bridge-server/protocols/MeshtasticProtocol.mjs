@@ -179,34 +179,21 @@ export class MeshtasticProtocol extends BaseProtocol {
     try {
       console.log(`[Meshtastic] Connecting to ${this.portPath}...`);
 
-      // Check if we have an existing device/transport from detection (aggressive connection reuse)
-      if (this.options.device && this.options.transport) {
-        console.log(`[Meshtastic] 🔄 Reusing existing connection (already configured)`);
-        this.device = this.options.device;
-        this.transport = this.options.transport;
+      // Create serial transport using the static create method
+      this.transport = await TransportNodeSerial.create(this.portPath, 115200);
+      console.log(`[Meshtastic] Transport connected`);
 
-        // Subscribe to events AFTER we have the device
-        this.setupEventHandlers();
+      // Create Meshtastic device
+      this.device = new MeshDevice(this.transport);
+      console.log(`[Meshtastic] MeshDevice created, configuring...`);
 
-        // Device is already configured from detection, skip configure()
-        console.log(`[Meshtastic] Using pre-configured device`);
-      } else {
-        // Create serial transport using the static create method
-        this.transport = await TransportNodeSerial.create(this.portPath, 115200);
-        console.log(`[Meshtastic] Transport connected`);
+      // Subscribe to events BEFORE configuring
+      this.setupEventHandlers();
 
-        // Create Meshtastic device
-        this.device = new MeshDevice(this.transport);
-        console.log(`[Meshtastic] MeshDevice created, configuring...`);
-
-        // Subscribe to events BEFORE configuring
-        this.setupEventHandlers();
-
-        // Configure the device (required for message flow)
-        console.log(`[Meshtastic] Configuring radio...`);
-        await this.device.configure();
-        console.log(`[Meshtastic] Radio configured successfully`);
-      }
+      // Configure the device (required for message flow)
+      console.log(`[Meshtastic] Configuring radio...`);
+      await this.device.configure();
+      console.log(`[Meshtastic] Radio configured successfully`);
 
       // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
       this.device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
