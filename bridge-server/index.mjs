@@ -1183,6 +1183,7 @@ class MeshtasticBridgeServer {
   async isMeshtasticDevice(portPath) {
     let testPort = null;
     let testTransport = null;
+    let testDevice = null;
 
     try {
       console.log(`🔍 Testing if ${portPath} is a Meshtastic device...`);
@@ -1222,7 +1223,7 @@ class MeshtasticBridgeServer {
         testTransport = await TransportNodeSerial.create(portPath, 115200);
 
         // Create a test device
-        const testDevice = new MeshDevice(testTransport);
+        testDevice = new MeshDevice(testTransport);
 
         // Try to configure with a short timeout
         const configPromise = testDevice.configure();
@@ -1237,17 +1238,46 @@ class MeshtasticBridgeServer {
         // Clean up test device
         await testDevice.disconnect();
         testTransport = null;
+        testDevice = null;
 
         return true;
       } catch (configError) {
         console.log(`⚠️  ${portPath} did not respond as Meshtastic device: ${configError.message}`);
 
-        // Clean up if transport was created
-        if (testTransport) {
+        // Clean up test device and transport if they were created
+        if (testDevice) {
           try {
-            // TransportNodeSerial doesn't have a direct close, device.disconnect handles it
-          } catch {}
+            console.log(`🧹 Disconnecting test device on ${portPath}...`);
+            await testDevice.disconnect();
+          } catch (disconnectError) {
+            console.error(`⚠️  Error disconnecting test device: ${disconnectError.message}`);
+          }
         }
+
+        // Give the port a moment to fully release
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Explicitly close the underlying serial port if still accessible
+        if (testTransport && testTransport.port) {
+          try {
+            if (testTransport.port.isOpen) {
+              console.log(`🧹 Closing transport port on ${portPath}...`);
+              await new Promise((resolve) => {
+                testTransport.port.close((err) => {
+                  if (err) {
+                    console.error(`⚠️  Error closing transport port: ${err.message}`);
+                  }
+                  resolve();
+                });
+              });
+            }
+          } catch (portCloseError) {
+            console.error(`⚠️  Error during port cleanup: ${portCloseError.message}`);
+          }
+        }
+
+        testTransport = null;
+        testDevice = null;
 
         return false;
       }
