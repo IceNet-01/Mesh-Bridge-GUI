@@ -808,6 +808,22 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Shut down the bridge server gracefully
+   */
+  async shutdownServer(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('warn', '🛑 Requesting server shutdown...');
+
+    this.ws.send(JSON.stringify({
+      type: 'shutdown-server'
+    }));
+  }
+
+  /**
    * Get channel configuration from a radio
    */
   async getChannel(radioId: string, channelIndex: number): Promise<void> {

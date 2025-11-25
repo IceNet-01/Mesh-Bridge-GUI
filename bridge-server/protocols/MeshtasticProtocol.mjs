@@ -798,21 +798,62 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic radio time updates disabled`);
       }
 
+      // Disconnect device first (stops heartbeat and message processing)
       if (this.device) {
-        await this.device.disconnect();
+        try {
+          await this.device.disconnect();
+          console.log(`[Meshtastic] Device disconnected`);
+        } catch (deviceError) {
+          console.error(`[Meshtastic] Error disconnecting device:`, deviceError);
+          // Continue with cleanup even if device disconnect fails
+        }
         this.device = null;
       }
 
-      if (this.transport) {
-        this.transport = null;
+      // Explicitly close the serial port to release the lock
+      if (this.transport && this.transport.port) {
+        try {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              console.log(`[Meshtastic] Port close timeout, forcing cleanup`);
+              resolve(); // Don't reject, just continue
+            }, 2000);
+
+            // Check if port is already closed
+            if (!this.transport.port.isOpen) {
+              clearTimeout(timeout);
+              console.log(`[Meshtastic] Port already closed`);
+              resolve();
+              return;
+            }
+
+            this.transport.port.close((err) => {
+              clearTimeout(timeout);
+              if (err) {
+                console.error(`[Meshtastic] Error closing port:`, err);
+                // Don't reject - we want to continue cleanup
+              } else {
+                console.log(`[Meshtastic] Serial port closed`);
+              }
+              resolve();
+            });
+          });
+        } catch (portError) {
+          console.error(`[Meshtastic] Error during port cleanup:`, portError);
+          // Continue with cleanup
+        }
       }
 
+      this.transport = null;
       this.connected = false;
-      console.log(`[Meshtastic] Disconnected successfully`);
+      console.log(`[Meshtastic] Disconnected successfully from ${this.portPath}`);
     } catch (error) {
       console.error('[Meshtastic] Error during disconnect:', error);
-      this.handleError(error);
-      throw error;
+      // Mark as disconnected even if there was an error
+      this.connected = false;
+      this.device = null;
+      this.transport = null;
+      // Don't throw - we want disconnect to always succeed
     }
   }
 

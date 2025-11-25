@@ -48,6 +48,7 @@ interface AppStore {
   disconnectRadio: (radioId: string) => Promise<void>;
   rebootRadio: (radioId: string) => Promise<void>;
   syncRadioTime: (radioId: string) => Promise<void>;
+  shutdownServer: () => Promise<void>;
   getChannel: (radioId: string, channelIndex: number) => Promise<void>;
   setChannel: (radioId: string, channelConfig: any) => Promise<void>;
   getRadioConfig: (radioId: string, configType: string) => Promise<void>;
@@ -406,6 +407,10 @@ export const useStore = create<AppStore>((set, get) => {
 
     syncRadioTime: async (radioId: string) => {
       await manager.syncRadioTime(radioId);
+    },
+
+    shutdownServer: async () => {
+      await manager.shutdownServer();
     },
 
     getChannel: async (radioId: string, channelIndex: number) => {
