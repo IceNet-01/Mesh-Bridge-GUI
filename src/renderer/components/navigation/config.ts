@@ -106,6 +106,11 @@ export function getNavigationConfig(
           label: 'Server'
         },
         {
+          id: 'update',
+          icon: 'update',
+          label: 'System Update'
+        },
+        {
           id: 'ai',
           icon: 'ai',
           label: 'AI Assistant'

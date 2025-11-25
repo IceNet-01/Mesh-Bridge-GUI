@@ -418,6 +418,251 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Handle API requests
+   */
+  async handleApiRequest(req, res) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // Version check endpoint
+    if (url.pathname === '/api/version-check' && req.method === 'GET') {
+      try {
+        const versionInfo = await this.checkForUpdates();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(versionInfo));
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
+    // Update endpoint
+    if (url.pathname === '/api/update' && req.method === 'POST') {
+      try {
+        let body = '';
+        req.on('data', chunk => {
+          body += chunk.toString();
+        });
+
+        req.on('end', async () => {
+          const { password } = JSON.parse(body || '{}');
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked'
+          });
+
+          await this.performUpdate(res, password);
+        });
+
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check for updates from GitHub
+   */
+  async checkForUpdates() {
+    try {
+      // Read current version from package.json
+      const packagePath = join(__dirname, '..', 'package.json');
+      const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+      const currentVersion = packageJson.version;
+
+      // Get latest release from GitHub
+      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest');
+      const release = await response.json();
+
+      const latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
+
+      // Compare versions
+      const updateAvailable = this.compareVersions(latestVersion, currentVersion) > 0;
+
+      return {
+        current: currentVersion,
+        latest: latestVersion,
+        updateAvailable,
+        releaseUrl: release.html_url,
+        publishedAt: release.published_at,
+        releaseNotes: release.body || ''
+      };
+    } catch (error) {
+      console.error('❌ Error checking for updates:', error);
+      throw new Error(`Failed to check for updates: ${error.message}`);
+    }
+  }
+
+  /**
+   * Compare two semantic versions
+   * Returns: 1 if a > b, -1 if a < b, 0 if equal
+   */
+  compareVersions(a, b) {
+    const partsA = a.split('.').map(n => parseInt(n) || 0);
+    const partsB = b.split('.').map(n => parseInt(n) || 0);
+
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const numA = partsA[i] || 0;
+      const numB = partsB[i] || 0;
+
+      if (numA > numB) return 1;
+      if (numA < numB) return -1;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Perform system update
+   */
+  async performUpdate(res, sudoPassword) {
+    const { spawn } = await import('child_process');
+
+    const sendProgress = (message) => {
+      res.write(JSON.stringify({ type: 'progress', message }) + '\n');
+    };
+
+    const sendError = (message) => {
+      res.write(JSON.stringify({ type: 'error', message }) + '\n');
+      res.end();
+    };
+
+    const sendSuccess = (message) => {
+      res.write(JSON.stringify({ type: 'success', message }) + '\n');
+      res.end();
+    };
+
+    try {
+      sendProgress('Checking git status...');
+
+      // Navigate to project root
+      const projectRoot = join(__dirname, '..');
+
+      // Step 1: Git pull
+      sendProgress('Pulling latest changes from GitHub...');
+      await new Promise((resolve, reject) => {
+        const gitPull = spawn('git', ['pull', 'origin', 'main'], {
+          cwd: projectRoot,
+          env: process.env
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        gitPull.stdout.on('data', (data) => {
+          stdout += data.toString();
+          sendProgress(`Git: ${data.toString().trim()}`);
+        });
+
+        gitPull.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        gitPull.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Git pull failed: ${stderr}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Step 2: npm install
+      sendProgress('Installing dependencies...');
+      await new Promise((resolve, reject) => {
+        const npmArgs = ['install'];
+        const npmCmd = sudoPassword ? 'sudo' : 'npm';
+        const finalArgs = sudoPassword ? ['-S', 'npm', 'install'] : npmArgs;
+
+        const npmInstall = spawn(npmCmd, finalArgs, {
+          cwd: projectRoot,
+          env: process.env
+        });
+
+        // If using sudo, write password to stdin
+        if (sudoPassword) {
+          npmInstall.stdin.write(sudoPassword + '\n');
+          npmInstall.stdin.end();
+        }
+
+        let stdout = '';
+        let stderr = '';
+
+        npmInstall.stdout.on('data', (data) => {
+          stdout += data.toString();
+          const message = data.toString().trim();
+          if (message) {
+            sendProgress(`npm: ${message}`);
+          }
+        });
+
+        npmInstall.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        npmInstall.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`npm install failed: ${stderr}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Step 3: npm run build
+      sendProgress('Building application...');
+      await new Promise((resolve, reject) => {
+        const npmBuild = spawn('npm', ['run', 'build'], {
+          cwd: projectRoot,
+          env: process.env
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        npmBuild.stdout.on('data', (data) => {
+          stdout += data.toString();
+          const message = data.toString().trim();
+          if (message && !message.includes('vite v')) {
+            sendProgress(`Build: ${message}`);
+          }
+        });
+
+        npmBuild.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        npmBuild.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Build failed: ${stderr}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Step 4: Success
+      sendSuccess('✅ Update completed successfully! Restarting server...');
+
+      // Restart the server (exit process, systemd or pm2 will restart it)
+      setTimeout(() => {
+        process.exit(0);
+      }, 1000);
+
+    } catch (error) {
+      console.error('❌ Update failed:', error);
+      sendError(error.message);
+    }
+  }
+
+  /**
    * Start the HTTP and WebSocket server
    */
   async start() {
@@ -425,7 +670,15 @@ class MeshtasticBridgeServer {
     console.log('📦 Using latest @meshtastic packages from Meshtastic Web monorepo');
 
     // Create HTTP server for static files
-    const httpServer = createServer((req, res) => {
+    const httpServer = createServer(async (req, res) => {
+      // Handle API routes
+      if (req.url.startsWith('/api/')) {
+        const apiHandled = await this.handleApiRequest(req, res);
+        if (apiHandled) {
+          return;
+        }
+      }
+
       // Serve static files from dist/
       const staticFileServed = this.serveStaticFile(req, res);
       if (!staticFileServed) {
