@@ -43,11 +43,12 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
 
   // Sync channels with radio's channel data whenever radio changes or channels are updated
   useEffect(() => {
-    if (selectedRadio && selectedRadio.channels) {
+    if (selectedRadio?.channels) {
+      const radioChannels = selectedRadio.channels;
       setChannels(prevChannels => {
         const updatedChannels: Record<number, ChannelFormData> = { ...prevChannels };
 
-        selectedRadio.channels.forEach(channel => {
+        radioChannels.forEach(channel => {
           try {
             const pskBase64 = channel.settings.psk
               ? btoa(String.fromCharCode(...channel.settings.psk))
