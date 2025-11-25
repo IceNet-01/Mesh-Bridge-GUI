@@ -105,6 +105,40 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPage
     }));
   };
 
+  const generateKey = (channelIndex: number) => {
+    // Generate cryptographically secure random 32-byte AES-256 key
+    const pskBytes = new Uint8Array(32);
+    crypto.getRandomValues(pskBytes);
+    const pskBase64 = btoa(String.fromCharCode(...pskBytes));
+
+    updateChannel(channelIndex, { pskBase64 });
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      // Could add a toast notification here in the future
+      console.log('Copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      alert('Failed to copy to clipboard');
+    }
+  };
+
+  const validatePskLength = (pskBase64: string): { valid: boolean; length: number } => {
+    if (!pskBase64) return { valid: true, length: 0 }; // Empty is valid (uses default)
+
+    try {
+      const binaryString = atob(pskBase64);
+      return {
+        valid: binaryString.length === 32,
+        length: binaryString.length,
+      };
+    } catch {
+      return { valid: false, length: 0 };
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -214,15 +248,45 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel }: RadioConfigPage
                       {/* PSK */}
                       <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1">
-                          PSK (Base64)
+                          PSK (Base64) - AES-256 Encryption Key
                         </label>
-                        <input
-                          type="text"
-                          value={channels[index]?.pskBase64 || ''}
-                          onChange={(e) => updateChannel(index, { pskBase64: e.target.value })}
-                          placeholder="AQ=="
-                          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-primary-500"
-                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={channels[index]?.pskBase64 || ''}
+                            onChange={(e) => updateChannel(index, { pskBase64: e.target.value })}
+                            placeholder="AQ=="
+                            className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-primary-500"
+                          />
+                          <button
+                            onClick={() => generateKey(index)}
+                            className="btn-secondary text-xs py-2 px-3 whitespace-nowrap"
+                            title="Generate random 32-byte AES-256 key"
+                          >
+                            🔑 Generate
+                          </button>
+                          {channels[index]?.pskBase64 && (
+                            <button
+                              onClick={() => copyToClipboard(channels[index].pskBase64)}
+                              className="btn-secondary text-xs py-2 px-3"
+                              title="Copy to clipboard"
+                            >
+                              📋
+                            </button>
+                          )}
+                        </div>
+                        {channels[index]?.pskBase64 && (() => {
+                          const validation = validatePskLength(channels[index].pskBase64);
+                          return (
+                            <p className={`text-xs mt-1 ${validation.valid ? 'text-green-400' : 'text-yellow-400'}`}>
+                              {validation.length > 0
+                                ? validation.valid
+                                  ? `✓ Valid AES-256 key (${validation.length} bytes)`
+                                  : `⚠ Key is ${validation.length} bytes (expected 32 bytes for AES-256)`
+                                : '⚠ Invalid Base64 format'}
+                            </p>
+                          );
+                        })()}
                       </div>
 
                       {/* Role */}
