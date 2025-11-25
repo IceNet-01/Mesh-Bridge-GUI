@@ -494,6 +494,88 @@ class MeshtasticBridgeServer {
       }
     }
 
+    // Ollama status endpoint
+    if (url.pathname === '/api/ollama/status' && req.method === 'GET') {
+      try {
+        const status = await this.checkOllamaStatus();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(status));
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
+    // Ollama install endpoint
+    if (url.pathname === '/api/ollama/install' && req.method === 'POST') {
+      try {
+        let body = '';
+        req.on('data', chunk => {
+          body += chunk.toString();
+        });
+
+        req.on('end', async () => {
+          const { password } = JSON.parse(body || '{}');
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked'
+          });
+
+          await this.installOllama(res, password);
+        });
+
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
+    // Ollama list models endpoint
+    if (url.pathname === '/api/ollama/models' && req.method === 'GET') {
+      try {
+        const models = await this.listOllamaModels();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(models));
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
+    // Ollama pull model endpoint
+    if (url.pathname === '/api/ollama/pull-model' && req.method === 'POST') {
+      try {
+        let body = '';
+        req.on('data', chunk => {
+          body += chunk.toString();
+        });
+
+        req.on('end', async () => {
+          const { model } = JSON.parse(body || '{}');
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Transfer-Encoding': 'chunked'
+          });
+
+          await this.pullOllamaModel(res, model);
+        });
+
+        return true;
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -710,6 +792,238 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error('❌ Update failed:', error);
+      sendError(error.message);
+    }
+  }
+
+  /**
+   * Check Ollama installation and running status
+   */
+  async checkOllamaStatus() {
+    const { spawn } = await import('child_process');
+
+    return new Promise((resolve) => {
+      // Check if ollama command exists
+      const which = spawn('which', ['ollama']);
+      let whichOutput = '';
+
+      which.stdout.on('data', (data) => {
+        whichOutput += data.toString();
+      });
+
+      which.on('close', async (code) => {
+        const installed = code === 0;
+
+        if (!installed) {
+          resolve({
+            installed: false,
+            running: false,
+            version: null,
+            models: []
+          });
+          return;
+        }
+
+        // Check if Ollama is running by trying to connect to API
+        try {
+          const response = await fetch('http://localhost:11434/api/tags');
+          const data = await response.json();
+
+          // Get version
+          let version = null;
+          try {
+            const versionProc = spawn('ollama', ['--version']);
+            let versionOutput = '';
+            versionProc.stdout.on('data', (data) => {
+              versionOutput += data.toString();
+            });
+            await new Promise((res) => versionProc.on('close', res));
+            version = versionOutput.trim();
+          } catch (e) {
+            // Ignore version fetch errors
+          }
+
+          resolve({
+            installed: true,
+            running: true,
+            version,
+            models: data.models || []
+          });
+        } catch (error) {
+          // Ollama installed but not running
+          resolve({
+            installed: true,
+            running: false,
+            version: null,
+            models: []
+          });
+        }
+      });
+    });
+  }
+
+  /**
+   * Install Ollama
+   */
+  async installOllama(res, sudoPassword) {
+    const { spawn } = await import('child_process');
+
+    const sendProgress = (message) => {
+      res.write(JSON.stringify({ type: 'progress', message }) + '\n');
+    };
+
+    const sendError = (message) => {
+      res.write(JSON.stringify({ type: 'error', message }) + '\n');
+      res.end();
+    };
+
+    const sendSuccess = (message) => {
+      res.write(JSON.stringify({ type: 'success', message }) + '\n');
+      res.end();
+    };
+
+    try {
+      sendProgress('Starting Ollama installation...');
+
+      // Download and run the install script
+      await new Promise((resolve, reject) => {
+        const curlCmd = 'curl -fsSL https://ollama.com/install.sh | sh';
+        const shellCmd = sudoPassword ? 'sudo' : 'sh';
+        const shellArgs = sudoPassword ? ['-S', 'sh', '-c', curlCmd] : ['-c', curlCmd];
+
+        sendProgress('Downloading Ollama installer...');
+
+        const install = spawn(shellCmd, shellArgs, {
+          shell: true,
+          env: process.env
+        });
+
+        // If using sudo, write password to stdin
+        if (sudoPassword) {
+          install.stdin.write(sudoPassword + '\n');
+          install.stdin.end();
+        }
+
+        let stdout = '';
+        let stderr = '';
+
+        install.stdout.on('data', (data) => {
+          stdout += data.toString();
+          const message = data.toString().trim();
+          if (message) {
+            sendProgress(message);
+          }
+        });
+
+        install.stderr.on('data', (data) => {
+          stderr += data.toString();
+          const message = data.toString().trim();
+          if (message && !message.includes('password')) {
+            sendProgress(message);
+          }
+        });
+
+        install.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Installation failed: ${stderr}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      sendProgress('Ollama installed successfully!');
+      sendProgress('Starting Ollama service...');
+
+      // Try to start ollama serve in the background
+      spawn('nohup', ['ollama', 'serve', '&'], {
+        detached: true,
+        stdio: 'ignore'
+      }).unref();
+
+      sendSuccess('Ollama installation complete! The service has been started.');
+
+    } catch (error) {
+      console.error('❌ Ollama installation failed:', error);
+      sendError(error.message);
+    }
+  }
+
+  /**
+   * List installed Ollama models
+   */
+  async listOllamaModels() {
+    try {
+      const response = await fetch('http://localhost:11434/api/tags');
+      if (!response.ok) {
+        throw new Error('Ollama is not running');
+      }
+      const data = await response.json();
+      return { models: data.models || [] };
+    } catch (error) {
+      throw new Error(`Failed to list models: ${error.message}`);
+    }
+  }
+
+  /**
+   * Pull an Ollama model
+   */
+  async pullOllamaModel(res, modelName) {
+    const { spawn } = await import('child_process');
+
+    const sendProgress = (message) => {
+      res.write(JSON.stringify({ type: 'progress', message }) + '\n');
+    };
+
+    const sendError = (message) => {
+      res.write(JSON.stringify({ type: 'error', message }) + '\n');
+      res.end();
+    };
+
+    const sendSuccess = (message) => {
+      res.write(JSON.stringify({ type: 'success', message }) + '\n');
+      res.end();
+    };
+
+    try {
+      sendProgress(`Pulling model: ${modelName}...`);
+      sendProgress('This may take several minutes depending on model size...');
+
+      await new Promise((resolve, reject) => {
+        const pull = spawn('ollama', ['pull', modelName]);
+
+        let stdout = '';
+        let stderr = '';
+
+        pull.stdout.on('data', (data) => {
+          stdout += data.toString();
+          const message = data.toString().trim();
+          if (message) {
+            sendProgress(message);
+          }
+        });
+
+        pull.stderr.on('data', (data) => {
+          stderr += data.toString();
+          const message = data.toString().trim();
+          if (message) {
+            sendProgress(message);
+          }
+        });
+
+        pull.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Failed to pull model: ${stderr || 'Unknown error'}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      sendSuccess(`Model ${modelName} pulled successfully!`);
+
+    } catch (error) {
+      console.error('❌ Model pull failed:', error);
       sendError(error.message);
     }
   }

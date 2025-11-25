@@ -17,6 +17,7 @@ export type Tab =
   | 'update'
   | 'portexclusion'
   | 'publicchannel'
+  | 'ollama'
   | 'ai'
   | 'communication'
   | 'mqtt'
