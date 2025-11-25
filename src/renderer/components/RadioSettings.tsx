@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Radio } from '../types';
+import { useStore } from '../store/useStore';
 
 interface RadioSettingsProps {
   radioId: string;
@@ -540,6 +541,52 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
   void detectionSensorModuleConfig; void setDetectionSensorModuleConfig;
   void paxcounterModuleConfig; void setPaxcounterModuleConfig;
   void ambientLightingModuleConfig; void setAmbientLightingModuleConfig;
+
+  // Get WebSocketManager instance
+  const manager = useStore(state => state.manager);
+
+  // Listen for config responses from radio
+  useEffect(() => {
+    const handleConfigReceived = ({ radioId: receivedRadioId, configType, config }: any) => {
+      // Only process if it's for our radio
+      if (receivedRadioId !== radioId) return;
+
+      console.log(`[RadioSettings] 📦 Config received for ${configType}:`, config);
+
+      // Update the appropriate config state based on type
+      switch (configType.toLowerCase()) {
+        case 'lora':
+          setLoraConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'device':
+          setDeviceConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'position':
+          setPositionConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'power':
+          setPowerConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'network':
+          setNetworkConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'display':
+          setDisplayConfig(prev => ({ ...prev, ...config }));
+          break;
+        case 'bluetooth':
+          setBluetoothConfig(prev => ({ ...prev, ...config }));
+          break;
+      }
+    };
+
+    // Subscribe to config received events
+    manager.on('radio-config-received', handleConfigReceived);
+
+    // Cleanup on unmount
+    return () => {
+      manager.off('radio-config-received', handleConfigReceived);
+    };
+  }, [radioId, manager]);
 
   // Auto-populate LoRa config from radio data when it loads
   useEffect(() => {
