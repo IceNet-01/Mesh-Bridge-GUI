@@ -100,8 +100,8 @@ class MeshtasticBridgeServer {
     // Enabled commands list - remove any you don't want
     this.enabledCommands = [
       'ping', 'help', 'status', 'time', 'uptime', 'version',
-      'weather', 'radios', 'channels', 'stats', 'nodes', 'ai', 'ask',
-      'email', 'discord', 'notify'
+      'weather', 'forecast', 'alerts', 'nws', 'radios', 'channels',
+      'stats', 'nodes', 'ai', 'ask', 'email', 'discord', 'notify'
     ];
 
     // ===== AI ASSISTANT CONFIGURATION =====
