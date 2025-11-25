@@ -261,24 +261,14 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to ALL mesh packets
+    // Subscribe to ALL mesh packets (reduced logging for performance)
     this.device.events.onMeshPacket.subscribe((packet) => {
-      const nodeId = this.normalizeNodeId(packet.from);
-
-      // Portnum 3 = TEXT_MESSAGE_APP, 4 = POSITION_APP, 7 = NODEINFO_APP,
-      // 67 = TELEMETRY_APP, 71 = RANGE_TEST_APP, etc.
-      const portnumName = packet.decoded?.portnum === 3 ? 'TEXT' :
-                         packet.decoded?.portnum === 4 ? 'POSITION' :
-                         packet.decoded?.portnum === 7 ? 'NODEINFO' :
-                         packet.decoded?.portnum === 67 ? 'TELEMETRY' :
-                         packet.decoded?.portnum;
-
-      console.log(`[Meshtastic] 📦 MeshPacket from ${nodeId}: portnum=${portnumName} (${packet.decoded?.portnum}), channel=${packet.channel}, variant=${packet.decoded?.payloadVariant?.case}`);
-
-      // Log FULL packet data for telemetry packets
-      if (packet.decoded?.portnum === 67) {
-        console.log(`[Meshtastic] 🌡️ TELEMETRY MeshPacket full data:`, JSON.stringify(packet, null, 2));
+      // Only log text messages for debugging, suppress telemetry/position spam
+      if (packet.decoded?.portnum === 3) { // TEXT_MESSAGE_APP
+        const nodeId = this.normalizeNodeId(packet.from);
+        console.log(`[Meshtastic] 📦 Text message from ${nodeId} on channel ${packet.channel}`);
       }
+      // All other packet types are handled silently by their specific event handlers
     });
 
     // Subscribe to message packets
@@ -419,7 +409,6 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to position packets
     this.device.events.onPositionPacket.subscribe((positionPacket) => {
-      console.log(`[Meshtastic] Position packet:`, positionPacket);
       try {
         // If this is from our own radio and has GPS time, update radio time (silent)
         if (this.myNodeNum && positionPacket.from === this.myNodeNum && positionPacket.data?.time) {
@@ -451,11 +440,6 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to telemetry packets (device metrics)
     this.device.events.onTelemetryPacket.subscribe((telemetryPacket) => {
-      const nodeId = this.normalizeNodeId(telemetryPacket.from);
-      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
-      console.log(`[Meshtastic] 📊 TELEMETRY PACKET from ${nodeId} (num: ${telemetryPacket.from})`);
-      console.log(`[Meshtastic] 📊 ═══════════════════════════════════════════════════════════════`);
-
       try {
         // If this is from our own radio, update radio time (silent)
         if (this.myNodeNum && telemetryPacket.from === this.myNodeNum) {
@@ -464,27 +448,17 @@ export class MeshtasticProtocol extends BaseProtocol {
           this.radioTimeUpdated = new Date();
         }
 
-        // Log the COMPLETE telemetry packet structure
-        console.log(`[Meshtastic] 🔍 FULL TelemetryPacket structure:`, JSON.stringify(telemetryPacket, null, 2));
-
         const data = telemetryPacket.data;
         const update = {};
 
-        // The telemetry data uses a variant (discriminated union) pattern
-        // data.variant.case tells us which type of telemetry
-        // data.variant.value contains the actual metrics
-        console.log(`[Meshtastic] 📊 Telemetry variant type: ${data.variant?.case || 'none'}`);
-
         if (!data.variant || !data.variant.case) {
-          console.warn(`[Meshtastic] ⚠️ Telemetry packet has no variant data`);
-          return;
+          return; // Skip packets without variant data
         }
 
         // Handle different telemetry types based on variant.case
         switch (data.variant.case) {
           case 'deviceMetrics': {
             const metrics = data.variant.value;
-            console.log(`[Meshtastic] 🔋 Device metrics:`, metrics);
             update.batteryLevel = metrics.batteryLevel;
             update.voltage = metrics.voltage;
             update.channelUtilization = metrics.channelUtilization;
@@ -495,29 +469,16 @@ export class MeshtasticProtocol extends BaseProtocol {
 
           case 'environmentMetrics': {
             const metrics = data.variant.value;
-            console.log(`[Meshtastic] 🌡️ Environment metrics raw:`, metrics);
-            console.log(`[Meshtastic] 🌡️ Environment metrics keys:`, Object.keys(metrics));
-
-            // Extract environmental data (supports both camelCase and snake_case)
             update.temperature = metrics.temperature;
             update.humidity = metrics.relativeHumidity || metrics.relative_humidity;
             update.pressure = metrics.barometricPressure || metrics.barometric_pressure;
             update.gasResistance = metrics.gasResistance || metrics.gas_resistance;
             update.iaq = metrics.iaq;
-
-            console.log(`[Meshtastic] 🌡️ Extracted environmental values:`, {
-              temperature: update.temperature,
-              humidity: update.humidity,
-              pressure: update.pressure,
-              gasResistance: update.gasResistance,
-              iaq: update.iaq
-            });
             break;
           }
 
           case 'powerMetrics': {
             const metrics = data.variant.value;
-            console.log(`[Meshtastic] ⚡ Power metrics:`, metrics);
             update.ch1Voltage = metrics.ch1Voltage;
             update.ch1Current = metrics.ch1Current;
             update.ch2Voltage = metrics.ch2Voltage;
@@ -529,7 +490,6 @@ export class MeshtasticProtocol extends BaseProtocol {
 
           case 'airQualityMetrics': {
             const metrics = data.variant.value;
-            console.log(`[Meshtastic] 💨 Air quality metrics:`, metrics);
             update.pm10Standard = metrics.pm10Standard;
             update.pm25Standard = metrics.pm25Standard;
             update.pm100Standard = metrics.pm100Standard;
@@ -537,29 +497,19 @@ export class MeshtasticProtocol extends BaseProtocol {
           }
 
           case 'localStats': {
-            const metrics = data.variant.value;
-            console.log(`[Meshtastic] 📊 Local stats:`, metrics);
-            // Can add local stats handling here if needed
+            // Local stats - can add handling if needed
             break;
           }
 
           default:
-            console.warn(`[Meshtastic] ⚠️ Unknown telemetry variant type: ${data.variant.case}`);
+            // Unknown telemetry type - skip silently
+            return;
         }
 
         // Update catalog with telemetry data
         const catalogedNode = this.updateNodeCatalog(telemetryPacket.from, update, 'TelemetryPacket');
 
-        // Log what telemetry data we're emitting
         if (catalogedNode) {
-          const telemetryDetails = [];
-          if (catalogedNode.batteryLevel !== undefined) telemetryDetails.push(`Battery: ${catalogedNode.batteryLevel}%`);
-          if (catalogedNode.voltage !== undefined) telemetryDetails.push(`Voltage: ${catalogedNode.voltage}V`);
-          if (catalogedNode.temperature !== undefined) telemetryDetails.push(`Temp: ${catalogedNode.temperature}°C`);
-          if (catalogedNode.humidity !== undefined) telemetryDetails.push(`Humidity: ${catalogedNode.humidity}%`);
-          if (catalogedNode.pressure !== undefined) telemetryDetails.push(`Pressure: ${catalogedNode.pressure}hPa`);
-          console.log(`[Meshtastic] ✅ Catalog updated for ${catalogedNode.longName} (${nodeId}): ${telemetryDetails.join(', ')}`);
-
           this.emit('node', catalogedNode);
         }
       } catch (error) {
@@ -569,7 +519,6 @@ export class MeshtasticProtocol extends BaseProtocol {
 
     // Subscribe to user packets (for node name/info updates)
     this.device.events.onUserPacket.subscribe((userPacket) => {
-      console.log(`[Meshtastic] User packet:`, userPacket);
       try {
         if (userPacket.data) {
           const update = {
@@ -588,18 +537,17 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to routing packets (for neighbor info)
+    // Subscribe to routing packets (for neighbor info) - silently processed
     this.device.events.onRoutingPacket.subscribe((routingPacket) => {
-      console.log(`[Meshtastic] Routing packet:`, routingPacket);
       // Routing packets contain neighbor info - could be used for mesh topology
+      // Processed silently to reduce log spam
     });
 
     // Subscribe to waypoint packets
     this.device.events.onWaypointPacket.subscribe((waypointPacket) => {
-      console.log(`[Meshtastic] Waypoint packet:`, waypointPacket);
       // Check if this is an emergency/SOS waypoint (icon 16 = SOS)
       if (waypointPacket.data?.icon === 16) {
-        console.log(`🚨 EMERGENCY/SOS waypoint detected!`);
+        console.log(`🚨 EMERGENCY/SOS waypoint detected from node ${waypointPacket.from}!`);
         this.emit('emergency', {
           from: waypointPacket.from,
           waypoint: waypointPacket.data
@@ -680,57 +628,39 @@ export class MeshtasticProtocol extends BaseProtocol {
       const maxRetries = 5;
       const retryDelay = Math.min(500 * Math.pow(2, retryCount), 5000); // Exponential backoff, max 5s
 
-      console.log(`[Meshtastic] 🔍 fetchAndEmitDeviceInfo called (attempt ${retryCount + 1}/${maxRetries + 1})`);
-      console.log(`[Meshtastic] Device state:`, {
-        hasDevice: !!this.device,
-        deviceNodeNum: this.device?.nodeNum,
-        myNodeNum: this.myNodeNum,
-        catalogSize: this.nodeCatalog.size
-      });
+      // Only log on first attempt to reduce spam
+      if (retryCount === 0) {
+        console.log(`[Meshtastic] 🔍 Fetching device info from catalog...`);
+      }
 
-      // Check if we have device.nodeNum (our radio's node number)
-      if (this.device && this.device.nodeNum) {
-        console.log(`[Meshtastic] ✅ device.nodeNum exists: ${this.device.nodeNum}`);
-
-        // Store our node number for loop prevention
-        this.myNodeNum = this.device.nodeNum;
-
-        // Try to get node info from our catalog first
-        const myNode = this.nodeCatalog.get(this.device.nodeNum);
+      // Check if we have myNodeNum (set by onMyNodeInfo event)
+      // Note: device.nodeNum does NOT exist in @meshtastic/core - we use this.myNodeNum instead
+      if (this.myNodeNum) {
+        // Try to get node info from our catalog
+        const myNode = this.nodeCatalog.get(this.myNodeNum);
 
         if (myNode && myNode.longName) {
           const nodeInfo = {
-            nodeId: this.normalizeNodeId(this.device.nodeNum),
+            nodeId: this.normalizeNodeId(this.myNodeNum),
             longName: myNode.longName,
             shortName: myNode.shortName || '????',
             hwModel: myNode.hwModel || 'Unknown'
           };
-          console.log(`[Meshtastic] 🎯 Calling updateNodeInfo with:`, nodeInfo);
           this.updateNodeInfo(nodeInfo);
-          console.log(`[Meshtastic] ✅ Node info fetched from catalog successfully`);
-        } else {
-          console.log(`[Meshtastic] ⏳ My node not in catalog yet (will be populated by events)`);
-
-          // Retry with exponential backoff if we haven't exceeded max retries
-          if (retryCount < maxRetries) {
-            console.log(`[Meshtastic] ⏳ Retrying device info fetch in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
-            setTimeout(() => {
-              this.fetchAndEmitDeviceInfo(retryCount + 1);
-            }, retryDelay);
-            return; // Exit early, will retry
-          } else {
-            console.log(`[Meshtastic] ⚠️  Max retries reached, node info will be set when NodeInfoPacket arrives`);
-          }
+          console.log(`[Meshtastic] ✅ Device info ready: ${myNode.longName} (${nodeInfo.nodeId})`);
+        } else if (retryCount < maxRetries) {
+          // Node number set but catalog not populated yet, retry
+          setTimeout(() => {
+            this.fetchAndEmitDeviceInfo(retryCount + 1);
+          }, retryDelay);
+          return;
         }
       } else if (retryCount < maxRetries) {
-        // device.nodeNum not ready yet, retry
-        console.log(`[Meshtastic] ⏳ device.nodeNum not ready, retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+        // myNodeNum not set yet (onMyNodeInfo hasn't fired), retry
         setTimeout(() => {
           this.fetchAndEmitDeviceInfo(retryCount + 1);
         }, retryDelay);
-        return; // Exit early, will retry
-      } else {
-        console.log(`[Meshtastic] ⚠️  device.nodeNum never became ready after ${maxRetries} retries`);
+        return;
       }
 
       // Get channels from device
@@ -796,34 +726,13 @@ export class MeshtasticProtocol extends BaseProtocol {
   scanAndEmitNodes() {
     try {
       if (this.nodeCatalog.size === 0) {
-        console.log(`[Meshtastic] 🔍 Node scan skipped - catalog empty (nodes will be added via events)`);
-        return;
+        return; // Skip silently if catalog empty
       }
 
-      console.log(`[Meshtastic] 🔍 Scanning ${this.nodeCatalog.size} nodes in catalog...`);
-      let emittedCount = 0;
-
-      this.nodeCatalog.forEach((node, nodeNum) => {
-        const nodeId = this.normalizeNodeId(nodeNum);
-
-        console.log(`[Meshtastic] 🔍 Node ${nodeId}:`, {
-          longName: node.longName,
-          shortName: node.shortName,
-          hwModel: node.hwModel,
-          hasPosition: !!(node.position?.latitude),
-          temperature: node.temperature,
-          humidity: node.humidity,
-          pressure: node.pressure,
-          batteryLevel: node.batteryLevel,
-          lastHeard: node.lastHeard
-        });
-
-        // Emit the cataloged node (silent)
+      // Silently emit all nodes to keep clients updated
+      this.nodeCatalog.forEach((node) => {
         this.emit('node', node);
-        emittedCount++;
       });
-
-      // Node scan complete (silent - ${emittedCount} nodes)
     } catch (error) {
       console.error('[Meshtastic] Error scanning nodes:', error);
     }
