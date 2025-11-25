@@ -923,18 +923,18 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
 
-      // Send to radio and request response
+      // Send to radio - response will come via onChannelPacket event
       console.log(`[Channel Config] 📡 Sending get channel request...`);
       const packetId = await this.device.sendPacket(
         adminBytes,
         Protobuf.Portnums.PortNum.ADMIN_APP,
         'self',
         0,
-        true,   // wantAck
-        true    // wantResponse - we need the channel config back
+        false,  // wantAck - don't wait for ACK to avoid timeout
+        false   // wantResponse - response comes via onChannelPacket event
       );
 
-      console.log(`[Channel Config] ✅ Request sent, packet ID: ${packetId}`);
+      console.log(`[Channel Config] ✅ Request sent, packet ID: ${packetId}, waiting for response via onChannelPacket event`);
 
       // Note: Response will come via onChannelPacket event
       return { success: true, packetId };
@@ -1096,20 +1096,20 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       console.log(`[Radio Config] 🔧 Serialized to ${adminBytes.length} bytes`);
 
-      // Send to radio and request response
+      // Send to radio - response will come via onConfigPacket event
       console.log(`[Radio Config] 📡 Sending get config request...`);
       const packetId = await this.device.sendPacket(
         adminBytes,
         Protobuf.Portnums.PortNum.ADMIN_APP,
         'self',
         0,
-        true,   // wantAck
-        true    // wantResponse - we need the config back
+        false,  // wantAck - don't wait for ACK to avoid timeout
+        false   // wantResponse - response comes via onConfigPacket event
       );
 
-      console.log(`[Radio Config] ✅ Request sent, packet ID: ${packetId}`);
+      console.log(`[Radio Config] ✅ Request sent, packet ID: ${packetId}, waiting for response via onConfigPacket event`);
 
-      // Note: Response will come via admin message handler
+      // Note: Response will come via onConfigPacket event handler
       return { success: true, packetId };
     } catch (error) {
       console.error('[Radio Config] ❌ Error getting config:', error);
