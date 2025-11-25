@@ -16,6 +16,7 @@ export type Tab =
   | 'server'
   | 'update'
   | 'portexclusion'
+  | 'publicchannel'
   | 'ai'
   | 'communication'
   | 'mqtt'

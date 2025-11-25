@@ -175,6 +175,13 @@ class MeshtasticBridgeServer {
     // Useful for: Reserving ports for other applications, preventing accidental connections
     this.excludedPorts = [];                   // Array of port paths to exclude (e.g., ['/dev/ttyUSB0'])
 
+    // ===== PUBLIC CHANNEL CONFIGURATION =====
+    // Disable all bridge features on the default public channel (PSK: AQ==)
+    // When enabled: Only private/custom channels will be bridged
+    // Use case: Keep bridge functionality private, avoid public mesh activity
+    this.disablePublicChannel = false;         // Disable forwarding/commands on default public channel
+    this.publicChannelPSK = 'AQ==';            // Default Meshtastic public channel PSK (base64 for 0x01)
+
     // ===== CONSOLE OUTPUT CAPTURE =====
     // Capture all console output and broadcast to WebSocket clients for raw log viewing
     this.consoleBuffer = [];                   // Buffer for raw console output
@@ -225,6 +232,7 @@ class MeshtasticBridgeServer {
       console.log(`   MQTT broker: ${this.mqttBrokerUrl}`);
       console.log(`   MQTT topic prefix: ${this.mqttTopicPrefix}`);
     }
+    console.log(`   Public channel (AQ==): ${this.disablePublicChannel ? 'DISABLED (private only)' : 'ENABLED'}`);
     console.log('');
   }
 
@@ -371,6 +379,12 @@ class MeshtasticBridgeServer {
             console.log(`   Excluded: ${this.excludedPorts.join(', ')}`);
           }
         }
+
+        // Load Public Channel configuration
+        if (config.disablePublicChannel !== undefined) {
+          this.disablePublicChannel = config.disablePublicChannel;
+          console.log(`📋 Loaded public channel config: ${this.disablePublicChannel ? 'DISABLED (private only)' : 'ENABLED'}`);
+        }
       }
     } catch (error) {
       console.error('⚠️  Error loading config file:', error.message);
@@ -422,7 +436,8 @@ class MeshtasticBridgeServer {
           targetRadios: this.adBotTargetRadios,
           channel: this.adBotChannel
         },
-        excludedPorts: this.excludedPorts
+        excludedPorts: this.excludedPorts,
+        disablePublicChannel: this.disablePublicChannel
       };
 
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
@@ -493,21 +508,43 @@ class MeshtasticBridgeServer {
       const currentVersion = packageJson.version;
 
       // Get latest release from GitHub
-      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest');
+      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest', {
+        headers: {
+          'User-Agent': 'Meshtastic-Bridge-GUI'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
+      }
+
       const release = await response.json();
 
-      const latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
+      if (release.message) {
+        // GitHub API error (e.g., rate limit, not found)
+        throw new Error(`GitHub API error: ${release.message}`);
+      }
+
+      // Parse version, removing 'v' prefix and any suffix like '-alpha'
+      let latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
+
+      // Remove any suffix like '-alpha', '-beta', etc.
+      latestVersion = latestVersion.split('-')[0];
+
+      // Normalize current version (remove leading 0. if present for comparison)
+      const normalizedCurrent = currentVersion.startsWith('0.') ? currentVersion.substring(2) : currentVersion;
+      const normalizedLatest = latestVersion.startsWith('0.') ? latestVersion.substring(2) : latestVersion;
 
       // Compare versions
-      const updateAvailable = this.compareVersions(latestVersion, currentVersion) > 0;
+      const updateAvailable = this.compareVersions(normalizedLatest, normalizedCurrent) > 0;
 
       return {
         current: currentVersion,
-        latest: latestVersion,
+        latest: release.tag_name || latestVersion,
         updateAvailable,
         releaseUrl: release.html_url,
         publishedAt: release.published_at,
-        releaseNotes: release.body || ''
+        releaseNotes: release.body || 'No release notes available.'
       };
     } catch (error) {
       console.error('❌ Error checking for updates:', error);
@@ -1068,6 +1105,15 @@ class MeshtasticBridgeServer {
           await this.getExcludedPorts(ws);
           break;
 
+        // Public Channel Management
+        case 'config-get-public-channel':
+          await this.getPublicChannelConfig(ws);
+          break;
+
+        case 'config-set-public-channel':
+          await this.setPublicChannelConfig(ws, message.disabled);
+          break;
+
         default:
           ws.send(JSON.stringify({
             type: 'error',
@@ -1445,6 +1491,12 @@ class MeshtasticBridgeServer {
         if (port.path.match(/\/dev\/ttyS\d+$/)) {
           return false;
         }
+
+        // Exclude user-configured excluded ports
+        if (this.excludedPorts.includes(port.path)) {
+          return false;
+        }
+
         return (
           port.path.includes('USB') ||
           port.path.includes('ACM') ||
@@ -1631,6 +1683,24 @@ class MeshtasticBridgeServer {
    * Handle message packets from radio (protocol-agnostic)
    * Packet is normalized by protocol handler
    */
+  /**
+   * Check if a channel is the default public channel (PSK: AQ==)
+   */
+  isPublicChannel(radioId, channelIndex) {
+    const radio = this.radios.get(radioId);
+    if (!radio || !radio.channels) {
+      return false;
+    }
+
+    const channel = radio.channels.get(channelIndex);
+    if (!channel) {
+      return false;
+    }
+
+    // Check if channel PSK matches the default public channel PSK
+    return channel.psk === this.publicChannelPSK;
+  }
+
   handleMessagePacket(radioId, portPath, packet, protocol) {
     try {
       console.log(`📨 Message packet from ${radioId} (${protocol}):`, {
@@ -1651,6 +1721,39 @@ class MeshtasticBridgeServer {
       const text = packet.text;
 
       if (text && typeof text === 'string' && text.length > 0) {
+        // ===== PUBLIC CHANNEL FILTER =====
+        // Check if this is on the default public channel and public channel is disabled
+        if (this.disablePublicChannel && this.isPublicChannel(radioId, packet.channel)) {
+          console.log(`🚫 Public channel disabled - ignoring message on channel ${packet.channel} (PSK: AQ==)`);
+          // Still store in message history for GUI visibility, but don't process/forward
+          const message = {
+            id: packet.id || `msg-${Date.now()}`,
+            timestamp: new Date(),
+            from: packet.from,
+            to: packet.to,
+            channel: packet.channel || 0,
+            text: text,
+            radioId: radioId,
+            portPath: portPath,
+            protocol: protocol,
+            type: packet.type,
+            forwarded: false,
+            blocked: true // Mark as blocked for UI indication
+          };
+
+          this.messageHistory.push(message);
+          if (this.messageHistory.length > this.maxHistorySize) {
+            this.messageHistory.shift();
+          }
+
+          this.broadcast({
+            type: 'message',
+            message: message
+          });
+
+          return; // Don't process or forward
+        }
+
         // ===== COMMAND DETECTION =====
         // Check if this is a command (starts with command prefix)
         if (this.commandsEnabled && text.trim().startsWith(this.commandPrefix)) {
@@ -4689,6 +4792,60 @@ class MeshtasticBridgeServer {
       console.error('❌ Failed to get excluded ports:', error);
       ws.send(JSON.stringify({
         type: 'error',
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * ===== PUBLIC CHANNEL MANAGEMENT =====
+   */
+
+  /**
+   * Get public channel configuration
+   */
+  async getPublicChannelConfig(ws) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'public-channel-config',
+        disablePublicChannel: this.disablePublicChannel,
+        publicChannelPSK: this.publicChannelPSK
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get public channel config:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Set public channel enabled/disabled
+   */
+  async setPublicChannelConfig(ws, disabled) {
+    try {
+      this.disablePublicChannel = disabled;
+      this.saveConfig();
+
+      console.log(`${disabled ? '🚫' : '✅'} Public channel (AQ==): ${disabled ? 'DISABLED (private only)' : 'ENABLED'}`);
+
+      ws.send(JSON.stringify({
+        type: 'public-channel-config-result',
+        success: true,
+        disablePublicChannel: this.disablePublicChannel
+      }));
+
+      // Broadcast to all clients
+      this.broadcast({
+        type: 'public-channel-config-updated',
+        disablePublicChannel: this.disablePublicChannel
+      });
+    } catch (error) {
+      console.error('❌ Failed to set public channel config:', error);
+      ws.send(JSON.stringify({
+        type: 'public-channel-config-result',
+        success: false,
         error: error.message
       }));
     }
