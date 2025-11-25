@@ -1662,7 +1662,7 @@ class MeshtasticBridgeServer {
       `${this.commandPrefix}version - Software version`,
       `${this.commandPrefix}weather [location] - Current weather`,
       `${this.commandPrefix}forecast [location] - 48-hour forecast`,
-      `${this.commandPrefix}alerts [state] - Get NWS weather alerts`,
+      `${this.commandPrefix}alerts [state|zip] - NWS weather alerts`,
       `${this.commandPrefix}radios - List connected radios`,
       `${this.commandPrefix}channels - List bridge channels`,
       `${this.commandPrefix}stats - Message statistics`,
@@ -1996,21 +1996,59 @@ class MeshtasticBridgeServer {
    */
   async cmdAlerts(args) {
     if (args.length === 0) {
-      return `❌ Please provide a state code or location. Examples:\n` +
-             `  #alerts CA\n` +
-             `  #alerts WA\n` +
-             `  #alerts NY`;
+      return `❌ Provide state code or zip code\nEx: #alerts CA or #alerts 98101`;
     }
 
-    const location = args.join(' ').trim().toUpperCase();
-
-    // Validate state code (2 letters)
-    if (!/^[A-Z]{2}$/.test(location)) {
-      return `❌ Please use a 2-letter state code (e.g., CA, WA, NY)`;
-    }
+    const location = args.join(' ').trim();
 
     try {
-      const url = `https://api.weather.gov/alerts/active?area=${location}`;
+      let url;
+      let locationLabel;
+
+      // Check if input is a 5-digit zip code
+      if (/^\d{5}$/.test(location)) {
+        // Geocode zip code to get coordinates
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${location}&count=1&language=en&format=json`;
+
+        const geoResponse = await fetch(geocodeUrl, {
+          headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!geoResponse.ok) {
+          return `❌ Geocoding error for ${location}`;
+        }
+
+        const geoData = await geoResponse.json();
+
+        if (!geoData.results || geoData.results.length === 0) {
+          return `❌ Zip code not found: ${location}`;
+        }
+
+        const place = geoData.results[0];
+        const lat = place.latitude.toFixed(4);
+        const lon = place.longitude.toFixed(4);
+        locationLabel = location;
+
+        // Use NWS point-based alerts API
+        url = `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
+
+      } else if (/^[A-Z]{2}$/i.test(location)) {
+        // State code (2 letters)
+        const stateCode = location.toUpperCase();
+        locationLabel = stateCode;
+        url = `https://api.weather.gov/alerts/active?area=${stateCode}`;
+
+      } else {
+        return `❌ Use 2-letter state code or 5-digit zip\nEx: #alerts WA or #alerts 98101`;
+      }
+
+      // Fetch alerts from NWS
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
@@ -2020,7 +2058,7 @@ class MeshtasticBridgeServer {
 
       if (!response.ok) {
         if (response.status === 404) {
-          return `❌ Invalid state code: ${location}`;
+          return `❌ Invalid location: ${location}`;
         }
         return `❌ NWS service unavailable (${response.status})`;
       }
@@ -2029,12 +2067,12 @@ class MeshtasticBridgeServer {
       const alerts = data.features || [];
 
       if (alerts.length === 0) {
-        return `✅ No active weather alerts for ${location}`;
+        return `✅ No active alerts for ${locationLabel}`;
       }
 
       // Format top 3 alerts (to fit in message size limit)
       const topAlerts = alerts.slice(0, 3);
-      let message = `🌩️ NWS Alerts for ${location} (${alerts.length}):\n`;
+      let message = `🌩️ NWS Alerts for ${locationLabel} (${alerts.length}):\n`;
 
       topAlerts.forEach((feature, idx) => {
         const props = feature.properties;
@@ -2058,7 +2096,15 @@ class MeshtasticBridgeServer {
 
     } catch (error) {
       console.error('NWS alerts fetch error:', error);
-      return `❌ Couldn't fetch alerts: ${error.message}`;
+
+      // Short error messages for Meshtastic
+      if (error.name === 'AbortError') {
+        return `❌ Request timeout`;
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+        return `❌ Connection timeout`;
+      } else {
+        return `❌ Alert fetch error`;
+      }
     }
   }
 
