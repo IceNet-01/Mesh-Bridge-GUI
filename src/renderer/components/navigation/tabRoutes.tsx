@@ -16,6 +16,7 @@ import { BridgeServerSettings } from '../BridgeServerSettings';
 import { SystemUpdate } from '../SystemUpdate';
 import { PortExclusion } from '../PortExclusion';
 import { PublicChannelSettings } from '../PublicChannelSettings';
+import OllamaInstaller from '../OllamaInstaller';
 import AISettings from '../AISettings';
 import CommunicationSettings from '../CommunicationSettings';
 import MQTTSettings from '../MQTTSettings';
@@ -77,6 +78,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   publicchannel: {
     component: PublicChannelSettings,
+  },
+  ollama: {
+    component: OllamaInstaller,
   },
   ai: {
     component: AISettings,

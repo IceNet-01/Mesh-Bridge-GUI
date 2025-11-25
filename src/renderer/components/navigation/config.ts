@@ -111,6 +111,11 @@ export function getNavigationConfig(
           label: 'System Update'
         },
         {
+          id: 'ollama',
+          icon: 'ai',
+          label: 'Ollama Installer'
+        },
+        {
           id: 'portexclusion',
           icon: 'radio',
           label: 'Port Exclusion'
