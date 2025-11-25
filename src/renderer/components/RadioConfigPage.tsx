@@ -376,7 +376,8 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Warning */}
