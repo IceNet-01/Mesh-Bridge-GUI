@@ -26,6 +26,15 @@ interface LoRaConfig {
   sx126xRxBoostedGain: boolean;
   overrideFrequency: number;
   paFanDisabled: boolean;
+  // Advanced LoRa settings
+  usePreset: boolean;
+  bandwidth: number;
+  spreadFactor: number;
+  codingRate: number;
+  frequencyOffset: number;
+  ignoreIncoming: number[];
+  ignoreMqtt: boolean;
+  configOkToMqtt: boolean;
 }
 
 interface DeviceConfig {
@@ -35,18 +44,28 @@ interface DeviceConfig {
   rebroadcastMode: string;
   nodeInfoBroadcastSecs: number;
   doubleTapAsButtonPress: boolean;
+  // Additional device settings
+  buttonGpio: number;
+  buzzerGpio: number;
+  buzzerMode: string;
+  tzdef: string;
+  ledHeartbeatDisabled: boolean;
 }
 
 interface PositionConfig {
   positionBroadcastSecs: number;
   positionBroadcastSmartEnabled: boolean;
   fixedPosition: boolean;
-  gpsEnabled: boolean;
+  gpsMode: string; // Changed from gpsEnabled to gpsMode enum
   gpsUpdateInterval: number;
   gpsAttemptTime: number;
   positionFlags: number;
   rxGpio: number;
   txGpio: number;
+  // Additional GPS settings
+  gpsEnGpio: number;
+  broadcastSmartMinimumDistance: number;
+  broadcastSmartMinimumIntervalSecs: number;
 }
 
 interface PowerConfig {
@@ -67,6 +86,10 @@ interface NetworkConfig {
   ntpServer: string;
   ethEnabled: boolean;
   addressMode: string;
+  // IPv4 Configuration
+  ipv4Gateway: string;
+  ipv4Subnet: string;
+  ipv4Dns: string;
 }
 
 interface DisplayConfig {
@@ -80,6 +103,10 @@ interface DisplayConfig {
   displaymode: string;
   headingBold: boolean;
   wakeOnTapOrMotion: boolean;
+  // Additional display settings
+  compassOrientation: number;
+  use12hClock: boolean;
+  useLongNodeName: boolean;
 }
 
 interface BluetoothConfig {
@@ -88,15 +115,166 @@ interface BluetoothConfig {
   fixedPin: number;
 }
 
+interface UserConfig {
+  longName: string;
+  shortName: string;
+  isLicensed: boolean;
+  licensedName: string;
+}
+
+interface SecurityConfig {
+  publicKey: string;
+  privateKey: string;
+  adminKey: string[];
+  isManaged: boolean;
+  serialEnabled: boolean;
+  debugLogEnabled: boolean;
+  adminChannelEnabled: boolean;
+}
+
+// Module Configurations
+interface MQTTConfig {
+  enabled: boolean;
+  address: string;
+  username: string;
+  password: string;
+  encryptionEnabled: boolean;
+  jsonEnabled: boolean;
+  tlsEnabled: boolean;
+  root: string;
+  proxyToClientEnabled: boolean;
+  mapReportingEnabled: boolean;
+  mapReportPublishIntervalSecs: number;
+  mapReportPositionPrecision: number;
+}
+
+interface SerialConfig {
+  enabled: boolean;
+  echo: boolean;
+  rxd: number;
+  txd: number;
+  baud: string;
+  timeout: number;
+  mode: string;
+  overrideConsoleSerialPort: boolean;
+}
+
+interface TelemetryConfig {
+  enabled: boolean;
+  deviceUpdateInterval: number;
+  environmentUpdateInterval: number;
+  environmentMeasurementEnabled: boolean;
+  environmentScreenEnabled: boolean;
+  environmentDisplayFahrenheit: boolean;
+  airQualityEnabled: boolean;
+  airQualityInterval: number;
+  powerMeasurementEnabled: boolean;
+  powerUpdateInterval: number;
+}
+
+interface ExternalNotificationConfig {
+  enabled: boolean;
+  outputMs: number;
+  output: number;
+  outputVibra: number;
+  outputBuzzer: number;
+  active: boolean;
+  alertMessage: boolean;
+  alertMessageVibra: boolean;
+  alertMessageBuzzer: boolean;
+  alertBell: boolean;
+  alertBellVibra: boolean;
+  alertBellBuzzer: boolean;
+  usePwm: boolean;
+  nagTimeout: number;
+}
+
+interface StoreForwardConfig {
+  enabled: boolean;
+  heartbeat: boolean;
+  records: number;
+  historyReturnMax: number;
+  historyReturnWindow: number;
+}
+
+interface RangeTestConfig {
+  enabled: boolean;
+  sender: number;
+  save: boolean;
+}
+
+interface CannedMessageConfig {
+  enabled: boolean;
+  allowInputSource: string;
+  sendBell: boolean;
+  rotary1Enabled: boolean;
+  rotary1Event: string;
+  rotary1Pin: number;
+  rotary1PinPress: number;
+  updown1Enabled: boolean;
+  updown1Event: string;
+}
+
+interface AudioConfig {
+  enabled: boolean;
+  codec2Enabled: boolean;
+  pttPin: number;
+  i2sSd: number;
+  i2sWs: number;
+  i2sSck: number;
+  i2sDin: number;
+  bitrate: string;
+}
+
+interface RemoteHardwareConfig {
+  enabled: boolean;
+  allowUndefinedPinAccess: boolean;
+  availablePins: number[];
+}
+
+interface NeighborInfoConfig {
+  enabled: boolean;
+  updateInterval: number;
+}
+
+interface DetectionSensorConfig {
+  enabled: boolean;
+  monitorPin: number;
+  detectionTriggeredHigh: boolean;
+  usePullup: boolean;
+  minimumBroadcastSecs: number;
+  stateBroadcastSecs: number;
+  sendBell: boolean;
+  name: string;
+}
+
+interface PaxcounterConfig {
+  enabled: boolean;
+  paxcounterUpdateInterval: number;
+  wifiThreshold: number;
+  bleThreshold: number;
+}
+
+interface AmbientLightingConfig {
+  enabled: boolean;
+  ledState: boolean;
+  current: number;
+  red: number;
+  green: number;
+  blue: number;
+}
+
 function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettingsProps) {
   const [sections, setSections] = useState<ConfigSection[]>([
     { id: 'lora', title: 'LoRa Configuration', icon: '📡', expanded: true },
+    { id: 'user', title: 'User Settings', icon: '👤', expanded: false },
     { id: 'device', title: 'Device Settings', icon: '⚙️', expanded: false },
     { id: 'position', title: 'Position/GPS', icon: '📍', expanded: false },
     { id: 'power', title: 'Power Management', icon: '🔋', expanded: false },
     { id: 'network', title: 'Network (WiFi/Eth)', icon: '🌐', expanded: false },
     { id: 'display', title: 'Display', icon: '🖥️', expanded: false },
     { id: 'bluetooth', title: 'Bluetooth', icon: '📲', expanded: false },
+    { id: 'security', title: 'Security', icon: '🔒', expanded: false },
     { id: 'modules', title: 'Modules', icon: '🧩', expanded: false },
   ]);
 
@@ -113,6 +291,14 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     sx126xRxBoostedGain: false,
     overrideFrequency: 0,
     paFanDisabled: false,
+    usePreset: true,
+    bandwidth: 250,
+    spreadFactor: 11,
+    codingRate: 8,
+    frequencyOffset: 0,
+    ignoreIncoming: [],
+    ignoreMqtt: false,
+    configOkToMqtt: false,
   });
 
   const [deviceConfig, setDeviceConfig] = useState<DeviceConfig>({
@@ -122,18 +308,26 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     rebroadcastMode: 'ALL',
     nodeInfoBroadcastSecs: 900,
     doubleTapAsButtonPress: false,
+    buttonGpio: 0,
+    buzzerGpio: 0,
+    buzzerMode: 'OFF',
+    tzdef: '',
+    ledHeartbeatDisabled: false,
   });
 
   const [positionConfig, setPositionConfig] = useState<PositionConfig>({
     positionBroadcastSecs: 900,
     positionBroadcastSmartEnabled: false,
     fixedPosition: false,
-    gpsEnabled: true,
+    gpsMode: 'ENABLED',
     gpsUpdateInterval: 120,
     gpsAttemptTime: 30,
     positionFlags: 3,
     rxGpio: 0,
     txGpio: 0,
+    gpsEnGpio: 0,
+    broadcastSmartMinimumDistance: 100,
+    broadcastSmartMinimumIntervalSecs: 30,
   });
 
   const [powerConfig, setPowerConfig] = useState<PowerConfig>({
@@ -154,6 +348,9 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     ntpServer: 'pool.ntp.org',
     ethEnabled: false,
     addressMode: 'DHCP',
+    ipv4Gateway: '',
+    ipv4Subnet: '',
+    ipv4Dns: '',
   });
 
   const [displayConfig, setDisplayConfig] = useState<DisplayConfig>({
@@ -167,6 +364,9 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     displaymode: 'DEFAULT',
     headingBold: false,
     wakeOnTapOrMotion: false,
+    compassOrientation: 0,
+    use12hClock: false,
+    useLongNodeName: true,
   });
 
   const [bluetoothConfig, setBluetoothConfig] = useState<BluetoothConfig>({
@@ -174,6 +374,172 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     mode: 'RANDOM_PIN',
     fixedPin: 123456,
   });
+
+  const [userConfig, setUserConfig] = useState<UserConfig>({
+    longName: '',
+    shortName: '',
+    isLicensed: false,
+    licensedName: '',
+  });
+
+  const [securityConfig, setSecurityConfig] = useState<SecurityConfig>({
+    publicKey: '',
+    privateKey: '',
+    adminKey: [],
+    isManaged: false,
+    serialEnabled: true,
+    debugLogEnabled: false,
+    adminChannelEnabled: true,
+  });
+
+  // Module Configs
+  const [mqttModuleConfig, setMqttModuleConfig] = useState<MQTTConfig>({
+    enabled: false,
+    address: '',
+    username: '',
+    password: '',
+    encryptionEnabled: true,
+    jsonEnabled: false,
+    tlsEnabled: false,
+    root: 'msh',
+    proxyToClientEnabled: false,
+    mapReportingEnabled: false,
+    mapReportPublishIntervalSecs: 900,
+    mapReportPositionPrecision: 32,
+  });
+
+  const [serialModuleConfig, setSerialModuleConfig] = useState<SerialConfig>({
+    enabled: false,
+    echo: false,
+    rxd: 0,
+    txd: 0,
+    baud: 'BAUD_9600',
+    timeout: 250,
+    mode: 'DEFAULT',
+    overrideConsoleSerialPort: false,
+  });
+
+  const [telemetryModuleConfig, setTelemetryModuleConfig] = useState<TelemetryConfig>({
+    enabled: true,
+    deviceUpdateInterval: 900,
+    environmentUpdateInterval: 900,
+    environmentMeasurementEnabled: false,
+    environmentScreenEnabled: false,
+    environmentDisplayFahrenheit: false,
+    airQualityEnabled: false,
+    airQualityInterval: 1800,
+    powerMeasurementEnabled: false,
+    powerUpdateInterval: 900,
+  });
+
+  const [externalNotificationModuleConfig, setExternalNotificationModuleConfig] = useState<ExternalNotificationConfig>({
+    enabled: false,
+    outputMs: 1000,
+    output: 0,
+    outputVibra: 0,
+    outputBuzzer: 0,
+    active: false,
+    alertMessage: false,
+    alertMessageVibra: false,
+    alertMessageBuzzer: false,
+    alertBell: false,
+    alertBellVibra: false,
+    alertBellBuzzer: false,
+    usePwm: false,
+    nagTimeout: 0,
+  });
+
+  const [storeForwardModuleConfig, setStoreForwardModuleConfig] = useState<StoreForwardConfig>({
+    enabled: false,
+    heartbeat: false,
+    records: 0,
+    historyReturnMax: 0,
+    historyReturnWindow: 0,
+  });
+
+  const [rangeTestModuleConfig, setRangeTestModuleConfig] = useState<RangeTestConfig>({
+    enabled: false,
+    sender: 0,
+    save: false,
+  });
+
+  const [cannedMessageModuleConfig, setCannedMessageModuleConfig] = useState<CannedMessageConfig>({
+    enabled: false,
+    allowInputSource: '',
+    sendBell: false,
+    rotary1Enabled: false,
+    rotary1Event: '',
+    rotary1Pin: 0,
+    rotary1PinPress: 0,
+    updown1Enabled: false,
+    updown1Event: '',
+  });
+
+  const [audioModuleConfig, setAudioModuleConfig] = useState<AudioConfig>({
+    enabled: false,
+    codec2Enabled: false,
+    pttPin: 0,
+    i2sSd: 0,
+    i2sWs: 0,
+    i2sSck: 0,
+    i2sDin: 0,
+    bitrate: 'CODEC2_700B',
+  });
+
+  const [remoteHardwareModuleConfig, setRemoteHardwareModuleConfig] = useState<RemoteHardwareConfig>({
+    enabled: false,
+    allowUndefinedPinAccess: false,
+    availablePins: [],
+  });
+
+  const [neighborInfoModuleConfig, setNeighborInfoModuleConfig] = useState<NeighborInfoConfig>({
+    enabled: false,
+    updateInterval: 900,
+  });
+
+  const [detectionSensorModuleConfig, setDetectionSensorModuleConfig] = useState<DetectionSensorConfig>({
+    enabled: false,
+    monitorPin: 0,
+    detectionTriggeredHigh: false,
+    usePullup: false,
+    minimumBroadcastSecs: 0,
+    stateBroadcastSecs: 0,
+    sendBell: false,
+    name: '',
+  });
+
+  const [paxcounterModuleConfig, setPaxcounterModuleConfig] = useState<PaxcounterConfig>({
+    enabled: false,
+    paxcounterUpdateInterval: 900,
+    wifiThreshold: -80,
+    bleThreshold: -80,
+  });
+
+  const [ambientLightingModuleConfig, setAmbientLightingModuleConfig] = useState<AmbientLightingConfig>({
+    enabled: false,
+    ledState: false,
+    current: 10,
+    red: 0,
+    green: 0,
+    blue: 0,
+  });
+
+  // Suppress unused variable warnings - these will be used when UI components are added
+  void userConfig; void setUserConfig;
+  void securityConfig; void setSecurityConfig;
+  void mqttModuleConfig; void setMqttModuleConfig;
+  void serialModuleConfig; void setSerialModuleConfig;
+  void telemetryModuleConfig; void setTelemetryModuleConfig;
+  void externalNotificationModuleConfig; void setExternalNotificationModuleConfig;
+  void storeForwardModuleConfig; void setStoreForwardModuleConfig;
+  void rangeTestModuleConfig; void setRangeTestModuleConfig;
+  void cannedMessageModuleConfig; void setCannedMessageModuleConfig;
+  void audioModuleConfig; void setAudioModuleConfig;
+  void remoteHardwareModuleConfig; void setRemoteHardwareModuleConfig;
+  void neighborInfoModuleConfig; void setNeighborInfoModuleConfig;
+  void detectionSensorModuleConfig; void setDetectionSensorModuleConfig;
+  void paxcounterModuleConfig; void setPaxcounterModuleConfig;
+  void ambientLightingModuleConfig; void setAmbientLightingModuleConfig;
 
   // Auto-populate LoRa config from radio data when it loads
   useEffect(() => {
@@ -212,6 +578,14 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
         sx126xRxBoostedGain: lora.sx126xRxBoostedGain ?? false,
         overrideFrequency: lora.overrideFrequency ?? 0,
         paFanDisabled: lora.paFanDisabled ?? false,
+        usePreset: true,
+        bandwidth: 250,
+        spreadFactor: 11,
+        codingRate: 8,
+        frequencyOffset: 0,
+        ignoreIncoming: [],
+        ignoreMqtt: false,
+        configOkToMqtt: false,
       });
     }
   }, [radio?.protocolMetadata?.loraConfig]);
@@ -677,17 +1051,24 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
               />
             </div>
 
+            {/* GPS Mode */}
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                GPS Mode
+              </label>
+              <select
+                value={positionConfig.gpsMode}
+                onChange={(e) => setPositionConfig({ ...positionConfig, gpsMode: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary-500"
+              >
+                <option value="DISABLED">Disabled</option>
+                <option value="ENABLED">Enabled</option>
+                <option value="NOT_PRESENT">Not Present</option>
+              </select>
+            </div>
+
             {/* Checkboxes */}
             <div className="md:col-span-2 space-y-3">
-              <label className="flex items-center gap-2 text-white cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={positionConfig.gpsEnabled}
-                  onChange={(e) => setPositionConfig({ ...positionConfig, gpsEnabled: e.target.checked })}
-                  className="w-4 h-4"
-                />
-                <span>GPS Enabled</span>
-              </label>
               <label className="flex items-center gap-2 text-white cursor-pointer">
                 <input
                   type="checkbox"
