@@ -38,6 +38,10 @@ export interface Radio {
       txEnabled?: boolean;
       txPower?: number;
       channelNum?: number;
+      overrideDutyCycle?: boolean;
+      sx126xRxBoostedGain?: boolean;
+      overrideFrequency?: number;
+      paFanDisabled?: boolean;
     };
   };
 }
