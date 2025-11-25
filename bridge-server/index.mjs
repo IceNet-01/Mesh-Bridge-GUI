@@ -1491,6 +1491,12 @@ class MeshtasticBridgeServer {
         if (port.path.match(/\/dev\/ttyS\d+$/)) {
           return false;
         }
+
+        // Exclude user-configured excluded ports
+        if (this.excludedPorts.includes(port.path)) {
+          return false;
+        }
+
         return (
           port.path.includes('USB') ||
           port.path.includes('ACM') ||
