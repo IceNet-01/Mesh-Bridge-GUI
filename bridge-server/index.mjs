@@ -24,16 +24,12 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { networkInterfaces } from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import nodemailer from 'nodemailer';
 import mqtt from 'mqtt';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 import fetch from 'node-fetch';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-
-const execAsync = promisify(exec);
 
 // Make crypto available globally for @meshtastic libraries (if not already available)
 // Node.js v20+ already has crypto on globalThis, so only set if undefined
@@ -701,22 +697,6 @@ class MeshtasticBridgeServer {
           setTimeout(() => this.shutdown(), 500);
           break;
 
-        case 'check-updates':
-          const updateInfo = await this.checkForUpdates();
-          ws.send(JSON.stringify({
-            type: 'update-info',
-            ...updateInfo
-          }));
-          break;
-
-        case 'trigger-update':
-          const updateResult = await this.triggerUpdate();
-          ws.send(JSON.stringify({
-            type: 'update-triggered',
-            ...updateResult
-          }));
-          break;
-
         case 'get-channel':
           await this.getChannel(ws, message.radioId, message.channelIndex);
           break;
@@ -1183,7 +1163,6 @@ class MeshtasticBridgeServer {
   async isMeshtasticDevice(portPath) {
     let testPort = null;
     let testTransport = null;
-    let testDevice = null;
 
     try {
       console.log(`🔍 Testing if ${portPath} is a Meshtastic device...`);
@@ -1223,7 +1202,7 @@ class MeshtasticBridgeServer {
         testTransport = await TransportNodeSerial.create(portPath, 115200);
 
         // Create a test device
-        testDevice = new MeshDevice(testTransport);
+        const testDevice = new MeshDevice(testTransport);
 
         // Try to configure with a short timeout
         const configPromise = testDevice.configure();
@@ -1238,46 +1217,17 @@ class MeshtasticBridgeServer {
         // Clean up test device
         await testDevice.disconnect();
         testTransport = null;
-        testDevice = null;
 
         return true;
       } catch (configError) {
         console.log(`⚠️  ${portPath} did not respond as Meshtastic device: ${configError.message}`);
 
-        // Clean up test device and transport if they were created
-        if (testDevice) {
+        // Clean up if transport was created
+        if (testTransport) {
           try {
-            console.log(`🧹 Disconnecting test device on ${portPath}...`);
-            await testDevice.disconnect();
-          } catch (disconnectError) {
-            console.error(`⚠️  Error disconnecting test device: ${disconnectError.message}`);
-          }
+            // TransportNodeSerial doesn't have a direct close, device.disconnect handles it
+          } catch {}
         }
-
-        // Give the port a moment to fully release
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Explicitly close the underlying serial port if still accessible
-        if (testTransport && testTransport.port) {
-          try {
-            if (testTransport.port.isOpen) {
-              console.log(`🧹 Closing transport port on ${portPath}...`);
-              await new Promise((resolve) => {
-                testTransport.port.close((err) => {
-                  if (err) {
-                    console.error(`⚠️  Error closing transport port: ${err.message}`);
-                  }
-                  resolve();
-                });
-              });
-            }
-          } catch (portCloseError) {
-            console.error(`⚠️  Error during port cleanup: ${portCloseError.message}`);
-          }
-        }
-
-        testTransport = null;
-        testDevice = null;
 
         return false;
       }
@@ -4776,127 +4726,6 @@ class MeshtasticBridgeServer {
     setTimeout(() => {
       process.exit(0);
     }, 500);
-  }
-
-  /**
-   * Get current application version
-   */
-  getCurrentVersion() {
-    try {
-      const packagePath = join(__dirname, '..', 'package.json');
-      const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
-      return packageJson.version;
-    } catch (error) {
-      console.error('❌ Error reading version:', error);
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Check for updates from GitHub
-   * @param {string} owner - GitHub repository owner
-   * @param {string} repo - GitHub repository name
-   */
-  async checkForUpdates(owner = 'IceNet-01', repo = 'Mesh-Bridge-GUI') {
-    try {
-      console.log(`🔍 Checking for updates from GitHub: ${owner}/${repo}...`);
-
-      const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mesh-Bridge-GUI',
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-      }
-
-      const release = await response.json();
-      const currentVersion = this.getCurrentVersion();
-      const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
-
-      console.log(`📦 Current version: ${currentVersion}`);
-      console.log(`📦 Latest version: ${latestVersion}`);
-
-      return {
-        currentVersion,
-        latestVersion,
-        updateAvailable: this.compareVersions(currentVersion, latestVersion) < 0,
-        releaseUrl: release.html_url,
-        releaseNotes: release.body,
-        publishedAt: release.published_at
-      };
-    } catch (error) {
-      console.error('❌ Error checking for updates:', error);
-      return {
-        currentVersion: this.getCurrentVersion(),
-        latestVersion: 'unknown',
-        updateAvailable: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Compare two semantic versions
-   * @returns {number} -1 if v1 < v2, 0 if equal, 1 if v1 > v2
-   */
-  compareVersions(v1, v2) {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
-
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-      const part1 = parts1[i] || 0;
-      const part2 = parts2[i] || 0;
-
-      if (part1 < part2) return -1;
-      if (part1 > part2) return 1;
-    }
-
-    return 0;
-  }
-
-  /**
-   * Trigger application update
-   */
-  async triggerUpdate() {
-    try {
-      console.log('🔄 Triggering application update...');
-
-      const scriptPath = join(__dirname, '..', 'scripts', 'update.sh');
-
-      // Check if update script exists
-      if (!existsSync(scriptPath)) {
-        throw new Error('Update script not found');
-      }
-
-      console.log(`📜 Running update script: ${scriptPath}`);
-
-      // Execute update script in background
-      exec(`bash "${scriptPath}"`, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`❌ Update error: ${error.message}`);
-          return;
-        }
-        if (stderr) {
-          console.error(`⚠️  Update stderr: ${stderr}`);
-        }
-        console.log(`✅ Update output:\n${stdout}`);
-      });
-
-      return {
-        success: true,
-        message: 'Update initiated. The server will restart automatically after update completes.'
-      };
-    } catch (error) {
-      console.error('❌ Error triggering update:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
   }
 }
 
