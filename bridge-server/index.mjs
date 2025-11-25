@@ -1556,6 +1556,9 @@ class MeshtasticBridgeServer {
         case 'weather':
           response = await this.cmdWeather(cmdArgs);
           break;
+        case 'forecast':
+          response = await this.cmdForecast(cmdArgs);
+          break;
         case 'alerts':
         case 'nws':
           response = await this.cmdAlerts(cmdArgs);
@@ -1657,7 +1660,8 @@ class MeshtasticBridgeServer {
       `${this.commandPrefix}time - Current date/time`,
       `${this.commandPrefix}uptime - Bridge uptime`,
       `${this.commandPrefix}version - Software version`,
-      `${this.commandPrefix}weather [location] - Get weather + 48hr forecast`,
+      `${this.commandPrefix}weather [location] - Current weather`,
+      `${this.commandPrefix}forecast [location] - 48-hour forecast`,
       `${this.commandPrefix}alerts [state] - Get NWS weather alerts`,
       `${this.commandPrefix}radios - List connected radios`,
       `${this.commandPrefix}channels - List bridge channels`,
@@ -1836,6 +1840,129 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Command: #forecast [location] - Get 48-hour weather forecast
+   * Uses Open-Meteo API (free, no API key required, no rate limits)
+   * Examples: #forecast Seattle | #forecast Seattle, WA
+   */
+  async cmdForecast(args) {
+    // Parse and validate location input
+    let location;
+
+    if (args.length === 0) {
+      return `❌ Please provide a location\nEx: #forecast Seattle, WA`;
+    }
+
+    // Join args and normalize
+    location = args.join(' ').trim().replace(/\s+/g, ' ');
+
+    // Validate location format
+    if (!this.isValidLocation(location)) {
+      return `❌ Invalid location\nEx: #forecast Seattle, WA`;
+    }
+
+    try {
+      // Create abort controller for 10 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      // Step 1: Geocode location to get coordinates
+      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+
+      const geoResponse = await fetch(geocodeUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        signal: controller.signal
+      });
+
+      if (!geoResponse.ok) {
+        clearTimeout(timeoutId);
+        return `❌ Geocoding service error`;
+      }
+
+      const geoData = await geoResponse.json();
+
+      if (!geoData.results || geoData.results.length === 0) {
+        clearTimeout(timeoutId);
+        return `❌ Location not found: ${location}`;
+      }
+
+      const place = geoData.results[0];
+      const lat = place.latitude;
+      const lon = place.longitude;
+      const placeName = place.name + (place.admin1 ? `, ${place.admin1}` : '');
+
+      // Step 2: Get 48-hour forecast (hourly data for next 48 hours)
+      const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,weather_code&temperature_unit=fahrenheit&forecast_days=2&timezone=auto`;
+
+      const forecastResponse = await fetch(forecastUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!forecastResponse.ok) {
+        return `❌ Forecast service error`;
+      }
+
+      const forecastData = await forecastResponse.json();
+      const hourly = forecastData.hourly;
+
+      // Get current hour and next 48 hours
+      const now = new Date();
+      const currentHour = now.getHours();
+
+      // Sample key hours: now, +12h, +24h, +36h, +48h (5 data points)
+      const keyHours = [0, 12, 24, 36, 47]; // indices in hourly array
+
+      // Map WMO weather codes to short symbols
+      const weatherSymbols = {
+        0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
+        45: '🌫️', 48: '🌫️', 51: '🌦️', 53: '🌧️',
+        55: '🌧️', 61: '🌧️', 63: '🌧️', 65: '⛈️',
+        71: '🌨️', 73: '🌨️', 75: '❄️', 80: '🌦️',
+        81: '🌧️', 82: '⛈️', 95: '⚡'
+      };
+
+      // Build compact 48h forecast
+      let result = `📅 48h Forecast: ${placeName}\n`;
+
+      keyHours.forEach((idx) => {
+        if (idx < hourly.time.length) {
+          const time = new Date(hourly.time[idx]);
+          const temp = Math.round(hourly.temperature_2m[idx]);
+          const precip = hourly.precipitation_probability[idx];
+          const code = hourly.weather_code[idx];
+          const symbol = weatherSymbols[code] || '🌡️';
+
+          // Format: "Mon 2PM: 52°F 🌧️ 80%"
+          const dayName = time.toLocaleDateString('en-US', { weekday: 'short' });
+          const hour = time.getHours();
+          const ampm = hour >= 12 ? 'PM' : 'AM';
+          const hour12 = hour % 12 || 12;
+
+          result += `${dayName} ${hour12}${ampm}: ${temp}°F ${symbol} ${precip}%\n`;
+        }
+      });
+
+      return result.trim();
+
+    } catch (error) {
+      console.error('Forecast fetch error:', error);
+
+      // Provide short error messages for Meshtastic 237-byte limit
+      if (error.name === 'AbortError') {
+        return `❌ Request timeout`;
+      } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+        return `❌ DNS error`;
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+        return `❌ Connection timeout`;
+      } else {
+        return `❌ Forecast error`;
+      }
+    }
+  }
+
+  /**
    * Validates location format (city, state, zipcode)
    */
   isValidLocation(location) {
@@ -1888,8 +2015,7 @@ class MeshtasticBridgeServer {
         headers: {
           'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
           'Accept': 'application/geo+json',
-        },
-        agent: this.httpsAgent
+        }
       });
 
       if (!response.ok) {
