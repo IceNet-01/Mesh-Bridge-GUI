@@ -1734,13 +1734,105 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Command: #weather [location] - Weather info (currently unavailable)
-   * Note: External weather APIs are blocked by network proxy/firewall
+   * Command: #weather [location] - Get current weather
+   * Uses Open-Meteo API (free, no API key required, no rate limits)
+   * Supports: city name, "city, state", state code
+   * Examples: #weather Seattle | #weather Seattle, WA
    */
   async cmdWeather(args) {
-    // Weather service is blocked by network proxy
-    // To fix: Add wttr.in and open-meteo.com to NO_PROXY environment variable
-    return `❌ Weather unavailable\nNetwork proxy blocking weather APIs`;
+    // Parse and validate location input
+    let location;
+
+    if (args.length === 0) {
+      return `❌ Please provide a location\nEx: #weather Seattle, WA`;
+    }
+
+    // Join args and normalize
+    location = args.join(' ').trim().replace(/\s+/g, ' ');
+
+    // Validate location format
+    if (!this.isValidLocation(location)) {
+      return `❌ Invalid location\nEx: #weather Seattle, WA`;
+    }
+
+    try {
+      // Create abort controller for 10 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      // Step 1: Geocode location to get coordinates
+      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+
+      const geoResponse = await fetch(geocodeUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        signal: controller.signal
+      });
+
+      if (!geoResponse.ok) {
+        clearTimeout(timeoutId);
+        return `❌ Geocoding service error`;
+      }
+
+      const geoData = await geoResponse.json();
+
+      if (!geoData.results || geoData.results.length === 0) {
+        clearTimeout(timeoutId);
+        return `❌ Location not found: ${location}`;
+      }
+
+      const place = geoData.results[0];
+      const lat = place.latitude;
+      const lon = place.longitude;
+      const placeName = place.name + (place.admin1 ? `, ${place.admin1}` : '');
+
+      // Step 2: Get weather for coordinates
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
+
+      const weatherResponse = await fetch(weatherUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!weatherResponse.ok) {
+        return `❌ Weather service error`;
+      }
+
+      const weatherData = await weatherResponse.json();
+      const current = weatherData.current;
+
+      // Map WMO weather codes to descriptions
+      const weatherCodes = {
+        0: 'Clear', 1: 'Mostly Clear', 2: 'Partly Cloudy', 3: 'Cloudy',
+        45: 'Foggy', 48: 'Foggy', 51: 'Light Drizzle', 53: 'Drizzle',
+        55: 'Heavy Drizzle', 61: 'Light Rain', 63: 'Rain', 65: 'Heavy Rain',
+        71: 'Light Snow', 73: 'Snow', 75: 'Heavy Snow', 80: 'Light Showers',
+        81: 'Showers', 82: 'Heavy Showers', 95: 'Thunderstorm'
+      };
+      const condition = weatherCodes[current.weather_code] || 'Unknown';
+
+      // Build compact response for Meshtastic (237 byte limit)
+      let result = `🌤️ ${placeName}\n`;
+      result += `${condition} ${Math.round(current.temperature_2m)}°F\n`;
+      result += `💧${current.relative_humidity_2m}% 💨${Math.round(current.wind_speed_10m)}mph`;
+
+      return result;
+
+    } catch (error) {
+      console.error('Weather fetch error:', error);
+
+      // Provide short error messages for Meshtastic 237-byte limit
+      if (error.name === 'AbortError') {
+        return `❌ Request timeout`;
+      } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+        return `❌ DNS error`;
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+        return `❌ Connection timeout`;
+      } else {
+        return `❌ Weather error`;
+      }
+    }
   }
 
   /**
