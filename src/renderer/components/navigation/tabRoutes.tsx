@@ -14,6 +14,7 @@ import NWSWeatherAlerts from '../NWSWeatherAlerts';
 import BridgeConfiguration from '../BridgeConfiguration';
 import { BridgeServerSettings } from '../BridgeServerSettings';
 import { SystemUpdate } from '../SystemUpdate';
+import { PortExclusion } from '../PortExclusion';
 import AISettings from '../AISettings';
 import CommunicationSettings from '../CommunicationSettings';
 import MQTTSettings from '../MQTTSettings';
@@ -69,6 +70,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   update: {
     component: SystemUpdate,
+  },
+  portexclusion: {
+    component: PortExclusion,
   },
   ai: {
     component: AISettings,

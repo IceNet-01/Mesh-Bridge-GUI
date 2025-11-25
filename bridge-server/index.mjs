@@ -170,6 +170,11 @@ class MeshtasticBridgeServer {
     this.adBotTimer = null;                    // Interval timer reference
     this.adBotMessageIndex = 0;                // Current message index for rotation
 
+    // ===== PORT EXCLUSION CONFIGURATION =====
+    // Ports to exclude from bridge usage (persists across reboots)
+    // Useful for: Reserving ports for other applications, preventing accidental connections
+    this.excludedPorts = [];                   // Array of port paths to exclude (e.g., ['/dev/ttyUSB0'])
+
     // ===== CONSOLE OUTPUT CAPTURE =====
     // Capture all console output and broadcast to WebSocket clients for raw log viewing
     this.consoleBuffer = [];                   // Buffer for raw console output
@@ -357,6 +362,15 @@ class MeshtasticBridgeServer {
           if (config.advertisementBot.channel !== undefined) this.adBotChannel = config.advertisementBot.channel;
           console.log(`📋 Loaded Advertisement Bot config: ${this.adBotEnabled ? 'ENABLED' : 'DISABLED'}`);
         }
+
+        // Load Port Exclusion configuration
+        if (Array.isArray(config.excludedPorts)) {
+          this.excludedPorts = config.excludedPorts;
+          console.log(`📋 Loaded ${this.excludedPorts.length} excluded port(s)`);
+          if (this.excludedPorts.length > 0) {
+            console.log(`   Excluded: ${this.excludedPorts.join(', ')}`);
+          }
+        }
       }
     } catch (error) {
       console.error('⚠️  Error loading config file:', error.message);
@@ -407,7 +421,8 @@ class MeshtasticBridgeServer {
           messages: this.adBotMessages,
           targetRadios: this.adBotTargetRadios,
           channel: this.adBotChannel
-        }
+        },
+        excludedPorts: this.excludedPorts
       };
 
       writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
@@ -1040,6 +1055,19 @@ class MeshtasticBridgeServer {
           await this.adBotTest(ws);
           break;
 
+        // Port Exclusion Management
+        case 'port-exclude':
+          await this.excludePort(ws, message.portPath);
+          break;
+
+        case 'port-include':
+          await this.includePort(ws, message.portPath);
+          break;
+
+        case 'port-get-excluded':
+          await this.getExcludedPorts(ws);
+          break;
+
         default:
           ws.send(JSON.stringify({
             type: 'error',
@@ -1069,6 +1097,11 @@ class MeshtasticBridgeServer {
           return false;
         }
 
+        // Exclude user-configured excluded ports
+        if (this.excludedPorts.includes(port.path)) {
+          return false;
+        }
+
         // Include USB and ACM devices
         return (
           port.path.includes('USB') ||
@@ -1081,7 +1114,8 @@ class MeshtasticBridgeServer {
         );
       });
 
-      console.log(`📋 Found ${filteredPorts.length} USB/ACM serial ports (filtered ${ports.length - filteredPorts.length} virtual ports)`);
+      const excludedCount = ports.length - filteredPorts.length;
+      console.log(`📋 Found ${filteredPorts.length} USB/ACM serial ports (filtered ${excludedCount} virtual/excluded ports)`);
 
       ws.send(JSON.stringify({
         type: 'ports-list',
@@ -1091,7 +1125,8 @@ class MeshtasticBridgeServer {
           serialNumber: p.serialNumber,
           vendorId: p.vendorId,
           productId: p.productId
-        }))
+        })),
+        excludedPorts: this.excludedPorts
       }));
     } catch (error) {
       console.error('❌ Error listing ports:', error);
@@ -4521,6 +4556,139 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'adbot-test-result',
         success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * ===== PORT EXCLUSION MANAGEMENT =====
+   */
+
+  /**
+   * Add a port to the exclusion list
+   */
+  async excludePort(ws, portPath) {
+    try {
+      if (!portPath) {
+        ws.send(JSON.stringify({
+          type: 'port-exclude-result',
+          success: false,
+          error: 'Port path is required'
+        }));
+        return;
+      }
+
+      if (this.excludedPorts.includes(portPath)) {
+        ws.send(JSON.stringify({
+          type: 'port-exclude-result',
+          success: false,
+          error: 'Port is already excluded'
+        }));
+        return;
+      }
+
+      // Check if any radio is currently connected to this port
+      for (const [radioId, radio] of this.radios.entries()) {
+        if (radio.port === portPath) {
+          ws.send(JSON.stringify({
+            type: 'port-exclude-result',
+            success: false,
+            error: 'Cannot exclude port: Radio is currently connected to this port. Disconnect first.'
+          }));
+          return;
+        }
+      }
+
+      this.excludedPorts.push(portPath);
+      this.saveConfig();
+
+      console.log(`🚫 Excluded port: ${portPath}`);
+
+      ws.send(JSON.stringify({
+        type: 'port-exclude-result',
+        success: true,
+        excludedPorts: this.excludedPorts
+      }));
+
+      // Broadcast updated port list to all clients
+      this.broadcast({
+        type: 'excluded-ports-updated',
+        excludedPorts: this.excludedPorts
+      });
+    } catch (error) {
+      console.error('❌ Failed to exclude port:', error);
+      ws.send(JSON.stringify({
+        type: 'port-exclude-result',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Remove a port from the exclusion list
+   */
+  async includePort(ws, portPath) {
+    try {
+      if (!portPath) {
+        ws.send(JSON.stringify({
+          type: 'port-include-result',
+          success: false,
+          error: 'Port path is required'
+        }));
+        return;
+      }
+
+      const index = this.excludedPorts.indexOf(portPath);
+      if (index === -1) {
+        ws.send(JSON.stringify({
+          type: 'port-include-result',
+          success: false,
+          error: 'Port is not in the exclusion list'
+        }));
+        return;
+      }
+
+      this.excludedPorts.splice(index, 1);
+      this.saveConfig();
+
+      console.log(`✅ Included port: ${portPath}`);
+
+      ws.send(JSON.stringify({
+        type: 'port-include-result',
+        success: true,
+        excludedPorts: this.excludedPorts
+      }));
+
+      // Broadcast updated port list to all clients
+      this.broadcast({
+        type: 'excluded-ports-updated',
+        excludedPorts: this.excludedPorts
+      });
+    } catch (error) {
+      console.error('❌ Failed to include port:', error);
+      ws.send(JSON.stringify({
+        type: 'port-include-result',
+        success: false,
+        error: error.message
+      }));
+    }
+  }
+
+  /**
+   * Get list of excluded ports
+   */
+  async getExcludedPorts(ws) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'excluded-ports',
+        excludedPorts: this.excludedPorts
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get excluded ports:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
         error: error.message
       }));
     }

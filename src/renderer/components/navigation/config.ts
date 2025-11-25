@@ -111,6 +111,11 @@ export function getNavigationConfig(
           label: 'System Update'
         },
         {
+          id: 'portexclusion',
+          icon: 'radio',
+          label: 'Port Exclusion'
+        },
+        {
           id: 'ai',
           icon: 'ai',
           label: 'AI Assistant'
