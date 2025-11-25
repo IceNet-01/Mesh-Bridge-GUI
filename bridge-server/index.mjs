@@ -449,7 +449,7 @@ class MeshtasticBridgeServer {
       const radiosStatus = Array.from(this.radios.entries()).map(([id, radio]) => ({
         id,
         port: radio.port,
-        status: 'connected',
+        status: radio.status || 'connecting',
         protocol: radio.protocolType || 'meshtastic',
         nodeInfo: radio.nodeInfo,
         channels: Array.from(radio.channels.entries()).map(([idx, ch]) => ({
@@ -1033,6 +1033,7 @@ class MeshtasticBridgeServer {
         protocol: protocolHandler,
         protocolType: protocol,
         port: portPath,
+        status: 'connecting',
         nodeNum: null,
         nodeInfo: null,
         channels: new Map(),
@@ -1069,6 +1070,12 @@ class MeshtasticBridgeServer {
       console.log(`⚙️  Connecting radio ${radioId}...`);
       await protocolHandler.connect();
       console.log(`✅ Radio ${radioId} connected successfully`);
+
+      // Update radio status to connected
+      const radio = this.radios.get(radioId);
+      if (radio) {
+        radio.status = 'connected';
+      }
 
       // Notify all clients that connection is complete
       this.broadcast({
@@ -1168,7 +1175,7 @@ class MeshtasticBridgeServer {
       name: radio.nodeInfo?.longName || `Radio ${radioId.substring(0, 8)}`,
       port: radio.port,
       protocol: radio.protocol?.getProtocolName() || radio.protocolType,
-      status: 'connected',
+      status: radio.status || 'connecting',
       nodeInfo: radio.nodeInfo,
       messagesReceived: radio.messagesReceived,
       messagesSent: radio.messagesSent,
