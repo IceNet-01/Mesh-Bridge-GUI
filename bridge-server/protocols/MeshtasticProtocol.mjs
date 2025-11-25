@@ -582,9 +582,11 @@ export class MeshtasticProtocol extends BaseProtocol {
       }
     });
 
-    // Subscribe to config packets (includes LoRa config)
+    // Subscribe to config packets (includes all config types)
     this.device.events.onConfigPacket.subscribe((configPacket) => {
       try {
+        console.log(`[Meshtastic] 📦 Config packet received:`, Object.keys(configPacket));
+
         // Check if this is a LoRa config packet
         if (configPacket.lora) {
           this.loraConfig = {
@@ -597,6 +599,7 @@ export class MeshtasticProtocol extends BaseProtocol {
             overrideDutyCycle: configPacket.lora.overrideDutyCycle,
             sx126xRxBoostedGain: configPacket.lora.sx126xRxBoostedGain,
             overrideFrequency: configPacket.lora.overrideFrequency,
+            paFanDisabled: configPacket.lora.paFanDisabled,
             ignoreMqtt: configPacket.lora.ignoreMqtt
           };
 
@@ -608,7 +611,43 @@ export class MeshtasticProtocol extends BaseProtocol {
           });
 
           // Emit config event so bridge server can update clients
-          this.emit('config', this.loraConfig);
+          this.emit('config', { configType: 'lora', config: this.loraConfig });
+        }
+
+        // Check for Device config
+        if (configPacket.device) {
+          console.log(`[Meshtastic] Device config received:`, configPacket.device);
+          this.emit('config', { configType: 'device', config: configPacket.device });
+        }
+
+        // Check for Position config
+        if (configPacket.position) {
+          console.log(`[Meshtastic] Position config received:`, configPacket.position);
+          this.emit('config', { configType: 'position', config: configPacket.position });
+        }
+
+        // Check for Power config
+        if (configPacket.power) {
+          console.log(`[Meshtastic] Power config received:`, configPacket.power);
+          this.emit('config', { configType: 'power', config: configPacket.power });
+        }
+
+        // Check for Network config
+        if (configPacket.network) {
+          console.log(`[Meshtastic] Network config received:`, configPacket.network);
+          this.emit('config', { configType: 'network', config: configPacket.network });
+        }
+
+        // Check for Display config
+        if (configPacket.display) {
+          console.log(`[Meshtastic] Display config received:`, configPacket.display);
+          this.emit('config', { configType: 'display', config: configPacket.display });
+        }
+
+        // Check for Bluetooth config
+        if (configPacket.bluetooth) {
+          console.log(`[Meshtastic] Bluetooth config received:`, configPacket.bluetooth);
+          this.emit('config', { configType: 'bluetooth', config: configPacket.bluetooth });
         }
       } catch (error) {
         console.error('[Meshtastic] Error handling config packet:', error);

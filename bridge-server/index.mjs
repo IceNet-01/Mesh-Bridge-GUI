@@ -985,9 +985,25 @@ class MeshtasticBridgeServer {
         });
       });
 
-      protocolHandler.on('config', (config) => {
-        console.log(`⚙️  Radio ${radioId} config updated`);
-        // Broadcast updated radio info to clients (includes protocolMetadata with loraConfig)
+      protocolHandler.on('config', (configData) => {
+        console.log(`⚙️  Radio ${radioId} config updated:`, configData.configType || 'unknown');
+
+        // Handle new config format { configType, config } or legacy format (direct config object)
+        if (configData.configType && configData.config) {
+          // New format - send specific config response
+          console.log(`📤 Broadcasting ${configData.configType} config to clients`);
+          this.broadcast({
+            type: 'radio-config-received',
+            radioId: radioId,
+            configType: configData.configType,
+            config: configData.config
+          });
+        } else {
+          // Legacy format - just config object (backward compatibility)
+          console.log(`📤 Broadcasting legacy config update to clients`);
+        }
+
+        // Also broadcast updated radio info (includes protocolMetadata with loraConfig)
         this.broadcast({
           type: 'radio-updated',
           radio: this.getRadioInfo(radioId)

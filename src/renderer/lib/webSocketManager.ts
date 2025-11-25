@@ -326,6 +326,17 @@ export class WebSocketRadioManager {
         }
         break;
 
+      case 'radio-config-received':
+        // Radio configuration received in response to get-config request
+        console.log(`[WebSocket] ⚙️  Config received for radio ${data.radioId}:`, data.configType);
+        this.emit('radio-config-received', {
+          radioId: data.radioId,
+          configType: data.configType,
+          config: data.config
+        });
+        this.log('info', `${data.configType} config received from radio ${data.radioId}`);
+        break;
+
       case 'radio-telemetry':
         // Radio telemetry data updated
         const radio = this.radios.get(data.radioId);
