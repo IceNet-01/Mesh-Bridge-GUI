@@ -23,6 +23,9 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
   const [channels, setChannels] = useState<Record<number, ChannelFormData>>({});
   const [activeTab, setActiveTab] = useState<'channels' | 'settings'>('channels');
 
+  // Get the selected radio object
+  const selectedRadio = radios.find(r => r.id === selectedRadioId);
+
   // Initialize with default values for all channels
   useEffect(() => {
     const initialChannels: Record<number, ChannelFormData> = {};
@@ -37,6 +40,29 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
     }
     setChannels(initialChannels);
   }, []);
+
+  // Sync channels with radio's channel data whenever radio changes or channels are updated
+  useEffect(() => {
+    if (selectedRadio && selectedRadio.channels) {
+      const updatedChannels: Record<number, ChannelFormData> = { ...channels };
+
+      selectedRadio.channels.forEach(channel => {
+        const pskBase64 = channel.settings.psk
+          ? btoa(String.fromCharCode(...channel.settings.psk))
+          : '';
+
+        updatedChannels[channel.index] = {
+          name: channel.settings.name || '',
+          pskBase64: pskBase64,
+          role: channel.role,
+          uplinkEnabled: channel.settings.uplinkEnabled ?? true,
+          downlinkEnabled: channel.settings.downlinkEnabled ?? true,
+        };
+      });
+
+      setChannels(updatedChannels);
+    }
+  }, [selectedRadio?.channels]);
 
   // Set first connected Meshtastic radio as default
   useEffect(() => {
@@ -219,19 +245,30 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
 
               {/* Channel Configuration Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
-                  <div key={index} className="card p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-white">
-                        Channel {index} {index === 0 && '(Primary)'}
-                      </h3>
-                      <button
-                        onClick={() => handleGetChannel(index)}
-                        className="btn-secondary text-sm py-1 px-3"
-                      >
-                        📡 Get
-                      </button>
-                    </div>
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => {
+                  const hasChannelData = selectedRadio?.channels?.some(ch => ch.index === index);
+                  const channelData = selectedRadio?.channels?.find(ch => ch.index === index);
+
+                  return (
+                    <div key={index} className={`card p-4 ${hasChannelData ? 'border-green-500/30' : ''}`}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-bold text-white">
+                            Channel {index} {index === 0 && '(Primary)'}
+                          </h3>
+                          {hasChannelData && (
+                            <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">
+                              Loaded
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleGetChannel(index)}
+                          className="btn-secondary text-sm py-1 px-3"
+                        >
+                          📡 Get
+                        </button>
+                      </div>
 
                     <div className="space-y-3">
                       {/* Channel Name */}

@@ -1113,6 +1113,9 @@ class MeshtasticBridgeServer {
     const radio = this.radios.get(radioId);
     if (!radio) return null;
 
+    // Convert channels Map to Array for JSON serialization
+    const channels = radio.channels ? Array.from(radio.channels.values()) : [];
+
     return {
       id: radioId,
       name: radio.nodeInfo?.longName || `Radio ${radioId.substring(0, 8)}`,
@@ -1123,6 +1126,7 @@ class MeshtasticBridgeServer {
       messagesReceived: radio.messagesReceived,
       messagesSent: radio.messagesSent,
       errors: radio.errors,
+      channels: channels,  // Include channel configurations
       ...(radio.telemetry || {}),
       protocolMetadata: radio.protocol?.getProtocolMetadata(),
       info: radio.info

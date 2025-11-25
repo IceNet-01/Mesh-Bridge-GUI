@@ -22,6 +22,8 @@ export interface Radio {
   messagesReceived: number;
   messagesSent: number;
   errors: number;
+  // Channel configurations
+  channels?: Channel[];
   // Protocol-specific metadata
   protocolMetadata?: {
     // Meshtastic-specific
