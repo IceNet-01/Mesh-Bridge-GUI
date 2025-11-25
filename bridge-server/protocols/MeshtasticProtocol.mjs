@@ -195,6 +195,9 @@ export class MeshtasticProtocol extends BaseProtocol {
       await this.device.configure();
       console.log(`[Meshtastic] Radio configured successfully`);
 
+      // Sync device time with computer time
+      await this.syncDeviceTime();
+
       // Set up heartbeat to keep serial connection alive (15 min timeout otherwise)
       this.device.setHeartbeatInterval(30000); // Send heartbeat every 30 seconds
       console.log(`[Meshtastic] Heartbeat enabled`);
@@ -1061,6 +1064,51 @@ export class MeshtasticProtocol extends BaseProtocol {
     } catch (error) {
       console.error('[Channel Config] ❌ Error setting channel:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Sync device time with computer time
+   * Sends the current Unix timestamp to the radio so it has the correct time
+   */
+  async syncDeviceTime() {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      // Get current Unix timestamp (seconds since epoch)
+      const currentTime = Math.floor(Date.now() / 1000);
+
+      console.log(`[Meshtastic] ⏰ Syncing device time to ${new Date().toISOString()}...`);
+
+      // Create AdminMessage with setTimeOnly
+      const adminMessage = create(Protobuf.Admin.AdminMessageSchema, {
+        payloadVariant: {
+          case: 'setTimeOnly',
+          value: currentTime
+        }
+      });
+
+      // Serialize the message
+      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, adminMessage);
+
+      // Send to radio
+      const packetId = await this.device.sendPacket(
+        adminBytes,
+        Protobuf.Portnums.PortNum.ADMIN_APP,
+        'self',
+        0,
+        false,  // wantAck - don't wait for ACK
+        false   // wantResponse - no response expected
+      );
+
+      console.log(`[Meshtastic] ✅ Time sync sent successfully, packet ID: ${packetId}`);
+      return true;
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error syncing device time:', error);
+      // Don't throw - time sync failure shouldn't prevent connection
+      return false;
     }
   }
 
