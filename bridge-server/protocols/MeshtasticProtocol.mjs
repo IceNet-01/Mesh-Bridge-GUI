@@ -1049,6 +1049,18 @@ export class MeshtasticProtocol extends BaseProtocol {
       console.log(`[Channel Config] 📻 Setting channel configuration...`);
       console.log(`[Channel Config] 📦 Channel config:`, JSON.stringify(channelConfig, null, 2));
 
+      // Convert PSK from plain object to Uint8Array if needed
+      // When sent over WebSocket, Uint8Array becomes a plain object like {"0": 1, "1": 2, ...}
+      if (channelConfig.settings?.psk && typeof channelConfig.settings.psk === 'object') {
+        // Check if it's already a Uint8Array
+        if (!(channelConfig.settings.psk instanceof Uint8Array)) {
+          // Convert plain object to Uint8Array
+          const pskArray = Object.values(channelConfig.settings.psk);
+          channelConfig.settings.psk = new Uint8Array(pskArray);
+          console.log(`[Channel Config] 🔧 Converted PSK from object to Uint8Array (${channelConfig.settings.psk.length} bytes)`);
+        }
+      }
+
       // Create Channel protobuf message
       const channelMessage = create(Protobuf.Channel.ChannelSchema, channelConfig);
 
