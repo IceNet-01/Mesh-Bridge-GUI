@@ -28,6 +28,8 @@ import nodemailer from 'nodemailer';
 import mqtt from 'mqtt';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
+import fetch from 'node-fetch';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Make crypto available globally for @meshtastic libraries (if not already available)
 // Node.js v20+ already has crypto on globalThis, so only set if undefined
@@ -115,6 +117,12 @@ class MeshtasticBridgeServer {
     this.aiRateLimit = 3;                      // Max 3 AI queries per minute per user
     this.aiUsage = new Map();                  // Track AI usage separately
     this.aiSystemPrompt = 'You are a helpful assistant for a mesh network. Keep ALL responses under 200 characters. Be extremely concise and direct. No explanations unless asked.';
+
+    // ===== HTTP PROXY CONFIGURATION =====
+    // Configure proxy agent for fetch requests (respects https_proxy env var)
+    this.httpsAgent = process.env.https_proxy || process.env.HTTPS_PROXY
+      ? new HttpsProxyAgent(process.env.https_proxy || process.env.HTTPS_PROXY)
+      : undefined;
 
     // ===== EMAIL CONFIGURATION =====
     this.emailEnabled = false;                 // Enable/disable email notifications
@@ -1755,7 +1763,8 @@ class MeshtasticBridgeServer {
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'MeshBridgeGUI/1.0'
-        }
+        },
+        agent: this.httpsAgent
       });
 
       if (!response.ok) {
@@ -1875,7 +1884,8 @@ class MeshtasticBridgeServer {
         headers: {
           'User-Agent': 'MeshBridgeGUI/1.0 (Emergency Alert System)',
           'Accept': 'application/geo+json',
-        }
+        },
+        agent: this.httpsAgent
       });
 
       if (!response.ok) {
@@ -2065,7 +2075,8 @@ class MeshtasticBridgeServer {
             num_predict: this.aiMaxTokens
           }
         }),
-        signal: controller.signal
+        signal: controller.signal,
+        agent: this.httpsAgent
       });
 
       clearTimeout(timeout);
@@ -2248,7 +2259,8 @@ class MeshtasticBridgeServer {
                 },
                 timestamp: new Date().toISOString()
               }]
-            })
+            }),
+            agent: this.httpsAgent
           });
 
           if (response.ok) {
@@ -3027,7 +3039,8 @@ class MeshtasticBridgeServer {
     try {
       // Check if Ollama is running and has the configured model
       const response = await fetch(`${this.aiEndpoint}/api/tags`, {
-        signal: AbortSignal.timeout(5000) // 5 second timeout
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+        agent: this.httpsAgent
       });
 
       if (!response.ok) {
@@ -3067,7 +3080,9 @@ class MeshtasticBridgeServer {
    */
   async aiListModels(ws) {
     try {
-      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        agent: this.httpsAgent
+      });
 
       if (!response.ok) {
         throw new Error('Ollama not responding');
@@ -3098,7 +3113,9 @@ class MeshtasticBridgeServer {
   async aiSetModel(ws, model) {
     try {
       // Verify model exists
-      const response = await fetch(`${this.aiEndpoint}/api/tags`);
+      const response = await fetch(`${this.aiEndpoint}/api/tags`, {
+        agent: this.httpsAgent
+      });
       const data = await response.json();
       const modelExists = data.models.some(m => m.name === model);
 
@@ -3149,7 +3166,8 @@ class MeshtasticBridgeServer {
       const response = await fetch(`${this.aiEndpoint}/api/pull`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: model })
+        body: JSON.stringify({ name: model }),
+        agent: this.httpsAgent
       });
 
       if (!response.ok) {
@@ -3204,7 +3222,8 @@ class MeshtasticBridgeServer {
   async aiCheckStatus(ws) {
     try {
       const response = await fetch(`${this.aiEndpoint}/api/tags`, {
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(5000),
+        agent: this.httpsAgent
       });
 
       const running = response.ok;
@@ -3212,7 +3231,9 @@ class MeshtasticBridgeServer {
 
       if (running) {
         try {
-          const versionResponse = await fetch(`${this.aiEndpoint}/api/version`);
+          const versionResponse = await fetch(`${this.aiEndpoint}/api/version`, {
+            agent: this.httpsAgent
+          });
           const versionData = await versionResponse.json();
           version = versionData.version;
         } catch (e) {
@@ -3482,7 +3503,8 @@ class MeshtasticBridgeServer {
             },
             timestamp: new Date().toISOString()
           }]
-        })
+        }),
+        agent: this.httpsAgent
       });
 
       if (!response.ok) {
@@ -4095,7 +4117,8 @@ class MeshtasticBridgeServer {
           username: this.discordUsername,
           avatar_url: this.discordAvatarUrl || undefined,
           content: text
-        })
+        }),
+        agent: this.httpsAgent
       });
 
       if (response.ok) {
