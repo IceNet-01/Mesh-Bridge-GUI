@@ -14,6 +14,7 @@ export type Tab =
   | 'weather'
   | 'configuration'
   | 'server'
+  | 'update'
   | 'ai'
   | 'communication'
   | 'mqtt'
