@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Visual indicators for loaded channel configurations
 - Module settings UI with configuration interface
 - Interactive module selection and settings display
+- 48-hour weather forecast in #weather command with hourly predictions
+
+### Changed
+- Enhanced #weather command to include Today and Tomorrow forecasts
+- Weather data now shows morning, afternoon, and evening conditions
+- Added daily high/low temperatures and precipitation chance to forecasts
 
 ### Fixed
 - Modem preset NaN error by converting enum strings to integers
