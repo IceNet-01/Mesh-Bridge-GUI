@@ -1590,7 +1590,7 @@ class MeshtasticBridgeServer {
       `${this.commandPrefix}time - Current date/time`,
       `${this.commandPrefix}uptime - Bridge uptime`,
       `${this.commandPrefix}version - Software version`,
-      `${this.commandPrefix}weather [location] - Get weather (city/state/zip)`,
+      `${this.commandPrefix}weather [location] - Get weather + 48hr forecast`,
       `${this.commandPrefix}alerts [state] - Get NWS weather alerts`,
       `${this.commandPrefix}radios - List connected radios`,
       `${this.commandPrefix}channels - List bridge channels`,
@@ -1667,7 +1667,7 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Command: #weather [location] - Get weather report
+   * Command: #weather [location] - Get weather report with 48-hour forecast
    * Supports: city name, "city, state", state code, or zipcode
    * Examples: #weather Seattle | #weather Seattle, WA | #weather 98101
    */
@@ -1696,9 +1696,8 @@ class MeshtasticBridgeServer {
     }
 
     try {
-      // Using wttr.in - free weather service, no API key needed
-      // Supports city names, "city, state", and zipcodes
-      const url = `https://wttr.in/${encodeURIComponent(location)}?format=%l:+%C+%t+💧%h+💨%w`;
+      // Fetch JSON format from wttr.in for detailed forecast data
+      const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'MeshBridgeGUI/1.0'
@@ -1715,14 +1714,53 @@ class MeshtasticBridgeServer {
         return `❌ Weather service unavailable (${response.status})`;
       }
 
-      const weather = await response.text();
+      const data = await response.json();
 
-      // Check if wttr.in returned an error message
-      if (weather.includes('Unknown location') || weather.trim().length === 0) {
+      // Check for invalid response
+      if (!data || !data.current_condition || !data.weather) {
         return `❌ Location "${location}" not found`;
       }
 
-      return `🌤️ ${weather.trim()}`;
+      // Extract current conditions
+      const current = data.current_condition[0];
+      const locationName = data.nearest_area?.[0]?.areaName?.[0]?.value || location;
+
+      // Build current weather string
+      let result = `🌤️ ${locationName}\n`;
+      result += `Now: ${current.weatherDesc[0].value} ${current.temp_F}°F\n`;
+      result += `💧${current.humidity}% 💨${current.windspeedMiles}mph ${current.winddir16Point}\n`;
+
+      // Add 48-hour forecast (next 2 days)
+      result += `\n📅 48-Hour Forecast:\n`;
+
+      // Get forecast for next 2 days
+      const forecastDays = data.weather.slice(0, 2);
+
+      for (let i = 0; i < forecastDays.length; i++) {
+        const day = forecastDays[i];
+        const date = new Date(day.date);
+        const dayName = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short' });
+
+        // Get morning (9am), afternoon (3pm), and evening (9pm) forecasts
+        const morning = day.hourly[3]; // 9am (index 3 = 9am)
+        const afternoon = day.hourly[5]; // 3pm (index 5 = 3pm)
+        const evening = day.hourly[7]; // 9pm (index 7 = 9pm)
+
+        result += `\n${dayName}:\n`;
+        result += `  9AM: ${morning.weatherDesc[0].value} ${morning.tempF}°F\n`;
+        result += `  3PM: ${afternoon.weatherDesc[0].value} ${afternoon.tempF}°F\n`;
+        result += `  9PM: ${evening.weatherDesc[0].value} ${evening.tempF}°F\n`;
+
+        // Add daily high/low and precipitation chance
+        result += `  High: ${day.maxtempF}°F Low: ${day.mintempF}°F\n`;
+        result += `  Rain: ${day.hourly[4].chanceofrain}%`;
+
+        if (i < forecastDays.length - 1) {
+          result += '\n';
+        }
+      }
+
+      return result;
 
     } catch (error) {
       console.error('Weather fetch error:', error);
