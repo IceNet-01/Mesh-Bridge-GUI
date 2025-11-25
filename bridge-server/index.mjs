@@ -572,8 +572,9 @@ class MeshtasticBridgeServer {
         console.log('🔍 Auto-connect enabled, scanning for radios...');
         setTimeout(() => this.autoScanAndConnect(), 2000); // Wait 2s for server to stabilize
 
-        // Re-scan periodically for new radios
-        setInterval(() => this.autoScanAndConnect(), 30000); // Every 30 seconds
+        // Periodic auto-scan DISABLED - only reconnect on unexpected disconnects
+        // setInterval(() => this.autoScanAndConnect(), 30000); // Every 30 seconds
+        console.log('ℹ️  Periodic auto-scan disabled. Will only reconnect on unexpected disconnects.');
       } else {
         console.log('ℹ️  Auto-connect disabled. Waiting for manual connection via web UI...');
       }
@@ -1230,15 +1231,29 @@ class MeshtasticBridgeServer {
         // Create a test device
         testDevice = new MeshDevice(testTransport);
 
-        // Try to configure with a short timeout
+        // Try to configure with a reasonable timeout
+        // Note: configure() waits for device ready state, not just config packets
         const configPromise = testDevice.configure();
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Meshtastic configure timeout')), 5000)
+          setTimeout(() => reject(new Error('Meshtastic configure timeout')), 10000)
         );
 
-        await Promise.race([configPromise, timeoutPromise]);
+        try {
+          await Promise.race([configPromise, timeoutPromise]);
+          console.log(`✅ ${portPath} is a Meshtastic device - keeping connection alive for reuse`);
+        } catch (timeoutError) {
+          // Even if configure() times out, check if device actually responded with config
+          // The promise may not resolve but the device might have sent all config data
+          const hasNodeInfo = testDevice.myNodeInfo?.myNodeNum !== undefined;
+          const hasChannels = testDevice.channels && testDevice.channels.length > 0;
 
-        console.log(`✅ ${portPath} is a Meshtastic device - keeping connection alive for reuse`);
+          if (hasNodeInfo || hasChannels) {
+            console.log(`✅ ${portPath} is a Meshtastic device (configured despite timeout) - keeping connection alive`);
+          } else {
+            // Actually failed to configure
+            throw timeoutError;
+          }
+        }
 
         // DON'T disconnect - return the device and transport to be reused
         // This avoids the port lock issue from disconnect/reconnect cycle
@@ -1260,14 +1275,11 @@ class MeshtasticBridgeServer {
           }
         }
 
-        // Give the port a moment to fully release
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         // Explicitly close the underlying serial port if still accessible
         if (testTransport && testTransport.port) {
           try {
             if (testTransport.port.isOpen) {
-              console.log(`🧹 Closing transport port on ${portPath}...`);
+              console.log(`🧹 Force closing transport port on ${portPath}...`);
               await new Promise((resolve) => {
                 testTransport.port.close((err) => {
                   if (err) {
@@ -1282,8 +1294,13 @@ class MeshtasticBridgeServer {
           }
         }
 
+        // Clear references immediately
         testTransport = null;
         testDevice = null;
+
+        // Give the port MORE time to fully release (2 seconds for OS to cleanup)
+        console.log(`⏳ Waiting 2s for port ${portPath} to fully release...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         return { isMeshtastic: false };
       }
@@ -1405,7 +1422,11 @@ class MeshtasticBridgeServer {
     try {
       const radio = this.radios.get(radioId);
       if (radio) {
-        console.log(`🔌 Cleaning up radio ${radioId}...`);
+        console.log(`🔌 Radio ${radioId} disconnected unexpectedly`);
+
+        // Save port and protocol for reconnection attempt
+        const portPath = radio.port;
+        const protocol = radio.protocolType || 'meshtastic';
 
         // Remove from map
         this.radios.delete(radioId);
@@ -1416,10 +1437,30 @@ class MeshtasticBridgeServer {
           radioId: radioId
         });
 
-        console.log(`✅ Radio ${radioId} cleaned up successfully`);
+        console.log(`✅ Radio ${radioId} cleaned up`);
+
+        // Attempt to reconnect after a delay (only if auto-connect is enabled)
+        const autoConnect = process.env.AUTO_CONNECT !== 'false';
+        if (autoConnect && portPath) {
+          console.log(`🔄 Will attempt to reconnect to ${portPath} in 5 seconds...`);
+          setTimeout(async () => {
+            try {
+              console.log(`🔄 Attempting to reconnect to ${portPath}...`);
+              const result = await this.isMeshtasticDevice(portPath);
+              if (result.isMeshtastic) {
+                await this.connectRadio(null, portPath, protocol, result.device, result.transport);
+                console.log(`✅ Successfully reconnected to ${portPath}`);
+              } else {
+                console.log(`⚠️  Could not reconnect to ${portPath} - device not responding`);
+              }
+            } catch (reconnectError) {
+              console.error(`❌ Failed to reconnect to ${portPath}:`, reconnectError.message);
+            }
+          }, 5000); // Wait 5 seconds before reconnecting
+        }
       }
     } catch (error) {
-      console.error(`❌ Error cleaning up radio ${radioId}:`, error);
+      console.error(`❌ Error handling radio disconnect ${radioId}:`, error);
     }
   }
 
