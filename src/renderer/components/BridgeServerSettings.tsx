@@ -20,9 +20,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
   const shutdownServer = useStore(state => state.shutdownServer);
   const checkForUpdates = useStore(state => state.checkForUpdates);
   const triggerUpdate = useStore(state => state.triggerUpdate);
-  const getExcludedPorts = useStore(state => state.getExcludedPorts);
-  const removeExcludedPort = useStore(state => state.removeExcludedPort);
-  const clearExcludedPorts = useStore(state => state.clearExcludedPorts);
   const manager = useStore(state => state.manager);
 
   const [bridgeUrl, setBridgeUrl] = useState(() => {
@@ -32,7 +29,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [excludedPorts, setExcludedPorts] = useState<string[]>([]);
 
   // Listen for update info from server
   useEffect(() => {
@@ -58,22 +54,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
       manager.off('update-triggered', handleUpdateTriggered);
     };
   }, [manager]);
-
-  // Listen for excluded ports updates
-  useEffect(() => {
-    const handleExcludedPorts = (ports: string[]) => {
-      setExcludedPorts(ports);
-    };
-
-    manager.on('excluded-ports', handleExcludedPorts);
-
-    // Request initial list
-    getExcludedPorts().catch(console.error);
-
-    return () => {
-      manager.off('excluded-ports', handleExcludedPorts);
-    };
-  }, [manager, getExcludedPorts]);
 
   const handleSave = () => {
     localStorage.setItem('bridge-server-url', bridgeUrl);
@@ -128,28 +108,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
       console.error('Failed to trigger update:', error);
       setUpdating(false);
       alert('Failed to trigger update. Please try again later.');
-    }
-  };
-
-  const handleRemoveExcludedPort = async (portPath: string) => {
-    try {
-      await removeExcludedPort(portPath);
-    } catch (error) {
-      console.error('Failed to remove excluded port:', error);
-      alert(`Failed to remove port from exclusion list: ${error}`);
-    }
-  };
-
-  const handleClearExcludedPorts = async () => {
-    if (!confirm(`Are you sure you want to clear all ${excludedPorts.length} excluded port(s)?\n\nThey will be scanned again on the next auto-scan.`)) {
-      return;
-    }
-
-    try {
-      await clearExcludedPorts();
-    } catch (error) {
-      console.error('Failed to clear excluded ports:', error);
-      alert(`Failed to clear exclusion list: ${error}`);
     }
   };
 
@@ -374,80 +332,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
               </ul>
             </div>
           </div>
-        </div>
-      </Card>
-
-      <Card>
-        <h3 className="text-lg font-semibold text-white mb-4">Port Exclusion List</h3>
-
-        <div className="space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-            <div className="text-sm text-slate-300">
-              <strong>How port exclusion works:</strong>
-              <ul className="mt-2 space-y-1 list-disc list-inside text-slate-400">
-                <li>Ports are automatically added when confirmed as NON-Meshtastic devices</li>
-                <li>Excluded ports are never scanned again (prevents wasting time on RNodes, etc.)</li>
-                <li>Remove ports from this list if you reconnect different hardware</li>
-                <li>The bridge aggressively forces ports open to test them</li>
-              </ul>
-            </div>
-          </div>
-
-          {excludedPorts.length === 0 ? (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-              <div className="flex gap-3">
-                <svg className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="text-sm text-green-300">
-                  <strong className="font-semibold">No Excluded Ports</strong>
-                  <p className="mt-1">All detected ports will be scanned for Meshtastic devices.</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex gap-3">
-                    <svg className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                    </svg>
-                    <div>
-                      <strong className="text-orange-300 font-semibold">{excludedPorts.length} Excluded Port(s)</strong>
-                      <p className="text-sm text-orange-300/80 mt-1">These ports will not be scanned</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleClearExcludedPorts}
-                    className="btn-secondary text-sm"
-                  >
-                    Clear All
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {excludedPorts.map((port) => (
-                    <div
-                      key={port}
-                      className="flex items-center justify-between bg-slate-900/50 border border-slate-700/50 rounded px-3 py-2"
-                    >
-                      <span className="font-mono text-sm text-slate-300">{port}</span>
-                      <button
-                        onClick={() => handleRemoveExcludedPort(port)}
-                        className="text-red-400 hover:text-red-300 transition-colors"
-                        title="Remove from exclusion list"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </Card>
 
