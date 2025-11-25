@@ -798,21 +798,62 @@ export class MeshtasticProtocol extends BaseProtocol {
         console.log(`[Meshtastic] Periodic radio time updates disabled`);
       }
 
+      // Disconnect device first (stops heartbeat and message processing)
       if (this.device) {
-        await this.device.disconnect();
+        try {
+          await this.device.disconnect();
+          console.log(`[Meshtastic] Device disconnected`);
+        } catch (deviceError) {
+          console.error(`[Meshtastic] Error disconnecting device:`, deviceError);
+          // Continue with cleanup even if device disconnect fails
+        }
         this.device = null;
       }
 
-      if (this.transport) {
-        this.transport = null;
+      // Explicitly close the serial port to release the lock
+      if (this.transport && this.transport.port) {
+        try {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              console.log(`[Meshtastic] Port close timeout, forcing cleanup`);
+              resolve(); // Don't reject, just continue
+            }, 2000);
+
+            // Check if port is already closed
+            if (!this.transport.port.isOpen) {
+              clearTimeout(timeout);
+              console.log(`[Meshtastic] Port already closed`);
+              resolve();
+              return;
+            }
+
+            this.transport.port.close((err) => {
+              clearTimeout(timeout);
+              if (err) {
+                console.error(`[Meshtastic] Error closing port:`, err);
+                // Don't reject - we want to continue cleanup
+              } else {
+                console.log(`[Meshtastic] Serial port closed`);
+              }
+              resolve();
+            });
+          });
+        } catch (portError) {
+          console.error(`[Meshtastic] Error during port cleanup:`, portError);
+          // Continue with cleanup
+        }
       }
 
+      this.transport = null;
       this.connected = false;
-      console.log(`[Meshtastic] Disconnected successfully`);
+      console.log(`[Meshtastic] Disconnected successfully from ${this.portPath}`);
     } catch (error) {
       console.error('[Meshtastic] Error during disconnect:', error);
-      this.handleError(error);
-      throw error;
+      // Mark as disconnected even if there was an error
+      this.connected = false;
+      this.device = null;
+      this.transport = null;
+      // Don't throw - we want disconnect to always succeed
     }
   }
 
@@ -853,20 +894,63 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       const { wantAck = false } = options;
 
+      // Get hop limit from LoRa config, default to 3 if not set
+      const hopLimit = this.loraConfig?.hopLimit ?? 3;
+
       console.log(`[Meshtastic] Sending text: "${text}" on channel ${channel} (broadcast)`);
       console.log(`[Meshtastic] Send parameters:`, {
         text,
         destination: 'broadcast',
         wantAck,
-        channel
+        channel,
+        hopLimit
       });
 
-      // Send using the device
-      // sendText(text, destination, wantAck, channel)
-      // Use "broadcast" as destination to broadcast on the specified channel
-      const result = await this.device.sendText(text, "broadcast", wantAck, channel);
+      // IMPORTANT: We must manually construct the packet with hopLimit
+      // because @meshtastic/core's sendText/sendPacket doesn't set hopLimit,
+      // which causes it to default to 0 (no mesh forwarding).
+      // This was causing messages to stop at the first device.
 
-      console.log(`[Meshtastic] sendText result:`, result);
+      // Encode the text message
+      const enc = new TextEncoder();
+      const textBytes = enc.encode(text);
+
+      // Create MeshPacket with hopLimit explicitly set
+      const meshPacket = create(Protobuf.Mesh.MeshPacketSchema, {
+        payloadVariant: {
+          case: 'decoded',
+          value: {
+            payload: textBytes,
+            portnum: Protobuf.Portnums.PortNum.TEXT_MESSAGE_APP,
+            wantResponse: false,
+            dest: 0,
+            requestId: 0,
+            source: 0,
+          },
+        },
+        from: this.nodeInfo.myNodeNum,
+        to: 0xFFFFFFFF, // Broadcast address
+        id: this.generateRandId(),
+        wantAck,
+        channel,
+        hopLimit, // Set hop limit from LoRa config
+      });
+
+      // Wrap in ToRadio message
+      const toRadioMessage = create(Protobuf.Mesh.ToRadioSchema, {
+        payloadVariant: {
+          case: 'packet',
+          value: meshPacket,
+        },
+      });
+
+      // Send the packet
+      const result = await this.device.sendRaw(
+        toBinary(Protobuf.Mesh.ToRadioSchema, toRadioMessage),
+        meshPacket.id
+      );
+
+      console.log(`[Meshtastic] Message sent with hop limit ${hopLimit}, packet ID:`, result);
 
       this.stats.messagesSent++;
       console.log(`[Meshtastic] ✅ Text broadcast successfully on channel ${channel}`);
@@ -1512,5 +1596,13 @@ export class MeshtasticProtocol extends BaseProtocol {
       255: 'PRIVATE_HW'
     };
     return models[model] || `Unknown (${model})`;
+  }
+
+  /**
+   * Generate a random packet ID
+   * @returns {number} Random packet ID
+   */
+  generateRandId() {
+    return Math.floor(Math.random() * 0xFFFFFFFF);
   }
 }

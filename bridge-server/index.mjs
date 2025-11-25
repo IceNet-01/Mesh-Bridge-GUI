@@ -687,6 +687,16 @@ class MeshtasticBridgeServer {
           await this.syncRadioTime(ws, message.radioId);
           break;
 
+        case 'shutdown-server':
+          console.log('🛑 Shutdown requested from UI');
+          ws.send(JSON.stringify({
+            type: 'shutdown-initiated',
+            message: 'Server shutdown initiated'
+          }));
+          // Give time for the response to be sent before shutting down
+          setTimeout(() => this.shutdown(), 500);
+          break;
+
         case 'get-channel':
           await this.getChannel(ws, message.radioId, message.channelIndex);
           break;
@@ -4673,23 +4683,49 @@ class MeshtasticBridgeServer {
     // Stop advertisement bot
     this.stopAdvertisementBot();
 
-    // Disconnect all radios
+    // Disconnect all radios with proper cleanup
+    console.log(`📻 Disconnecting ${this.radios.size} radio(s)...`);
     for (const [radioId, radio] of this.radios.entries()) {
       try {
-        await radio.transport.disconnect();
-        console.log(`📻 Disconnected ${radioId}`);
+        if (radio.protocol && typeof radio.protocol.disconnect === 'function') {
+          console.log(`📻 Disconnecting ${radioId}...`);
+          await radio.protocol.disconnect();
+          console.log(`✅ Disconnected ${radioId}`);
+        } else {
+          console.log(`⚠️  ${radioId} has no protocol disconnect method`);
+        }
       } catch (error) {
-        console.error(`Error disconnecting ${radioId}:`, error);
+        console.error(`❌ Error disconnecting ${radioId}:`, error.message);
+        // Continue with other radios even if one fails
       }
     }
 
+    // Clear radios map
+    this.radios.clear();
+    console.log(`✅ All radios disconnected and cleared`);
+
     // Close WebSocket server
     if (this.wss) {
-      this.wss.close();
+      console.log(`🔌 Closing WebSocket server...`);
+      this.wss.close(() => {
+        console.log(`✅ WebSocket server closed`);
+      });
     }
 
-    console.log('✅ Bridge server shut down');
-    process.exit(0);
+    // Close HTTP server
+    if (this.server) {
+      console.log(`🌐 Closing HTTP server...`);
+      this.server.close(() => {
+        console.log(`✅ HTTP server closed`);
+      });
+    }
+
+    console.log('✅ Bridge server shut down gracefully');
+
+    // Give a moment for cleanup to complete
+    setTimeout(() => {
+      process.exit(0);
+    }, 500);
   }
 }
 
