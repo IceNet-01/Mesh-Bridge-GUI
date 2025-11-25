@@ -98,6 +98,8 @@ function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps
     { id: 'modules', title: 'Modules', icon: '🧩', expanded: false },
   ]);
 
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+
   const [loraConfig, setLoraConfig] = useState<LoRaConfig>({
     region: 'US',
     modemPreset: 'LONG_FAST',
@@ -182,6 +184,18 @@ function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps
     onGetConfig(radioId, configType);
   };
 
+  // Enum mappings for converting string values to integers
+  const REGION_ENUM: Record<string, number> = {
+    'UNSET': 0, 'US': 1, 'EU_433': 2, 'EU_868': 3, 'CN': 4, 'JP': 5,
+    'ANZ': 6, 'KR': 7, 'TW': 8, 'RU': 9, 'IN': 10, 'NZ_865': 11,
+    'TH': 12, 'UA_433': 14, 'UA_868': 15, 'MY_433': 16, 'MY_919': 17, 'SG_923': 18
+  };
+
+  const MODEM_PRESET_ENUM: Record<string, number> = {
+    'LONG_FAST': 0, 'LONG_SLOW': 1, 'VERY_LONG_SLOW': 2, 'MEDIUM_SLOW': 3,
+    'MEDIUM_FAST': 4, 'SHORT_SLOW': 5, 'SHORT_FAST': 6, 'LONG_MODERATE': 7
+  };
+
   const handleSetConfig = (configType: string) => {
     if (!radioId) return;
 
@@ -189,7 +203,12 @@ function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps
     let config;
     switch (configType) {
       case 'lora':
-        config = loraConfig;
+        // Convert string enums to integers for LoRa config
+        config = {
+          ...loraConfig,
+          region: REGION_ENUM[loraConfig.region] ?? loraConfig.region,
+          modemPreset: MODEM_PRESET_ENUM[loraConfig.modemPreset] ?? loraConfig.modemPreset,
+        };
         break;
       case 'device':
         config = deviceConfig;
@@ -1138,43 +1157,102 @@ function RadioSettings({ radioId, onGetConfig, onSetConfig }: RadioSettingsProps
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[
-              { name: 'MQTT', icon: '📨', desc: 'MQTT Gateway' },
-              { name: 'Serial', icon: '🔌', desc: 'Serial Module' },
-              { name: 'External Notification', icon: '🔔', desc: 'LED/Buzzer alerts' },
-              { name: 'Store & Forward', icon: '💾', desc: 'Message store & forward' },
-              { name: 'Range Test', icon: '📏', desc: 'Range testing' },
-              { name: 'Telemetry', icon: '📊', desc: 'Device telemetry' },
-              { name: 'Canned Message', icon: '💬', desc: 'Predefined messages' },
-              { name: 'Audio', icon: '🔊', desc: 'Audio codec' },
-              { name: 'Remote Hardware', icon: '🎛️', desc: 'GPIO control' },
-              { name: 'Neighbor Info', icon: '👥', desc: 'Neighbor tracking' },
-              { name: 'Ambient Lighting', icon: '💡', desc: 'RGB LED control' },
-              { name: 'Detection Sensor', icon: '🚨', desc: 'Motion detection' },
-              { name: 'Paxcounter', icon: '👤', desc: 'People counter' },
-            ].map((module) => (
-              <button
-                key={module.name}
-                className="card p-4 hover:border-primary-500 transition-all text-left group"
-                onClick={() => console.log(`Configure ${module.name}`)}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">{module.icon}</span>
-                  <h4 className="font-semibold text-white group-hover:text-primary-400">
-                    {module.name}
-                  </h4>
-                </div>
-                <p className="text-xs text-slate-400">{module.desc}</p>
-              </button>
-            ))}
-          </div>
+          {!selectedModule ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { name: 'MQTT', icon: '📨', desc: 'MQTT Gateway' },
+                  { name: 'Serial', icon: '🔌', desc: 'Serial Module' },
+                  { name: 'External Notification', icon: '🔔', desc: 'LED/Buzzer alerts' },
+                  { name: 'Store & Forward', icon: '💾', desc: 'Message store & forward' },
+                  { name: 'Range Test', icon: '📏', desc: 'Range testing' },
+                  { name: 'Telemetry', icon: '📊', desc: 'Device telemetry' },
+                  { name: 'Canned Message', icon: '💬', desc: 'Predefined messages' },
+                  { name: 'Audio', icon: '🔊', desc: 'Audio codec' },
+                  { name: 'Remote Hardware', icon: '🎛️', desc: 'GPIO control' },
+                  { name: 'Neighbor Info', icon: '👥', desc: 'Neighbor tracking' },
+                  { name: 'Ambient Lighting', icon: '💡', desc: 'RGB LED control' },
+                  { name: 'Detection Sensor', icon: '🚨', desc: 'Motion detection' },
+                  { name: 'Paxcounter', icon: '👤', desc: 'People counter' },
+                ].map((module) => (
+                  <button
+                    key={module.name}
+                    className="card p-4 hover:border-primary-500 transition-all text-left group"
+                    onClick={() => setSelectedModule(module.name)}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-2xl">{module.icon}</span>
+                      <h4 className="font-semibold text-white group-hover:text-primary-400">
+                        {module.name}
+                      </h4>
+                    </div>
+                    <p className="text-xs text-slate-400">{module.desc}</p>
+                  </button>
+                ))}
+              </div>
 
-          <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <p className="text-sm text-blue-400">
-              Click on a module to configure its specific settings
-            </p>
-          </div>
+              <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <p className="text-sm text-blue-400">
+                  Click on a module to configure its specific settings
+                </p>
+              </div>
+            </>
+          ) : (
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-white">{selectedModule} Settings</h4>
+                <button
+                  onClick={() => setSelectedModule(null)}
+                  className="btn-secondary text-sm"
+                >
+                  ← Back to Modules
+                </button>
+              </div>
+
+              <div className="p-6 bg-slate-800/50 rounded-lg mb-4">
+                <p className="text-slate-400 text-sm mb-4">
+                  Module configuration will be available via get/set config commands for: <span className="font-semibold text-white">{selectedModule}</span>
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="flex items-center gap-2 text-white cursor-pointer">
+                      <input type="checkbox" className="w-4 h-4" />
+                      <span>Enable {selectedModule} Module</span>
+                    </label>
+                  </div>
+
+                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                    <p className="text-sm text-yellow-400">
+                      ℹ️ Module-specific settings will be implemented based on Meshtastic protocol requirements.
+                      Use the "Get Config" and "Set Config" methods via the backend to manage module configurations.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        console.log(`Getting ${selectedModule} config`);
+                        alert(`Getting ${selectedModule} configuration from radio...`);
+                      }}
+                      className="btn-secondary flex-1"
+                    >
+                      📥 Get Config
+                    </button>
+                    <button
+                      onClick={() => {
+                        console.log(`Setting ${selectedModule} config`);
+                        alert(`Setting ${selectedModule} configuration...`);
+                      }}
+                      className="btn-primary flex-1"
+                    >
+                      💾 Save Config
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
