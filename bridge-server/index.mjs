@@ -1734,116 +1734,105 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Command: #weather [location] - Get weather report with 48-hour forecast
-   * Supports: city name, "city, state", state code, or zipcode
-   * Examples: #weather Seattle | #weather Seattle, WA | #weather 98101
+   * Command: #weather [location] - Get current weather
+   * Uses Open-Meteo API (free, no rate limits, no blocking)
+   * Supports: city name, "city, state", state code
+   * Examples: #weather Seattle | #weather Seattle, WA
    */
   async cmdWeather(args) {
     // Parse and validate location input
     let location;
 
     if (args.length === 0) {
-      return `❌ Please provide a location. Examples:\n` +
-             `  #weather Seattle\n` +
-             `  #weather Seattle, WA\n` +
-             `  #weather 98101\n` +
-             `  #weather New York`;
+      return `❌ Please provide a location\nEx: #weather Seattle, WA`;
     }
 
-    // Join args and normalize (trim, collapse multiple spaces)
+    // Join args and normalize
     location = args.join(' ').trim().replace(/\s+/g, ' ');
 
     // Validate location format
     if (!this.isValidLocation(location)) {
-      return `❌ Invalid location format. Examples:\n` +
-             `  #weather Seattle\n` +
-             `  #weather Seattle, WA\n` +
-             `  #weather 98101\n` +
-             `  #weather New York`;
+      return `❌ Invalid location\nEx: #weather Seattle, WA`;
     }
 
     try {
-      // Fetch JSON format from wttr.in for detailed forecast data
-      const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'MeshBridgeGUI/1.0'
-        },
-        agent: this.httpsAgent
+      // Create abort controller for 10 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      // Step 1: Geocode location to get coordinates
+      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+
+      const geoResponse = await fetch(geocodeUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        agent: this.httpsAgent,
+        signal: controller.signal
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return `❌ Location "${location}" not found. Try:\n` +
-                 `  City: #weather Seattle\n` +
-                 `  City, State: #weather Seattle, WA\n` +
-                 `  Zipcode: #weather 98101`;
-        }
-        return `❌ Weather service unavailable (${response.status})`;
+      if (!geoResponse.ok) {
+        clearTimeout(timeoutId);
+        return `❌ Geocoding service error`;
       }
 
-      const data = await response.json();
+      const geoData = await geoResponse.json();
 
-      // Check for invalid response
-      if (!data || !data.current_condition || !data.weather) {
-        return `❌ Location "${location}" not found`;
+      if (!geoData.results || geoData.results.length === 0) {
+        clearTimeout(timeoutId);
+        return `❌ Location not found: ${location}`;
       }
 
-      // Extract current conditions
-      const current = data.current_condition[0];
-      const locationName = data.nearest_area?.[0]?.areaName?.[0]?.value || location;
+      const place = geoData.results[0];
+      const lat = place.latitude;
+      const lon = place.longitude;
+      const placeName = place.name + (place.admin1 ? `, ${place.admin1}` : '');
 
-      // Build current weather string
-      let result = `🌤️ ${locationName}\n`;
-      result += `Now: ${current.weatherDesc[0].value} ${current.temp_F}°F\n`;
-      result += `💧${current.humidity}% 💨${current.windspeedMiles}mph ${current.winddir16Point}\n`;
+      // Step 2: Get weather for coordinates
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
 
-      // Add 48-hour forecast (next 2 days)
-      result += `\n📅 48-Hour Forecast:\n`;
+      const weatherResponse = await fetch(weatherUrl, {
+        headers: { 'User-Agent': 'MeshBridgeGUI/1.0' },
+        agent: this.httpsAgent,
+        signal: controller.signal
+      });
 
-      // Get forecast for next 2 days
-      const forecastDays = data.weather.slice(0, 2);
+      clearTimeout(timeoutId);
 
-      for (let i = 0; i < forecastDays.length; i++) {
-        const day = forecastDays[i];
-        const date = new Date(day.date);
-        const dayName = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short' });
-
-        // Get morning (9am), afternoon (3pm), and evening (9pm) forecasts
-        const morning = day.hourly[3]; // 9am (index 3 = 9am)
-        const afternoon = day.hourly[5]; // 3pm (index 5 = 3pm)
-        const evening = day.hourly[7]; // 9pm (index 7 = 9pm)
-
-        result += `\n${dayName}:\n`;
-        result += `  9AM: ${morning.weatherDesc[0].value} ${morning.tempF}°F\n`;
-        result += `  3PM: ${afternoon.weatherDesc[0].value} ${afternoon.tempF}°F\n`;
-        result += `  9PM: ${evening.weatherDesc[0].value} ${evening.tempF}°F\n`;
-
-        // Add daily high/low and precipitation chance
-        result += `  High: ${day.maxtempF}°F Low: ${day.mintempF}°F\n`;
-        result += `  Rain: ${day.hourly[4].chanceofrain}%`;
-
-        if (i < forecastDays.length - 1) {
-          result += '\n';
-        }
+      if (!weatherResponse.ok) {
+        return `❌ Weather service error`;
       }
+
+      const weatherData = await weatherResponse.json();
+      const current = weatherData.current;
+
+      // Map WMO weather codes to descriptions
+      const weatherCodes = {
+        0: 'Clear', 1: 'Mostly Clear', 2: 'Partly Cloudy', 3: 'Cloudy',
+        45: 'Foggy', 48: 'Foggy', 51: 'Light Drizzle', 53: 'Drizzle',
+        55: 'Heavy Drizzle', 61: 'Light Rain', 63: 'Rain', 65: 'Heavy Rain',
+        71: 'Light Snow', 73: 'Snow', 75: 'Heavy Snow', 80: 'Light Showers',
+        81: 'Showers', 82: 'Heavy Showers', 95: 'Thunderstorm'
+      };
+      const condition = weatherCodes[current.weather_code] || 'Unknown';
+
+      // Build compact response for Meshtastic
+      let result = `🌤️ ${placeName}\n`;
+      result += `${condition} ${Math.round(current.temperature_2m)}°F\n`;
+      result += `💧${current.relative_humidity_2m}% 💨${Math.round(current.wind_speed_10m)}mph`;
 
       return result;
 
     } catch (error) {
       console.error('Weather fetch error:', error);
 
-      // Provide short, actionable error messages for Meshtastic's message limit
-      if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
-        return `❌ No internet connection or DNS failure`;
+      // Provide short error messages for Meshtastic limits
+      if (error.name === 'AbortError') {
+        return `❌ Request timeout`;
+      } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+        return `❌ DNS error`;
       } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
-        return `❌ Weather service timeout/unreachable`;
-      } else if (error.message.includes('SSL') || error.message.includes('TLS') || error.message.includes('certificate')) {
-        return `❌ SSL/network error. Try again or check proxy settings`;
+        return `❌ Connection timeout`;
       } else {
-        // Truncate error message to fit Meshtastic limit
-        const shortError = error.message.substring(0, 50);
-        return `❌ Weather error: ${shortError}...`;
+        return `❌ Weather error`;
       }
     }
   }
