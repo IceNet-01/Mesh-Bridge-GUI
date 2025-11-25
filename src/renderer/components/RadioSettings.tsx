@@ -195,8 +195,8 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
 
       setLoraConfig(prev => ({
         ...prev,
-        region: typeof lora.region === 'string' ? lora.region : (REGION_REVERSE_MAP[lora.region] || 'US'),
-        modemPreset: typeof lora.modemPreset === 'string' ? lora.modemPreset : (MODEM_PRESET_REVERSE_MAP[lora.modemPreset] || 'LONG_FAST'),
+        region: typeof lora.region === 'string' ? lora.region : (typeof lora.region === 'number' ? (REGION_REVERSE_MAP[lora.region] || 'US') : 'US'),
+        modemPreset: typeof lora.modemPreset === 'string' ? lora.modemPreset : (typeof lora.modemPreset === 'number' ? (MODEM_PRESET_REVERSE_MAP[lora.modemPreset] || 'LONG_FAST') : 'LONG_FAST'),
         hopLimit: lora.hopLimit ?? prev.hopLimit,
         txEnabled: lora.txEnabled ?? prev.txEnabled,
         txPower: lora.txPower ?? prev.txPower,
