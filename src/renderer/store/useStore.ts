@@ -49,6 +49,8 @@ interface AppStore {
   rebootRadio: (radioId: string) => Promise<void>;
   syncRadioTime: (radioId: string) => Promise<void>;
   shutdownServer: () => Promise<void>;
+  checkForUpdates: () => Promise<void>;
+  triggerUpdate: () => Promise<void>;
   getChannel: (radioId: string, channelIndex: number) => Promise<void>;
   setChannel: (radioId: string, channelConfig: any) => Promise<void>;
   getRadioConfig: (radioId: string, configType: string) => Promise<void>;
@@ -411,6 +413,14 @@ export const useStore = create<AppStore>((set, get) => {
 
     shutdownServer: async () => {
       await manager.shutdownServer();
+    },
+
+    checkForUpdates: async () => {
+      await manager.checkForUpdates();
+    },
+
+    triggerUpdate: async () => {
+      await manager.triggerUpdate();
     },
 
     getChannel: async (radioId: string, channelIndex: number) => {

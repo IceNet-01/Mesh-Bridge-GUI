@@ -337,6 +337,32 @@ export class WebSocketRadioManager {
         this.log('info', `${data.configType} config received from radio ${data.radioId}`);
         break;
 
+      case 'update-info':
+        // Update information from GitHub
+        console.log('[WebSocket] 📦 Update info received:', data);
+        this.emit('update-info', {
+          currentVersion: data.currentVersion,
+          latestVersion: data.latestVersion,
+          updateAvailable: data.updateAvailable,
+          releaseUrl: data.releaseUrl,
+          releaseNotes: data.releaseNotes,
+          publishedAt: data.publishedAt,
+          error: data.error
+        });
+        this.log('info', `Update check complete: ${data.updateAvailable ? 'Update available!' : 'Up to date'}`);
+        break;
+
+      case 'update-triggered':
+        // Update has been triggered
+        console.log('[WebSocket] 🔄 Update triggered:', data);
+        this.emit('update-triggered', {
+          success: data.success,
+          message: data.message,
+          error: data.error
+        });
+        this.log('info', data.success ? 'Update initiated' : `Update failed: ${data.error}`);
+        break;
+
       case 'radio-telemetry':
         // Radio telemetry data updated
         const radio = this.radios.get(data.radioId);
@@ -820,6 +846,38 @@ export class WebSocketRadioManager {
 
     this.ws.send(JSON.stringify({
       type: 'shutdown-server'
+    }));
+  }
+
+  /**
+   * Check for software updates from GitHub
+   */
+  async checkForUpdates(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', '🔍 Checking for updates...');
+
+    this.ws.send(JSON.stringify({
+      type: 'check-updates'
+    }));
+  }
+
+  /**
+   * Trigger application update
+   */
+  async triggerUpdate(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('warn', '🔄 Triggering application update...');
+
+    this.ws.send(JSON.stringify({
+      type: 'trigger-update'
     }));
   }
 
