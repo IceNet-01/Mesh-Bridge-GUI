@@ -45,7 +45,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distPath = join(__dirname, '..', 'dist');
 const configPath = join(__dirname, 'bridge-config.json');
-const excludedPortsPath = join(__dirname, 'excluded-ports.json');
 
 class MeshtasticBridgeServer {
   constructor(port = 8080, host = '0.0.0.0') {
@@ -59,12 +58,6 @@ class MeshtasticBridgeServer {
     this.seenMessageIds = new Set();         // Track message IDs for deduplication
     this.maxSeenMessages = 2000;             // Limit size of seen messages set (increased)
     this.seenMessageTimestamps = new Map();  // Track when message IDs were added for age-based cleanup
-
-    // ===== PORT EXCLUSION LIST =====
-    // Persistent list of ports that should never be used (confirmed non-Meshtastic devices)
-    // Prevents repeatedly trying to connect to known incompatible ports
-    this.excludedPorts = new Set();          // Set of excluded port paths
-    this.loadExcludedPorts();                // Load from persistent storage
 
     // ===== CHANNEL FORWARDING CONFIGURATION =====
     // Two modes for channel forwarding:
@@ -429,85 +422,6 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Load excluded ports from persistent storage
-   */
-  loadExcludedPorts() {
-    try {
-      if (existsSync(excludedPortsPath)) {
-        const data = readFileSync(excludedPortsPath, 'utf8');
-        const parsed = JSON.parse(data);
-        this.excludedPorts = new Set(parsed.excludedPorts || []);
-        console.log(`📋 Loaded ${this.excludedPorts.size} excluded port(s) from ${excludedPortsPath}`);
-      } else {
-        console.log(`📋 No excluded ports file found, starting with empty exclusion list`);
-      }
-    } catch (error) {
-      console.error('❌ Error loading excluded ports:', error.message);
-      this.excludedPorts = new Set();
-    }
-  }
-
-  /**
-   * Save excluded ports to persistent storage
-   */
-  saveExcludedPorts() {
-    try {
-      const data = {
-        excludedPorts: Array.from(this.excludedPorts),
-        lastUpdated: new Date().toISOString()
-      };
-      writeFileSync(excludedPortsPath, JSON.stringify(data, null, 2), 'utf8');
-      console.log(`💾 Saved ${this.excludedPorts.size} excluded port(s) to ${excludedPortsPath}`);
-    } catch (error) {
-      console.error('❌ Error saving excluded ports:', error.message);
-    }
-  }
-
-  /**
-   * Add a port to the exclusion list
-   */
-  addExcludedPort(portPath) {
-    if (!this.excludedPorts.has(portPath)) {
-      this.excludedPorts.add(portPath);
-      this.saveExcludedPorts();
-      console.log(`🚫 Added ${portPath} to permanent exclusion list`);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Remove a port from the exclusion list
-   */
-  removeExcludedPort(portPath) {
-    if (this.excludedPorts.has(portPath)) {
-      this.excludedPorts.delete(portPath);
-      this.saveExcludedPorts();
-      console.log(`✅ Removed ${portPath} from exclusion list`);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Clear all excluded ports
-   */
-  clearExcludedPorts() {
-    const count = this.excludedPorts.size;
-    this.excludedPorts.clear();
-    this.saveExcludedPorts();
-    console.log(`🗑️  Cleared ${count} port(s) from exclusion list`);
-    return count;
-  }
-
-  /**
-   * Get list of excluded ports
-   */
-  getExcludedPorts() {
-    return Array.from(this.excludedPorts);
-  }
-
-  /**
    * Start the HTTP and WebSocket server
    */
   async start() {
@@ -802,42 +716,6 @@ class MeshtasticBridgeServer {
             type: 'update-triggered',
             ...updateResult
           }));
-          break;
-
-        case 'get-excluded-ports':
-          ws.send(JSON.stringify({
-            type: 'excluded-ports',
-            ports: this.getExcludedPorts()
-          }));
-          break;
-
-        case 'remove-excluded-port':
-          if (message.portPath) {
-            const removed = this.removeExcludedPort(message.portPath);
-            ws.send(JSON.stringify({
-              type: 'excluded-port-removed',
-              portPath: message.portPath,
-              success: removed
-            }));
-            // Broadcast updated list to all clients
-            this.broadcast({
-              type: 'excluded-ports',
-              ports: this.getExcludedPorts()
-            });
-          }
-          break;
-
-        case 'clear-excluded-ports':
-          const count = this.clearExcludedPorts();
-          ws.send(JSON.stringify({
-            type: 'excluded-ports-cleared',
-            count: count
-          }));
-          // Broadcast updated list to all clients
-          this.broadcast({
-            type: 'excluded-ports',
-            ports: this.getExcludedPorts()
-          });
           break;
 
         case 'get-channel':
@@ -1304,23 +1182,51 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * AGGRESSIVELY check if a port is a Meshtastic device
-   * Forces port open regardless of lock status
+   * Check if a port is available and appears to be a Meshtastic device
    * @param {string} portPath - Serial port path to check
    * @returns {Promise<{isMeshtastic: boolean, device?: any, transport?: any}>} Result with optional device/transport to reuse
    */
   async isMeshtasticDevice(portPath) {
+    let testPort = null;
     let testTransport = null;
     let testDevice = null;
 
     try {
-      console.log(`🔍 FORCE testing ${portPath} for Meshtastic device (ignoring locks)...`);
+      console.log(`🔍 Testing if ${portPath} is a Meshtastic device...`);
 
-      // SKIP the initial port availability check - just try to open it directly
-      // This forces the port open even if something else is using it
+      // First, try to open the port to check if it's available
+      testPort = new SerialPort({
+        path: portPath,
+        baudRate: 115200,
+        autoOpen: false
+      });
+
+      // Try to open with timeout
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Port open timeout'));
+        }, 2000);
+
+        testPort.open((err) => {
+          clearTimeout(timeout);
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      console.log(`✓ Port ${portPath} is available and opened`);
+
+      // Close the test port immediately
+      await new Promise((resolve) => {
+        testPort.close(() => resolve());
+      });
+
+      // Now try to create a Meshtastic transport and see if it responds
       try {
         testTransport = await TransportNodeSerial.create(portPath, 115200);
-        console.log(`✓ Successfully forced port ${portPath} open`);
 
         // Create a test device
         testDevice = new MeshDevice(testTransport);
@@ -1400,19 +1306,24 @@ class MeshtasticBridgeServer {
       }
 
     } catch (error) {
-      // Could not force port open or device didn't respond as Meshtastic
-      console.log(`⚠️  ${portPath} could not be opened or is not Meshtastic: ${error.message}`);
-
-      // Clean up if we managed to open anything
-      if (testDevice) {
-        try {
-          await testDevice.disconnect();
-        } catch {}
+      // Port is locked, in use, or doesn't exist
+      if (error.message.includes('Port open timeout')) {
+        console.log(`⚠️  ${portPath} open timeout - likely in use by another application`);
+      } else if (error.message.includes('EBUSY') || error.message.includes('Resource busy')) {
+        console.log(`⚠️  ${portPath} is locked/busy - in use by another application`);
+      } else if (error.message.includes('EACCES')) {
+        console.log(`⚠️  ${portPath} permission denied`);
+      } else if (error.message.includes('ENOENT')) {
+        console.log(`⚠️  ${portPath} not found`);
+      } else {
+        console.log(`⚠️  ${portPath} unavailable: ${error.message}`);
       }
-      if (testTransport && testTransport.port && testTransport.port.isOpen) {
+
+      // Clean up test port if it was opened
+      if (testPort && testPort.isOpen) {
         try {
           await new Promise((resolve) => {
-            testTransport.port.close(() => resolve());
+            testPort.close(() => resolve());
           });
         } catch {}
       }
@@ -1453,19 +1364,13 @@ class MeshtasticBridgeServer {
 
       // Try to connect to any ports we're not already connected to
       for (const port of filteredPorts) {
-        // Check if port is in exclusion list
-        if (this.excludedPorts.has(port.path)) {
-          console.log(`🚫 Skipping ${port.path} - in permanent exclusion list`);
-          continue;
-        }
-
         // Check if already connected
         const alreadyConnected = Array.from(this.radios.values()).some(
           radio => radio.port === port.path
         );
 
         if (!alreadyConnected) {
-          // Aggressively try to detect and connect (forces port open)
+          // First, check if this port is available and appears to be a Meshtastic device
           const result = await this.isMeshtasticDevice(port.path);
 
           if (result.isMeshtastic) {
@@ -1474,9 +1379,7 @@ class MeshtasticBridgeServer {
             // Pass the existing device/transport to avoid reconnection
             await this.connectRadio(null, port.path, 'meshtastic', result.device, result.transport);
           } else {
-            // Confirmed NOT a Meshtastic device - add to permanent exclusion list
-            console.log(`⏭️  ${port.path} is NOT a Meshtastic device - adding to permanent exclusion list`);
-            this.addExcludedPort(port.path);
+            console.log(`⏭️  Skipping ${port.path} - not a Meshtastic device or port in use`);
           }
         }
       }

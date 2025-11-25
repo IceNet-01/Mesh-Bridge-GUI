@@ -51,9 +51,6 @@ interface AppStore {
   shutdownServer: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
   triggerUpdate: () => Promise<void>;
-  getExcludedPorts: () => Promise<void>;
-  removeExcludedPort: (portPath: string) => Promise<void>;
-  clearExcludedPorts: () => Promise<void>;
   getChannel: (radioId: string, channelIndex: number) => Promise<void>;
   setChannel: (radioId: string, channelConfig: any) => Promise<void>;
   getRadioConfig: (radioId: string, configType: string) => Promise<void>;
@@ -424,18 +421,6 @@ export const useStore = create<AppStore>((set, get) => {
 
     triggerUpdate: async () => {
       await manager.triggerUpdate();
-    },
-
-    getExcludedPorts: async () => {
-      await manager.getExcludedPorts();
-    },
-
-    removeExcludedPort: async (portPath: string) => {
-      await manager.removeExcludedPort(portPath);
-    },
-
-    clearExcludedPorts: async () => {
-      await manager.clearExcludedPorts();
     },
 
     getChannel: async (radioId: string, channelIndex: number) => {

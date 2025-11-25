@@ -363,27 +363,6 @@ export class WebSocketRadioManager {
         this.log('info', data.success ? 'Update initiated' : `Update failed: ${data.error}`);
         break;
 
-      case 'excluded-ports':
-        // Excluded ports list updated
-        console.log('[WebSocket] 🚫 Excluded ports:', data.ports);
-        this.emit('excluded-ports', data.ports || []);
-        break;
-
-      case 'excluded-port-removed':
-        // Port removed from exclusion list
-        console.log('[WebSocket] ✅ Port removed from exclusion:', data.portPath);
-        this.emit('excluded-port-removed', {
-          portPath: data.portPath,
-          success: data.success
-        });
-        break;
-
-      case 'excluded-ports-cleared':
-        // All excluded ports cleared
-        console.log('[WebSocket] 🗑️  Excluded ports cleared:', data.count);
-        this.emit('excluded-ports-cleared', { count: data.count });
-        break;
-
       case 'radio-telemetry':
         // Radio telemetry data updated
         const radio = this.radios.get(data.radioId);
@@ -899,53 +878,6 @@ export class WebSocketRadioManager {
 
     this.ws.send(JSON.stringify({
       type: 'trigger-update'
-    }));
-  }
-
-  /**
-   * Get list of excluded ports
-   */
-  async getExcludedPorts(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('error', 'Not connected to bridge server');
-      throw new Error('Not connected to bridge server');
-    }
-
-    this.ws.send(JSON.stringify({
-      type: 'get-excluded-ports'
-    }));
-  }
-
-  /**
-   * Remove a port from the exclusion list
-   */
-  async removeExcludedPort(portPath: string): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('error', 'Not connected to bridge server');
-      throw new Error('Not connected to bridge server');
-    }
-
-    this.log('info', `✅ Removing ${portPath} from exclusion list...`);
-
-    this.ws.send(JSON.stringify({
-      type: 'remove-excluded-port',
-      portPath
-    }));
-  }
-
-  /**
-   * Clear all excluded ports
-   */
-  async clearExcludedPorts(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.log('error', 'Not connected to bridge server');
-      throw new Error('Not connected to bridge server');
-    }
-
-    this.log('warn', '🗑️  Clearing all excluded ports...');
-
-    this.ws.send(JSON.stringify({
-      type: 'clear-excluded-ports'
     }));
   }
 
