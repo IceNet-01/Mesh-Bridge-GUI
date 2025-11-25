@@ -897,6 +897,42 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Send a raw message to the bridge server
+   */
+  send(message: any): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.ws.send(JSON.stringify(message));
+  }
+
+  /**
+   * Get WebSocket connection state
+   */
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Add event listener to WebSocket
+   */
+  addEventListener(event: string, callback: EventListener): void {
+    if (this.ws) {
+      this.ws.addEventListener(event, callback);
+    }
+  }
+
+  /**
+   * Remove event listener from WebSocket
+   */
+  removeEventListener(event: string, callback: EventListener): void {
+    if (this.ws) {
+      this.ws.removeEventListener(event, callback);
+    }
+  }
+
+  /**
    * Get all radios
    */
   getRadios(): Radio[] {
