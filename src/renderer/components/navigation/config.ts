@@ -116,6 +116,11 @@ export function getNavigationConfig(
           label: 'Port Exclusion'
         },
         {
+          id: 'publicchannel',
+          icon: 'config',
+          label: 'Public Channel'
+        },
+        {
           id: 'ai',
           icon: 'ai',
           label: 'AI Assistant'

@@ -15,6 +15,7 @@ import BridgeConfiguration from '../BridgeConfiguration';
 import { BridgeServerSettings } from '../BridgeServerSettings';
 import { SystemUpdate } from '../SystemUpdate';
 import { PortExclusion } from '../PortExclusion';
+import { PublicChannelSettings } from '../PublicChannelSettings';
 import AISettings from '../AISettings';
 import CommunicationSettings from '../CommunicationSettings';
 import MQTTSettings from '../MQTTSettings';
@@ -73,6 +74,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   portexclusion: {
     component: PortExclusion,
+  },
+  publicchannel: {
+    component: PublicChannelSettings,
   },
   ai: {
     component: AISettings,
