@@ -44,23 +44,30 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
   // Sync channels with radio's channel data whenever radio changes or channels are updated
   useEffect(() => {
     if (selectedRadio && selectedRadio.channels) {
-      const updatedChannels: Record<number, ChannelFormData> = { ...channels };
+      setChannels(prevChannels => {
+        const updatedChannels: Record<number, ChannelFormData> = { ...prevChannels };
 
-      selectedRadio.channels.forEach(channel => {
-        const pskBase64 = channel.settings.psk
-          ? btoa(String.fromCharCode(...channel.settings.psk))
-          : '';
+        selectedRadio.channels.forEach(channel => {
+          try {
+            const pskBase64 = channel.settings.psk
+              ? btoa(String.fromCharCode(...channel.settings.psk))
+              : '';
 
-        updatedChannels[channel.index] = {
-          name: channel.settings.name || '',
-          pskBase64: pskBase64,
-          role: channel.role,
-          uplinkEnabled: channel.settings.uplinkEnabled ?? true,
-          downlinkEnabled: channel.settings.downlinkEnabled ?? true,
-        };
+            updatedChannels[channel.index] = {
+              name: channel.settings.name || '',
+              pskBase64: pskBase64,
+              role: channel.role,
+              uplinkEnabled: channel.settings.uplinkEnabled ?? true,
+              downlinkEnabled: channel.settings.downlinkEnabled ?? true,
+            };
+          } catch (error) {
+            console.error(`Error processing channel ${channel.index}:`, error);
+            // Keep the previous channel data if there's an error
+          }
+        });
+
+        return updatedChannels;
       });
-
-      setChannels(updatedChannels);
     }
   }, [selectedRadio?.channels]);
 
