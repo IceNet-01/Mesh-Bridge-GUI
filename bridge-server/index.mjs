@@ -1146,110 +1146,6 @@ class MeshtasticBridgeServer {
   }
 
   /**
-   * Check if a port is available and appears to be a Meshtastic device
-   * @param {string} portPath - Serial port path to check
-   * @returns {Promise<boolean>} True if port appears to be available Meshtastic device
-   */
-  async isMeshtasticDevice(portPath) {
-    let testPort = null;
-    let testTransport = null;
-
-    try {
-      console.log(`🔍 Testing if ${portPath} is a Meshtastic device...`);
-
-      // First, try to open the port to check if it's available
-      testPort = new SerialPort({
-        path: portPath,
-        baudRate: 115200,
-        autoOpen: false
-      });
-
-      // Try to open with timeout
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Port open timeout'));
-        }, 2000);
-
-        testPort.open((err) => {
-          clearTimeout(timeout);
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-
-      console.log(`✓ Port ${portPath} is available and opened`);
-
-      // Close the test port immediately
-      await new Promise((resolve) => {
-        testPort.close(() => resolve());
-      });
-
-      // Now try to create a Meshtastic transport and see if it responds
-      try {
-        testTransport = await TransportNodeSerial.create(portPath, 115200);
-
-        // Create a test device
-        const testDevice = new MeshDevice(testTransport);
-
-        // Try to configure with a short timeout
-        const configPromise = testDevice.configure();
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Meshtastic configure timeout')), 5000)
-        );
-
-        await Promise.race([configPromise, timeoutPromise]);
-
-        console.log(`✅ ${portPath} appears to be a Meshtastic device`);
-
-        // Clean up test device
-        await testDevice.disconnect();
-        testTransport = null;
-
-        return true;
-      } catch (configError) {
-        console.log(`⚠️  ${portPath} did not respond as Meshtastic device: ${configError.message}`);
-
-        // Clean up if transport was created
-        if (testTransport) {
-          try {
-            // TransportNodeSerial doesn't have a direct close, device.disconnect handles it
-          } catch {}
-        }
-
-        return false;
-      }
-
-    } catch (error) {
-      // Port is locked, in use, or doesn't exist
-      if (error.message.includes('Port open timeout')) {
-        console.log(`⚠️  ${portPath} open timeout - likely in use by another application`);
-      } else if (error.message.includes('EBUSY') || error.message.includes('Resource busy')) {
-        console.log(`⚠️  ${portPath} is locked/busy - in use by another application`);
-      } else if (error.message.includes('EACCES')) {
-        console.log(`⚠️  ${portPath} permission denied`);
-      } else if (error.message.includes('ENOENT')) {
-        console.log(`⚠️  ${portPath} not found`);
-      } else {
-        console.log(`⚠️  ${portPath} unavailable: ${error.message}`);
-      }
-
-      // Clean up test port if it was opened
-      if (testPort && testPort.isOpen) {
-        try {
-          await new Promise((resolve) => {
-            testPort.close(() => resolve());
-          });
-        } catch {}
-      }
-
-      return false;
-    }
-  }
-
-  /**
    * Auto-scan for radios and connect to them (headless mode)
    */
   async autoScanAndConnect() {
@@ -1287,16 +1183,9 @@ class MeshtasticBridgeServer {
         );
 
         if (!alreadyConnected) {
-          // First, check if this port is available and appears to be a Meshtastic device
-          const isMeshtastic = await this.isMeshtasticDevice(port.path);
-
-          if (isMeshtastic) {
-            console.log(`🔌 Auto-connecting to Meshtastic device on ${port.path}...`);
-            // Call connectRadio without websocket (headless mode)
-            await this.connectRadio(null, port.path, 'meshtastic');
-          } else {
-            console.log(`⏭️  Skipping ${port.path} - not a Meshtastic device or port in use`);
-          }
+          console.log(`🔌 Auto-connecting to ${port.path}...`);
+          // Call connectRadio without websocket (headless mode)
+          await this.connectRadio(null, port.path, 'meshtastic');
         }
       }
     } catch (error) {
