@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { Card } from './ui/Card';
-import { useStore } from '../store/useStore';
 
 interface BridgeServerSettingsProps {
   onSave: (url: string) => void;
 }
 
 export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
-  const shutdownServer = useStore(state => state.shutdownServer);
   const [bridgeUrl, setBridgeUrl] = useState(() => {
     return localStorage.getItem('bridge-server-url') || getDefaultBridgeUrl();
   });
@@ -27,20 +25,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
     onSave(defaultUrl);
     alert(`Reset to default: ${defaultUrl}\n\nReloading page to reconnect...`);
     window.location.reload();
-  };
-
-  const handleShutdown = async () => {
-    if (!confirm('Are you sure you want to shut down the bridge server?\n\nThis will disconnect all radios and close all connections.')) {
-      return;
-    }
-
-    try {
-      await shutdownServer();
-      alert('Bridge server shutdown initiated.\n\nThe server will close in a few seconds.');
-    } catch (error) {
-      console.error('Failed to shutdown server:', error);
-      alert('Failed to initiate server shutdown. The server may have already stopped.');
-    }
   };
 
   return (
@@ -161,39 +145,6 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
             </div>
           </div>
         )}
-      </Card>
-
-      <Card>
-        <h3 className="text-lg font-semibold text-white mb-4">Server Control</h3>
-
-        <div className="space-y-4">
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-            <div className="flex gap-3">
-              <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div className="text-sm text-red-300">
-                <strong className="font-semibold">Warning:</strong> Shutting down the bridge server will:
-                <ul className="mt-2 space-y-1 list-disc list-inside">
-                  <li>Disconnect all connected radios</li>
-                  <li>Close all WebSocket connections</li>
-                  <li>Stop the bridge server process</li>
-                  <li>Require manually restarting the server to reconnect</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleShutdown}
-            className="btn-danger flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
-            Shutdown Bridge Server
-          </button>
-        </div>
       </Card>
     </div>
   );
