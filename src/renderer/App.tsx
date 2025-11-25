@@ -28,7 +28,6 @@ function App() {
   const rebootRadio = useStore(state => state.rebootRadio);
   const getChannel = useStore(state => state.getChannel);
   const setChannel = useStore(state => state.setChannel);
-  const getRadioConfig = useStore(state => state.getRadioConfig);
   const setRadioConfig = useStore(state => state.setRadioConfig);
   const sendMessage = useStore(state => state.sendMessage);
   const updateBridgeConfig = useStore(state => state.updateBridgeConfig);
