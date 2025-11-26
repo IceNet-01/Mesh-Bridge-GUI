@@ -74,7 +74,7 @@ export default function DeviceManager(props: DeviceManagerProps) {
           <BluetoothDeviceScanner />
         )}
 
-        {activeTab === 'config' && (
+        {activeTab === 'config' && props.onGetConfig && props.onSetConfig && (
           <RadioConfigPage
             radios={props.radios}
             onGetChannel={props.onGetChannel}

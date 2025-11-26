@@ -3,10 +3,17 @@ import { Card } from './ui/Card';
 import { BridgeServerSettings } from './BridgeServerSettings';
 import { SystemUpdate } from './SystemUpdate';
 import LogViewer from './LogViewer';
+import { LogEntry } from '../types';
+
+interface SystemSettingsProps {
+  logs: LogEntry[];
+  consoleLines: Array<{ timestamp: string; level: string; message: string }>;
+  onClear: () => void;
+}
 
 type SystemTab = 'server' | 'updates' | 'logs';
 
-export default function SystemSettings() {
+export default function SystemSettings({ logs, consoleLines, onClear }: SystemSettingsProps) {
   const [activeTab, setActiveTab] = useState<SystemTab>('server');
 
   const tabs: { id: SystemTab; label: string; icon: string }[] = [
@@ -54,7 +61,7 @@ export default function SystemSettings() {
           />
         )}
         {activeTab === 'updates' && <SystemUpdate />}
-        {activeTab === 'logs' && <LogViewer />}
+        {activeTab === 'logs' && <LogViewer logs={logs} consoleLines={consoleLines} onClear={onClear} />}
       </div>
     </div>
   );

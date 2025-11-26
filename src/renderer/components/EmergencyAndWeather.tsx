@@ -63,9 +63,7 @@ export default function EmergencyAndWeather(props: EmergencyAndWeatherProps) {
 
         {activeTab === 'weather' && (
           <NWSWeatherAlerts
-            nodes={props.nodes}
             radios={props.radios}
-            messages={props.messages}
             onSendMessage={props.onSendMessage}
           />
         )}

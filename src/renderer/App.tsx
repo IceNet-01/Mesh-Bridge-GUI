@@ -86,8 +86,9 @@ function App() {
       case 'configuration':
         return { config: bridgeConfig, radios, onUpdate: updateBridgeConfig };
       case 'integrations':
-      case 'system':
         return {};
+      case 'system':
+        return { logs, consoleLines, onClear: clearLogs };
       default:
         return {};
     }
