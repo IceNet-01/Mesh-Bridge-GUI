@@ -2,9 +2,7 @@ import { IconName } from '../icons';
 
 export type Tab =
   | 'dashboard'
-  | 'radios'
-  | 'bluetooth'
-  | 'radioconfig'
+  | 'devices'
   | 'nodes'
   | 'messages'
   | 'map'
@@ -12,18 +10,9 @@ export type Tab =
   | 'siteplanner'
   | 'networkhealth'
   | 'emergency'
-  | 'weather'
   | 'configuration'
-  | 'server'
-  | 'update'
-  | 'portexclusion'
-  | 'publicchannel'
-  | 'ollama'
-  | 'ai'
-  | 'communication'
-  | 'mqtt'
-  | 'adbot'
-  | 'logs';
+  | 'integrations'
+  | 'system';
 
 export interface NavItem {
   id: Tab;

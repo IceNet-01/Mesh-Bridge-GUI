@@ -1,28 +1,17 @@
 import { ComponentType } from 'react';
 import { Tab } from './types';
 import Dashboard from '../Dashboard';
-import RadioList from '../RadioList';
-import { BluetoothDeviceScanner } from '../BluetoothDeviceScanner';
-import RadioConfigPage from '../RadioConfigPage';
+import DeviceManager from '../DeviceManager';
 import NodeList from '../NodeList';
 import MessageMonitor from '../MessageMonitor';
 import { MapView } from '../MapView';
 import TacticalView from '../TacticalView';
 import SitePlanner from '../SitePlanner';
 import NetworkHealth from '../NetworkHealth';
-import EmergencyResponse from '../EmergencyResponse';
-import NWSWeatherAlerts from '../NWSWeatherAlerts';
-import BridgeConfiguration from '../BridgeConfiguration';
-import { BridgeServerSettings } from '../BridgeServerSettings';
-import { SystemUpdate } from '../SystemUpdate';
-import { PortExclusion } from '../PortExclusion';
-import { PublicChannelSettings } from '../PublicChannelSettings';
-import OllamaInstaller from '../OllamaInstaller';
-import AISettings from '../AISettings';
-import CommunicationSettings from '../CommunicationSettings';
-import MQTTSettings from '../MQTTSettings';
-import AdvertisementBotSettings from '../AdvertisementBotSettings';
-import LogViewer from '../LogViewer';
+import EmergencyAndWeather from '../EmergencyAndWeather';
+import BridgeConfigurationConsolidated from '../BridgeConfigurationConsolidated';
+import Integrations from '../Integrations';
+import SystemSettings from '../SystemSettings';
 
 interface TabRoute {
   component: ComponentType<any>;
@@ -33,14 +22,8 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   dashboard: {
     component: Dashboard,
   },
-  radios: {
-    component: RadioList,
-  },
-  bluetooth: {
-    component: BluetoothDeviceScanner,
-  },
-  radioconfig: {
-    component: RadioConfigPage,
+  devices: {
+    component: DeviceManager,
   },
   nodes: {
     component: NodeList,
@@ -63,42 +46,15 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
     component: NetworkHealth,
   },
   emergency: {
-    component: EmergencyResponse,
-  },
-  weather: {
-    component: NWSWeatherAlerts,
+    component: EmergencyAndWeather,
   },
   configuration: {
-    component: BridgeConfiguration,
+    component: BridgeConfigurationConsolidated,
   },
-  server: {
-    component: BridgeServerSettings,
+  integrations: {
+    component: Integrations,
   },
-  update: {
-    component: SystemUpdate,
-  },
-  portexclusion: {
-    component: PortExclusion,
-  },
-  publicchannel: {
-    component: PublicChannelSettings,
-  },
-  ollama: {
-    component: OllamaInstaller,
-  },
-  ai: {
-    component: AISettings,
-  },
-  communication: {
-    component: CommunicationSettings,
-  },
-  mqtt: {
-    component: MQTTSettings,
-  },
-  adbot: {
-    component: AdvertisementBotSettings,
-  },
-  logs: {
-    component: LogViewer,
+  system: {
+    component: SystemSettings,
   },
 };

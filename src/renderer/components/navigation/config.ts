@@ -25,20 +25,9 @@ export function getNavigationConfig(
       label: 'Network',
       items: [
         {
-          id: 'radios',
+          id: 'devices',
           icon: 'radio',
-          label: 'Radios',
-          badge: () => connectedRadios.length
-        },
-        {
-          id: 'bluetooth',
-          icon: 'bluetooth',
-          label: 'Bluetooth Scanner',
-        },
-        {
-          id: 'radioconfig',
-          icon: 'config',
-          label: 'Radio Config',
+          label: 'Devices',
           badge: () => connectedRadios.length
         },
         {
@@ -56,7 +45,7 @@ export function getNavigationConfig(
       ]
     },
     {
-      label: 'Visualization',
+      label: 'Monitoring',
       items: [
         {
           id: 'map',
@@ -75,11 +64,6 @@ export function getNavigationConfig(
           icon: 'siteplanner',
           label: 'Site Planner'
         },
-      ]
-    },
-    {
-      label: 'Operations',
-      items: [
         {
           id: 'networkhealth',
           icon: 'networkhealth',
@@ -88,12 +72,7 @@ export function getNavigationConfig(
         {
           id: 'emergency',
           icon: 'emergency',
-          label: 'Emergency / SOS'
-        },
-        {
-          id: 'weather',
-          icon: 'weather',
-          label: 'NWS Weather Alerts'
+          label: 'Emergency Response'
         },
       ]
     },
@@ -103,62 +82,17 @@ export function getNavigationConfig(
         {
           id: 'configuration',
           icon: 'config',
-          label: 'Configuration'
+          label: 'Bridge Configuration'
         },
         {
-          id: 'server',
-          icon: 'server',
-          label: 'Server'
-        },
-        {
-          id: 'update',
-          icon: 'update',
-          label: 'System Update'
-        },
-        {
-          id: 'ollama',
-          icon: 'ai',
-          label: 'Ollama Installer'
-        },
-        {
-          id: 'portexclusion',
-          icon: 'radio',
-          label: 'Port Exclusion'
-        },
-        {
-          id: 'publicchannel',
-          icon: 'config',
-          label: 'Public Channel'
-        },
-        {
-          id: 'ai',
-          icon: 'ai',
-          label: 'AI Assistant'
-        },
-        {
-          id: 'communication',
+          id: 'integrations',
           icon: 'communication',
-          label: 'Communication'
+          label: 'Integrations'
         },
         {
-          id: 'mqtt',
-          icon: 'mqtt',
-          label: 'MQTT'
-        },
-        {
-          id: 'adbot',
-          icon: 'megaphone',
-          label: 'Advertisement Bot'
-        },
-      ]
-    },
-    {
-      label: 'System',
-      items: [
-        {
-          id: 'logs',
-          icon: 'logs',
-          label: 'Logs',
+          id: 'system',
+          icon: 'server',
+          label: 'System & Logs',
           badge: () => errorLogs.length,
           badgeColor: 'red'
         },

@@ -1512,6 +1512,25 @@ class MeshtasticBridgeServer {
       const devices = [];
       const MESHTASTIC_SERVICE_UUID = '6ba1b218-15a8-461f-9fa8-5dcae273eafd';
 
+      // Check if Bluetooth is available before accessing noble.state
+      // Accessing noble.state can throw ENODEV if no Bluetooth adapter exists
+      let bluetoothState;
+      try {
+        bluetoothState = noble.state;
+      } catch (stateError) {
+        // No Bluetooth adapter available
+        const errorMessage = stateError.code === 'ENODEV'
+          ? 'No Bluetooth adapter found. Please ensure Bluetooth hardware is installed and enabled.'
+          : `Bluetooth initialization failed: ${stateError.message}`;
+
+        console.error(`❌ Bluetooth not available:`, errorMessage);
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: errorMessage
+        }));
+        return [];
+      }
+
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           noble.stopScanning();
@@ -1573,13 +1592,13 @@ class MeshtasticBridgeServer {
 
         // Check if Bluetooth is powered on
         const startScanning = () => {
-          if (noble.state === 'poweredOn') {
+          if (bluetoothState === 'poweredOn') {
             noble.startScanning([MESHTASTIC_SERVICE_UUID], false);
             console.log('🔵 Bluetooth scanning started...');
           } else {
             clearTimeout(timeout);
             noble.removeListener('discover', onDiscover);
-            const error = new Error(`Bluetooth adapter not ready: ${noble.state}`);
+            const error = new Error(`Bluetooth adapter not ready: ${bluetoothState}`);
             ws.send(JSON.stringify({
               type: 'error',
               error: error.message
@@ -1588,10 +1607,30 @@ class MeshtasticBridgeServer {
           }
         };
 
-        if (noble.state === 'poweredOn') {
+        if (bluetoothState === 'poweredOn') {
           startScanning();
         } else {
-          noble.once('stateChange', startScanning);
+          // Wait for state change
+          const stateChangeHandler = (state) => {
+            bluetoothState = state;
+            startScanning();
+          };
+          noble.once('stateChange', stateChangeHandler);
+
+          // Timeout if Bluetooth doesn't become ready
+          setTimeout(() => {
+            if (bluetoothState !== 'poweredOn') {
+              noble.removeListener('stateChange', stateChangeHandler);
+              clearTimeout(timeout);
+              noble.removeListener('discover', onDiscover);
+              const error = new Error(`Bluetooth timeout: adapter is ${bluetoothState}, not poweredOn`);
+              ws.send(JSON.stringify({
+                type: 'error',
+                error: error.message
+              }));
+              reject(error);
+            }
+          }, 5000); // 5 second timeout for Bluetooth to become ready
         }
       });
     } catch (error) {

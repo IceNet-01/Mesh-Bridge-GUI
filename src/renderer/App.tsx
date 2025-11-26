@@ -68,10 +68,8 @@ function App() {
     switch (activeTab) {
       case 'dashboard':
         return { radios, statistics, messages };
-      case 'radios':
-        return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onSyncTime: syncRadioTime, onGetChannel: getChannel, onSetChannel: setChannel };
-      case 'radioconfig':
-        return { radios, onGetChannel: getChannel, onSetChannel: setChannel, onGetConfig: getRadioConfig, onSetConfig: setRadioConfig };
+      case 'devices':
+        return { radios, onDisconnect: disconnectRadio, onReboot: rebootRadio, onSyncTime: syncRadioTime, onGetChannel: getChannel, onSetChannel: setChannel, onGetConfig: getRadioConfig, onSetConfig: setRadioConfig };
       case 'nodes':
         return { nodes, radios };
       case 'messages':
@@ -85,18 +83,11 @@ function App() {
         return { nodes, radios, messages };
       case 'emergency':
         return { nodes, radios, messages, onSendMessage: sendMessage };
-      case 'weather':
-        return { nodes, radios, messages, onSendMessage: sendMessage };
       case 'configuration':
         return { config: bridgeConfig, radios, onUpdate: updateBridgeConfig };
-      case 'server':
-        return { onSave: () => {} }; // Component handles reload
-      case 'ai':
-      case 'communication':
-      case 'mqtt':
+      case 'integrations':
+      case 'system':
         return {};
-      case 'logs':
-        return { logs, consoleLines, onClear: clearLogs };
       default:
         return {};
     }
