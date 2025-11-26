@@ -2410,7 +2410,9 @@ class MeshtasticBridgeServer {
           response = await this.cmdPing();
           break;
         case 'help':
+          console.log(`🤖 [DEBUG] Executing help command...`);
           response = await this.cmdHelp();
+          console.log(`🤖 [DEBUG] Help response generated:`, response ? `${response.substring(0, 100)}...` : 'EMPTY');
           break;
         case 'status':
           response = await this.cmdStatus();
@@ -2463,6 +2465,8 @@ class MeshtasticBridgeServer {
           response = `❓ Unknown command: ${cmd}\nTry ${this.commandPrefix}help`;
       }
 
+      console.log(`🤖 [DEBUG] Response value:`, response ? `"${response.substring(0, 50)}..."` : `NULL/EMPTY (type: ${typeof response})`);
+
       if (response) {
         // Truncate response to fit within Meshtastic's byte limit
         const truncatedResponse = this.truncateForMeshtastic(response);
@@ -2470,9 +2474,12 @@ class MeshtasticBridgeServer {
 
         try {
           await radio.protocol.sendMessage(truncatedResponse, channel, { wantAck: false });
+          console.log(`🤖 [DEBUG] Message sent successfully`);
         } catch (error) {
           console.error(`❌ Failed to send command response:`, error);
         }
+      } else {
+        console.log(`🤖 [DEBUG] No response to send (response was falsy)`);
       }
 
     } catch (error) {
