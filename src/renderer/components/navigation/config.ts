@@ -31,6 +31,11 @@ export function getNavigationConfig(
           badge: () => connectedRadios.length
         },
         {
+          id: 'bluetooth',
+          icon: 'bluetooth',
+          label: 'Bluetooth Scanner',
+        },
+        {
           id: 'radioconfig',
           icon: 'config',
           label: 'Radio Config',

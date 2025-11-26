@@ -2,6 +2,7 @@ import { ComponentType } from 'react';
 import { Tab } from './types';
 import Dashboard from '../Dashboard';
 import RadioList from '../RadioList';
+import { BluetoothDeviceScanner } from '../BluetoothDeviceScanner';
 import RadioConfigPage from '../RadioConfigPage';
 import NodeList from '../NodeList';
 import MessageMonitor from '../MessageMonitor';
@@ -34,6 +35,9 @@ export const TAB_ROUTES: Record<Tab, TabRoute> = {
   },
   radios: {
     component: RadioList,
+  },
+  bluetooth: {
+    component: BluetoothDeviceScanner,
   },
   radioconfig: {
     component: RadioConfigPage,

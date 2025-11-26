@@ -146,10 +146,19 @@ export function UpdateIcon({ className = "w-5 h-5" }: IconProps) {
   );
 }
 
+export function BluetoothIcon({ className = "w-5 h-5" }: IconProps) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-15.857 21.213 0M12 2L7 7l5 5m0-10l5 5-5 5" />
+    </svg>
+  );
+}
+
 // Icon map for dynamic lookup
 export const ICONS = {
   chart: ChartIcon,
   radio: RadioIcon,
+  bluetooth: BluetoothIcon,
   messages: MessagesIcon,
   map: MapIcon,
   config: ConfigIcon,
