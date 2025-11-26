@@ -30,6 +30,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { createProtocol, getSupportedProtocols } from './protocols/index.mjs';
 import fetch from 'node-fetch';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import noble from '@abandonware/noble';
 
 // Make crypto available globally for @meshtastic libraries (if not already available)
 // Node.js v20+ already has crypto on globalThis, so only set if undefined
@@ -1290,6 +1291,10 @@ class MeshtasticBridgeServer {
           await this.listPorts(ws);
           break;
 
+        case 'scan-bluetooth':
+          await this.scanBluetoothDevices(ws, message.scanDuration || 10000);
+          break;
+
         case 'connect':
           await this.connectRadio(ws, message.port, message.protocol || 'meshtastic');
           break;
@@ -1498,9 +1503,111 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Scan for Bluetooth devices
+   */
+  async scanBluetoothDevices(ws, scanDuration = 10000) {
+    try {
+      console.log(`🔵 Scanning for Bluetooth devices (${scanDuration/1000}s)...`);
+
+      const devices = [];
+      const MESHTASTIC_SERVICE_UUID = '6ba1b218-15a8-461f-9fa8-5dcae273eafd';
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          noble.stopScanning();
+          noble.removeAllListeners('discover');
+
+          console.log(`🔵 Bluetooth scan complete. Found ${devices.length} Meshtastic device(s)`);
+
+          ws.send(JSON.stringify({
+            type: 'bluetooth-devices-list',
+            devices: devices.map(d => ({
+              address: d.address || d.id,
+              id: d.id,
+              name: d.name,
+              rssi: d.rssi
+            }))
+          }));
+
+          resolve(devices);
+        }, scanDuration);
+
+        const onDiscover = (peripheral) => {
+          // Check if this is a Meshtastic device
+          const serviceUuids = peripheral.advertisement.serviceUuids || [];
+          const isMeshtastic = serviceUuids.some(uuid =>
+            uuid.toLowerCase() === MESHTASTIC_SERVICE_UUID.toLowerCase().replace(/-/g, '')
+          );
+
+          if (isMeshtastic || (peripheral.advertisement.localName &&
+                               peripheral.advertisement.localName.toLowerCase().includes('meshtastic'))) {
+            const deviceId = peripheral.address || peripheral.id;
+
+            // Check if we already found this device
+            if (!devices.find(d => (d.address || d.id) === deviceId)) {
+              devices.push({
+                address: peripheral.address,
+                id: peripheral.id,
+                name: peripheral.advertisement.localName || 'Meshtastic Device',
+                rssi: peripheral.rssi,
+                peripheral: peripheral
+              });
+
+              console.log(`🔵 Found Meshtastic device: ${peripheral.advertisement.localName || 'Unknown'} (${deviceId}), RSSI: ${peripheral.rssi}`);
+
+              // Send incremental update
+              ws.send(JSON.stringify({
+                type: 'bluetooth-device-found',
+                device: {
+                  address: peripheral.address || peripheral.id,
+                  id: peripheral.id,
+                  name: peripheral.advertisement.localName || 'Meshtastic Device',
+                  rssi: peripheral.rssi
+                }
+              }));
+            }
+          }
+        };
+
+        noble.on('discover', onDiscover);
+
+        // Check if Bluetooth is powered on
+        const startScanning = () => {
+          if (noble.state === 'poweredOn') {
+            noble.startScanning([MESHTASTIC_SERVICE_UUID], false);
+            console.log('🔵 Bluetooth scanning started...');
+          } else {
+            clearTimeout(timeout);
+            noble.removeListener('discover', onDiscover);
+            const error = new Error(`Bluetooth adapter not ready: ${noble.state}`);
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: error.message
+            }));
+            reject(error);
+          }
+        };
+
+        if (noble.state === 'poweredOn') {
+          startScanning();
+        } else {
+          noble.once('stateChange', startScanning);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error scanning Bluetooth devices:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Failed to scan Bluetooth devices: ${error.message}`
+      }));
+      throw error;
+    }
+  }
+
+  /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
    * @param {WebSocket} ws - Optional WebSocket client to notify (null for headless mode)
-   * @param {string} portPath - Serial port path
+   * @param {string} portPath - Serial port path or Bluetooth device address
    * @param {string} protocol - Protocol type (default: 'meshtastic')
    */
   async connectRadio(ws, portPath, protocol = 'meshtastic') {

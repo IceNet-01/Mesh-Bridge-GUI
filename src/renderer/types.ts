@@ -1,5 +1,5 @@
 // Radio protocol types
-export type RadioProtocol = 'meshtastic';
+export type RadioProtocol = 'meshtastic' | 'bluetooth';
 
 export interface Radio {
   id: string;

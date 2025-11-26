@@ -495,6 +495,16 @@ export class WebSocketRadioManager {
         this.emit('ports-available', data.ports);
         break;
 
+      case 'bluetooth-devices-list':
+        // List of available Bluetooth devices
+        this.emit('bluetooth-devices-available', data.devices);
+        break;
+
+      case 'bluetooth-device-found':
+        // Single Bluetooth device found during scan
+        this.emit('bluetooth-device-found', data.device);
+        break;
+
       case 'send-success':
         this.log('info', `✅ Message sent successfully via ${data.radioId}`);
         if (this.statistics.radioStats[data.radioId]) {
@@ -718,6 +728,57 @@ export class WebSocketRadioManager {
         this.off('ports-available', handler);
         resolve([]);
       }, 5000);
+    });
+  }
+
+  /**
+   * Scan for Bluetooth devices
+   */
+  async scanBluetoothDevices(scanDuration: number = 10000, onDeviceFound?: (device: any) => void): Promise<any[]> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      return [];
+    }
+
+    this.log('info', `🔵 Scanning for Bluetooth devices...`);
+
+    return new Promise((resolve) => {
+      const devices: any[] = [];
+
+      // Handler for incremental device discoveries
+      const foundHandler = (device: any) => {
+        if (!devices.find(d => d.id === device.id)) {
+          devices.push(device);
+          this.log('info', `🔵 Found: ${device.name} (${device.address || device.id})`);
+          if (onDeviceFound) {
+            onDeviceFound(device);
+          }
+        }
+      };
+
+      // Handler for final list
+      const listHandler = (deviceList: any[]) => {
+        this.off('bluetooth-device-found', foundHandler);
+        this.off('bluetooth-devices-available', listHandler);
+        this.log('info', `🔵 Scan complete. Found ${deviceList.length} device(s)`);
+        resolve(deviceList);
+      };
+
+      this.on('bluetooth-device-found', foundHandler);
+      this.on('bluetooth-devices-available', listHandler);
+
+      this.ws!.send(JSON.stringify({
+        type: 'scan-bluetooth',
+        scanDuration: scanDuration
+      }));
+
+      // Timeout slightly longer than scan duration
+      setTimeout(() => {
+        this.off('bluetooth-device-found', foundHandler);
+        this.off('bluetooth-devices-available', listHandler);
+        this.log('info', `🔵 Scan timeout. Found ${devices.length} device(s)`);
+        resolve(devices);
+      }, scanDuration + 2000);
     });
   }
 

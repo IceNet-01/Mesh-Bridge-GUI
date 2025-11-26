@@ -26,6 +26,7 @@
     "service:disable": "systemctl disable meshtastic-bridge"
   },
   "dependencies": {
+    "@abandonware/noble": "^1.9.2-26",
     "@bufbuild/protobuf": "^2.10.1",
     "@meshtastic/core": "^2.6.7",
     "@meshtastic/protobufs": "^2.7.8",

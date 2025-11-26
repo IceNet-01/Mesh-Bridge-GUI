@@ -42,6 +42,7 @@ interface AppStore {
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
   connectRadio: (port: string, protocol: string) => Promise<{ success: boolean; error?: string }>;
   scanAndConnectRadio: () => Promise<void>;
+  scanBluetoothDevices: (onDeviceFound?: (device: any) => void) => Promise<any[]>;
   autoScanForNewRadios: () => Promise<void>;
   setAutoScanEnabled: (enabled: boolean) => void;
   setAutoScanInterval: (interval: number) => void;
@@ -394,6 +395,10 @@ export const useStore = create<AppStore>((set, get) => {
       if (successCount === 0) {
         throw new Error('Failed to connect to any radios. Check logs for details.');
       }
+    },
+
+    scanBluetoothDevices: async (onDeviceFound?: (device: any) => void) => {
+      return await manager.scanBluetoothDevices(10000, onDeviceFound);
     },
 
     disconnectRadio: async (radioId: string) => {
