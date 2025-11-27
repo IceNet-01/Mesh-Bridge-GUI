@@ -1333,6 +1333,10 @@ class MeshtasticBridgeServer {
           await this.setRadioConfig(ws, message.radioId, message.configType, message.config);
           break;
 
+        case 'set-owner':
+          await this.setRadioOwner(ws, message.radioId, message.owner);
+          break;
+
         case 'send-text':
           await this.sendText(ws, message.radioId, message.text, message.channel);
           break;
@@ -3618,9 +3622,16 @@ class MeshtasticBridgeServer {
           if (radio.channels) {
             console.log(`  🔍 Searching ${radio.channels.size} channels on ${targetRadioId} for match...`);
             for (const [idx, ch] of radio.channels.entries()) {
-              const pskMatch = sourceChannel.psk === ch.psk;
-              const nameMatch = sourceChannel.name === ch.name;
-              console.log(`    Channel ${idx}: "${ch.name}" PSK:${ch.psk.substring(0,8)}... | PSK match: ${pskMatch}, Name match: ${nameMatch}`);
+              // Handle both nested (settings.psk) and flat (psk) structures
+              const sourcePsk = sourceChannel.settings?.psk || sourceChannel.psk || '';
+              const targetPsk = ch.settings?.psk || ch.psk || '';
+              const sourceName = sourceChannel.settings?.name || sourceChannel.name || '';
+              const targetName = ch.settings?.name || ch.name || '';
+
+              const pskMatch = sourcePsk === targetPsk;
+              const nameMatch = sourceName === targetName;
+              const pskPreview = targetPsk ? targetPsk.substring(0, 8) + '...' : '(none)';
+              console.log(`    Channel ${idx}: "${targetName}" PSK:${pskPreview} | PSK match: ${pskMatch}, Name match: ${nameMatch}`);
 
               if (this.channelsMatch(sourceChannel, ch)) {
                 console.log(`    ✅ MATCH FOUND on channel ${idx}`);
@@ -3632,20 +3643,25 @@ class MeshtasticBridgeServer {
           }
 
           if (matchingChannelIndex === null) {
-            console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceChannel.name}" (PSK: ${sourceChannel.psk.substring(0,8)}...), skipping`);
+            const sourcePsk = sourceChannel.settings?.psk || sourceChannel.psk || '';
+            const sourceName = sourceChannel.settings?.name || sourceChannel.name || '';
+            const pskPreview = sourcePsk ? sourcePsk.substring(0, 8) + '...' : '(none)';
+            console.warn(`⚠️  Target radio ${targetRadioId} has no channel matching "${sourceName}" (PSK: ${pskPreview}), skipping`);
             console.warn(`    To forward this channel, configure it on ${targetRadioId} with same PSK`);
             console.warn(`    OR enable "Forward Encrypted By Index" to forward channel ${channel}→${channel} regardless of PSK`);
             return { radioId: targetRadioId, success: false, reason: 'no_matching_channel' };
           }
 
           // If the matching channel is on a DIFFERENT index, log it
+          const sourceName = sourceChannel.settings?.name || sourceChannel.name || '';
           if (matchingChannelIndex !== channel) {
-            console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceChannel.name}")`);
+            console.log(`🔀 Cross-index forward: source channel ${channel} → target channel ${matchingChannelIndex} (both "${sourceName}")`);
           }
 
           // Send message directly (if radio isn't ready, it will fail gracefully)
           await targetProtocol.sendMessage(text, matchingChannelIndex, { wantAck: false });
-          console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchingChannel.name}")`);
+          const matchName = matchingChannel.settings?.name || matchingChannel.name || '';
+          console.log(`✅ Forwarded broadcast to ${targetRadioId} on channel ${matchingChannelIndex} ("${matchName}")`);
           return { radioId: targetRadioId, success: true, targetChannel: matchingChannelIndex };
         } catch (error) {
           console.error(`❌ Failed to forward to ${targetRadioId}:`, error.message);
@@ -4148,6 +4164,54 @@ class MeshtasticBridgeServer {
       ws.send(JSON.stringify({
         type: 'error',
         error: `Set config failed: ${error.message}`
+      }));
+    }
+  }
+
+  /**
+   * Set radio owner information (user settings)
+   */
+  async setRadioOwner(ws, radioId, owner) {
+    try {
+      const radio = this.radios.get(radioId);
+      if (!radio) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: `Radio ${radioId} not found`
+        }));
+        return;
+      }
+
+      console.log(`👤 Setting owner information on radio ${radioId}...`);
+      console.log(`📦 Owner data:`, JSON.stringify(owner, null, 2));
+
+      // Set owner using protocol handler
+      if (radio.protocol && typeof radio.protocol.setOwner === 'function') {
+        await radio.protocol.setOwner(owner);
+
+        console.log(`✅ Owner information sent to radio ${radioId}`);
+
+        ws.send(JSON.stringify({
+          type: 'set-owner-success',
+          radioId: radioId,
+          message: 'Owner information sent successfully.'
+        }));
+
+        // Broadcast to all clients that owner was updated
+        this.broadcast({
+          type: 'radio-owner-updated',
+          radioId: radioId
+        });
+
+      } else {
+        throw new Error('Owner setting not supported for this radio type');
+      }
+
+    } catch (error) {
+      console.error('❌ Set owner error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: `Set owner failed: ${error.message}`
       }));
     }
   }

@@ -53,6 +53,7 @@ interface AppStore {
   setChannel: (radioId: string, channelConfig: any) => Promise<void>;
   getRadioConfig: (radioId: string, configType: string) => Promise<void>;
   setRadioConfig: (radioId: string, configType: string, config: any) => Promise<void>;
+  setRadioOwner: (radioId: string, owner: any) => Promise<void>;
   sendMessage: (radioId: string, text: string, channel?: number) => Promise<void>;
   updateBridgeConfig: (config: Partial<BridgeConfig>) => void;
   clearLogs: () => void;
@@ -427,6 +428,10 @@ export const useStore = create<AppStore>((set, get) => {
 
     setRadioConfig: async (radioId: string, configType: string, config: any) => {
       await manager.setRadioConfig(radioId, configType, config);
+    },
+
+    setRadioOwner: async (radioId: string, owner: any) => {
+      await manager.setRadioOwner(radioId, owner);
     },
 
     sendMessage: async (radioId: string, text: string, channel: number = 0) => {

@@ -1327,6 +1327,58 @@ export class MeshtasticProtocol extends BaseProtocol {
     }
   }
 
+  /**
+   * Set device owner information (user settings)
+   * @param {Object} owner - Owner information {longName, shortName, isLicensed}
+   * @returns {Promise<boolean>} Success status
+   */
+  async setOwner(owner) {
+    try {
+      if (!this.connected || !this.device) {
+        throw new Error('Device not connected');
+      }
+
+      console.log(`[Radio Owner] 👤 Setting owner information...`);
+      console.log(`[Radio Owner] 📦 Owner data:`, JSON.stringify(owner, null, 2));
+
+      // Create User message
+      const userMessage = create(Protobuf.Mesh.UserSchema, {
+        longName: owner.longName || '',
+        shortName: owner.shortName || '',
+        isLicensed: owner.isLicensed || false,
+        // Note: macaddr is set automatically by the device
+      });
+
+      // Use the device's built-in setOwner method
+      console.log(`[Radio Owner] 📡 Calling device.setOwner()...`);
+      await this.device.setOwner(userMessage);
+
+      console.log(`[Radio Owner] ✅ Owner information sent successfully`);
+
+      // Update our local node info to reflect the change
+      if (this.myNodeNum) {
+        const node = this.nodeCatalog.get(this.myNodeNum);
+        if (node) {
+          node.longName = owner.longName || node.longName;
+          node.shortName = owner.shortName || node.shortName;
+
+          // Emit node info update
+          this.emit('node-info', {
+            nodeId: this.normalizeNodeId(this.myNodeNum),
+            longName: node.longName,
+            shortName: node.shortName,
+            hwModel: node.hwModel || 'Unknown'
+          });
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[Radio Owner] ❌ Error setting owner:', error);
+      throw error;
+    }
+  }
+
   normalizeMessagePacket(packet) {
     // The @meshtastic/core library already decodes text messages
     // packet.data contains the decoded string for text messages

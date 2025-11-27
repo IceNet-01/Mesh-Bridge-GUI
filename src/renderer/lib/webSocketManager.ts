@@ -950,6 +950,24 @@ export class WebSocketRadioManager {
   }
 
   /**
+   * Set radio owner information (user settings)
+   */
+  async setRadioOwner(radioId: string, owner: any): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.log('error', 'Not connected to bridge server');
+      throw new Error('Not connected to bridge server');
+    }
+
+    this.log('info', `👤 Setting owner information on radio ${radioId}...`);
+
+    this.ws.send(JSON.stringify({
+      type: 'set-owner',
+      radioId,
+      owner
+    }));
+  }
+
+  /**
    * Send text message via a radio
    */
   async sendText(radioId: string, text: string, channel: number = 0): Promise<void> {

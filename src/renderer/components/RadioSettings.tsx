@@ -542,8 +542,9 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
   void paxcounterModuleConfig; void setPaxcounterModuleConfig;
   void ambientLightingModuleConfig; void setAmbientLightingModuleConfig;
 
-  // Get WebSocketManager instance
+  // Get WebSocketManager instance and setRadioOwner action
   const manager = useStore(state => state.manager);
+  const setOwner = useStore(state => state.setRadioOwner);
 
   // Listen for config responses from radio
   useEffect(() => {
@@ -560,6 +561,12 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
           break;
         case 'device':
           setDeviceConfig(prev => ({ ...prev, ...config }));
+          // Also update security config fields that come from device config
+          setSecurityConfig(prev => ({
+            ...prev,
+            serialEnabled: config.serialEnabled ?? prev.serialEnabled,
+            debugLogEnabled: config.debugLogEnabled ?? prev.debugLogEnabled,
+          }));
           break;
         case 'position':
           setPositionConfig(prev => ({ ...prev, ...config }));
@@ -637,6 +644,18 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
     }
   }, [radio?.protocolMetadata?.loraConfig]);
 
+  // Auto-populate user config from radio nodeInfo when it loads
+  useEffect(() => {
+    if (radio?.nodeInfo) {
+      console.log('[RadioSettings] 👤 Loading user config from radio nodeInfo:', radio.nodeInfo);
+      setUserConfig(prev => ({
+        ...prev,
+        longName: radio.nodeInfo?.longName || prev.longName,
+        shortName: radio.nodeInfo?.shortName || prev.shortName,
+      }));
+    }
+  }, [radio?.nodeInfo]);
+
   const toggleSection = (id: string) => {
     setSections(sections.map(s =>
       s.id === id ? { ...s, expanded: !s.expanded } : s
@@ -645,6 +664,29 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
 
   const handleGetConfig = (configType: string) => {
     if (!radioId) return;
+
+    // Special handling for user config - populate from radio.nodeInfo
+    if (configType === 'user') {
+      if (radio?.nodeInfo) {
+        setUserConfig({
+          longName: radio.nodeInfo.longName || '',
+          shortName: radio.nodeInfo.shortName || '',
+          isLicensed: false, // Not available in nodeInfo, keep current value
+          licensedName: userConfig.licensedName, // Keep current value
+        });
+        console.log('User config populated from radio nodeInfo:', radio.nodeInfo);
+      } else {
+        console.warn('No nodeInfo available for this radio');
+      }
+      return;
+    }
+
+    // Special handling for security - it uses device config
+    if (configType === 'security') {
+      onGetConfig(radioId, 'device');
+      return;
+    }
+
     onGetConfig(radioId, configType);
   };
 
@@ -662,6 +704,28 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
 
   const handleSetConfig = (configType: string) => {
     if (!radioId) return;
+
+    // Special handling for user config - use setOwner
+    if (configType === 'user') {
+      setOwner(radioId, {
+        longName: userConfig.longName,
+        shortName: userConfig.shortName,
+        isLicensed: userConfig.isLicensed,
+      });
+      console.log('Setting owner info:', userConfig);
+      return;
+    }
+
+    // Special handling for security - merge into device config
+    if (configType === 'security') {
+      const mergedConfig = {
+        ...deviceConfig,
+        serialEnabled: securityConfig.serialEnabled,
+        debugLogEnabled: securityConfig.debugLogEnabled,
+      };
+      onSetConfig(radioId, 'device', mergedConfig);
+      return;
+    }
 
     // Get the appropriate config object based on type
     let config;
@@ -1612,6 +1676,185 @@ function RadioSettings({ radioId, radio, onGetConfig, onSetConfig }: RadioSettin
                 />
                 <span>Bluetooth Enabled</span>
               </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Settings */}
+      {sections.find(s => s.id === 'user')?.expanded && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">👤</span>
+              <div>
+                <h3 className="text-xl font-bold text-white">User Settings</h3>
+                <p className="text-sm text-slate-400">Device owner information</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => handleGetConfig('user')} className="btn-secondary text-sm">
+                📥 Get
+              </button>
+              <button onClick={() => handleSetConfig('user')} className="btn-primary text-sm">
+                💾 Save
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                Long Name
+              </label>
+              <input
+                type="text"
+                value={userConfig.longName}
+                onChange={(e) => setUserConfig({ ...userConfig, longName: e.target.value })}
+                placeholder="e.g., John Smith"
+                maxLength={40}
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">Displayed as your device name (max 40 chars)</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">
+                Short Name
+              </label>
+              <input
+                type="text"
+                value={userConfig.shortName}
+                onChange={(e) => setUserConfig({ ...userConfig, shortName: e.target.value.slice(0, 4) })}
+                placeholder="e.g., JS"
+                maxLength={4}
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">4 character abbreviated name</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isLicensed"
+                checked={userConfig.isLicensed}
+                onChange={(e) => setUserConfig({ ...userConfig, isLicensed: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="isLicensed" className="text-sm text-slate-400">
+                Licensed Amateur Radio Operator
+              </label>
+            </div>
+
+            {userConfig.isLicensed && (
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-2">
+                  Call Sign
+                </label>
+                <input
+                  type="text"
+                  value={userConfig.licensedName}
+                  onChange={(e) => setUserConfig({ ...userConfig, licensedName: e.target.value.toUpperCase() })}
+                  placeholder="e.g., KE7XYZ"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-primary-500"
+                />
+                <p className="text-xs text-slate-500 mt-1">Your amateur radio call sign</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Security Settings */}
+      {sections.find(s => s.id === 'security')?.expanded && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔒</span>
+              <div>
+                <h3 className="text-xl font-bold text-white">Security Settings</h3>
+                <p className="text-sm text-slate-400">Device security and access control</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => handleGetConfig('security')} className="btn-secondary text-sm">
+                📥 Get
+              </button>
+              <button onClick={() => handleSetConfig('security')} className="btn-primary text-sm">
+                💾 Save
+              </button>
+            </div>
+          </div>
+
+          <div className="card p-4 bg-yellow-500/10 border border-yellow-500/30 mb-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <h4 className="text-yellow-400 font-semibold mb-1">Advanced Settings</h4>
+                <p className="text-yellow-400 text-sm">
+                  Security settings are critical. Incorrect configuration can lock you out of your device.
+                  Only modify these if you understand device security and have physical access to reset if needed.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="serialEnabled"
+                checked={securityConfig.serialEnabled}
+                onChange={(e) => setSecurityConfig({ ...securityConfig, serialEnabled: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="serialEnabled" className="text-sm text-slate-400">
+                Enable Serial Console
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="debugLogEnabled"
+                checked={securityConfig.debugLogEnabled}
+                onChange={(e) => setSecurityConfig({ ...securityConfig, debugLogEnabled: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="debugLogEnabled" className="text-sm text-slate-400">
+                Enable Debug Logging
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="adminChannelEnabled"
+                checked={securityConfig.adminChannelEnabled}
+                onChange={(e) => setSecurityConfig({ ...securityConfig, adminChannelEnabled: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="adminChannelEnabled" className="text-sm text-slate-400">
+                Enable Admin Channel
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isManaged"
+                checked={securityConfig.isManaged}
+                onChange={(e) => setSecurityConfig({ ...securityConfig, isManaged: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="isManaged" className="text-sm text-slate-400">
+                Managed Mode (Device Management Enabled)
+              </label>
+            </div>
+
+            <div className="text-sm text-slate-500 mt-2">
+              <p><strong>Note:</strong> Public/Private key management and admin keys are advanced features.</p>
+              <p>Use Meshtastic mobile app for full security configuration.</p>
             </div>
           </div>
         </div>
