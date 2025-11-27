@@ -3575,8 +3575,9 @@ class MeshtasticBridgeServer {
       }
 
       console.log(`🔀 [SMART MATCH] Forwarding from source channel ${channel}:`);
-      console.log(`   Name: "${sourceChannel.name}"`);
-      console.log(`   PSK: ${sourceChannel.psk.substring(0, 16)}...`);
+      console.log(`   Name: "${sourceChannel.settings?.name || sourceChannel.name || '(unnamed)'}"`);
+      const psk = sourceChannel.settings?.psk || sourceChannel.psk || '';
+      console.log(`   PSK: ${psk ? psk.substring(0, 16) + '...' : '(none)'}`);
 
       // Check if index-based encrypted forwarding is enabled
       if (this.forwardEncryptedByIndex) {
