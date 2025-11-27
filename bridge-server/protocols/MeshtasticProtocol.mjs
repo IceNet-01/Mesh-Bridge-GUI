@@ -1107,11 +1107,58 @@ export class MeshtasticProtocol extends BaseProtocol {
       });
 
       console.log(`[Meshtastic] ✅ Time sync command sent (fire-and-forget)`);
+
+      // Set up one-time listener to verify radio's time after sync
+      // We'll capture the time from the next telemetry or position update
+      setTimeout(() => {
+        this.verifyRadioTime(currentTime);
+      }, 3000); // Wait 3 seconds for time to propagate
+
       return true;
     } catch (error) {
       console.error('[Meshtastic] ❌ Error syncing device time:', error);
       // Don't throw - time sync failure shouldn't prevent connection
       return false;
+    }
+  }
+
+  /**
+   * Verify radio's current time after sync
+   * @param {number} syncedTime - The Unix timestamp we sent to the radio
+   */
+  verifyRadioTime(syncedTime) {
+    try {
+      if (!this.connected || !this.device) {
+        return;
+      }
+
+      const now = Date.now();
+      const syncedDate = new Date(syncedTime * 1000);
+
+      // Check if we have radio time from GPS or telemetry
+      if (this.radioTime) {
+        const radioTimeMs = this.radioTime.getTime();
+        const timeDiffSeconds = Math.abs((now - radioTimeMs) / 1000);
+
+        console.log(`[Meshtastic] 📅 Radio time verification:`);
+        console.log(`           Computer time: ${new Date(now).toISOString()}`);
+        console.log(`           Radio time:    ${this.radioTime.toISOString()} (source: ${this.radioTimeSource})`);
+        console.log(`           Time synced to: ${syncedDate.toISOString()}`);
+        console.log(`           Difference:     ${timeDiffSeconds.toFixed(1)}s`);
+
+        if (timeDiffSeconds < 5) {
+          console.log(`           ✅ Radio time is synchronized (within ${timeDiffSeconds.toFixed(1)}s)`);
+        } else if (timeDiffSeconds < 60) {
+          console.log(`           ⚠️  Radio time differs by ${timeDiffSeconds.toFixed(1)}s`);
+        } else {
+          console.log(`           ❌ Radio time significantly differs by ${timeDiffSeconds.toFixed(1)}s`);
+        }
+      } else {
+        console.log(`[Meshtastic] ⏱️  Waiting for radio time update via GPS or telemetry...`);
+        console.log(`           Time synced to: ${syncedDate.toISOString()}`);
+      }
+    } catch (error) {
+      console.error('[Meshtastic] ❌ Error verifying radio time:', error);
     }
   }
 
