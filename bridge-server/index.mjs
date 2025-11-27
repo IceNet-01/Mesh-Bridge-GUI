@@ -1738,7 +1738,9 @@ class MeshtasticBridgeServer {
           // Log channel configuration
           console.log(`\n📋 ========== Radio ${radioId} Channel Configuration ==========`);
           channels.forEach(ch => {
-            console.log(`   [${ch.index}] "${ch.name || '(unnamed)'}" PSK: ${ch.psk ? ch.psk.substring(0, 8) + '...' : '(none)'}`);
+            const name = ch.settings?.name || ch.name || '(unnamed)';
+            const psk = ch.settings?.psk || ch.psk || '';
+            console.log(`   [${ch.index}] "${name}" PSK: ${psk ? psk.substring(0, 8) + '...' : '(none)'}`);
           });
           console.log(`============================================================\n`);
 
@@ -2188,7 +2190,9 @@ class MeshtasticBridgeServer {
     }
 
     // Check if channel PSK matches the default public channel PSK
-    return channel.psk === this.publicChannelPSK;
+    // Handle both nested (settings.psk) and flat (psk) structures
+    const psk = channel.settings?.psk || channel.psk || '';
+    return psk === this.publicChannelPSK;
   }
 
   handleMessagePacket(radioId, portPath, packet, protocol) {
@@ -3503,7 +3507,10 @@ class MeshtasticBridgeServer {
 
     // Only PSK needs to match (this is the encryption key)
     // Name matching is no longer required
-    return sourceChannel.psk === targetChannel.psk;
+    // Handle both nested (settings.psk) and flat (psk) structures
+    const sourcePsk = sourceChannel.settings?.psk || sourceChannel.psk || '';
+    const targetPsk = targetChannel.settings?.psk || targetChannel.psk || '';
+    return sourcePsk === targetPsk;
   }
 
   /**

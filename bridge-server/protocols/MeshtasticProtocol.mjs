@@ -933,9 +933,9 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       const channelConfig = this.channelMap.get(channel);
       console.log(`[Meshtastic] Channel ${channel} config:`, {
-        name: channelConfig.name,
+        name: channelConfig.settings?.name || channelConfig.name,
         role: channelConfig.role,
-        hasPSK: !!channelConfig.psk && channelConfig.psk.length > 0
+        hasPSK: !!(channelConfig.settings?.psk || channelConfig.psk) && (channelConfig.settings?.psk || channelConfig.psk).length > 0
       });
 
       const { wantAck = false } = options;
