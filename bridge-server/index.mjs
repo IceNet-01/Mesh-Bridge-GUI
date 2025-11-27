@@ -1105,6 +1105,12 @@ class MeshtasticBridgeServer {
         radios: radiosStatus
       }));
 
+      // Send bridge server info (start time for accurate uptime calculation)
+      ws.send(JSON.stringify({
+        type: 'bridge-info',
+        startTime: this.bridgeStartTime
+      }));
+
       ws.on('message', async (data) => {
         try {
           const message = JSON.parse(data.toString());

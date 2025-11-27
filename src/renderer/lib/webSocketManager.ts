@@ -266,6 +266,14 @@ export class WebSocketRadioManager {
         this.emit('radio-status-change', Array.from(this.radios.values()));
         break;
 
+      case 'bridge-info':
+        // Update bridge server start time for accurate uptime calculation
+        if (data.startTime) {
+          this.startTime = new Date(data.startTime);
+          this.log('info', `Bridge server started at: ${this.startTime.toLocaleString()}`);
+        }
+        break;
+
       case 'radio-connecting':
         // Radio is connecting (before configuration completes)
         console.log('[WebSocket] 📻 Radio connecting:', data.radio.id, 'on', data.radio.port);
