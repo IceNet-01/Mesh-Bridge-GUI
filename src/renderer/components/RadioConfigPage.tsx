@@ -50,9 +50,17 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
 
         radioChannels.forEach(channel => {
           try {
-            const pskBase64 = channel.settings.psk
-              ? btoa(String.fromCharCode(...channel.settings.psk))
-              : '';
+            // PSK can be either a Uint8Array or base64 string (from protocol handler)
+            let pskBase64 = '';
+            if (channel.settings.psk) {
+              if (typeof channel.settings.psk === 'string') {
+                // Already base64 encoded
+                pskBase64 = channel.settings.psk;
+              } else if (channel.settings.psk instanceof Uint8Array) {
+                // Convert Uint8Array to base64
+                pskBase64 = btoa(String.fromCharCode(...channel.settings.psk));
+              }
+            }
 
             updatedChannels[channel.index] = {
               name: channel.settings.name || '',
@@ -62,7 +70,7 @@ function RadioConfigPage({ radios, onGetChannel, onSetChannel, onGetConfig, onSe
               downlinkEnabled: channel.settings.downlinkEnabled ?? true,
             };
           } catch (error) {
-            console.error(`Error processing channel ${channel.index}:`, error);
+            console.error(`Error processing channel ${channel.index}:`, error, channel);
             // Keep the previous channel data if there's an error
           }
         });

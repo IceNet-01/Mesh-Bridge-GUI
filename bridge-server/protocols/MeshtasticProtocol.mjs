@@ -561,19 +561,33 @@ export class MeshtasticProtocol extends BaseProtocol {
     // Subscribe to channel configuration packets
     this.device.events.onChannelPacket.subscribe((channelPacket) => {
       try {
+        console.log(`[Meshtastic] 🔍 Raw channel packet ${channelPacket.index}:`, JSON.stringify(channelPacket, null, 2));
+
+        // Map role from number to string as expected by UI
+        const roleMap = {
+          0: 'DISABLED',
+          1: 'PRIMARY',
+          2: 'SECONDARY'
+        };
+
+        // Create channel info matching the Channel interface from types.ts
         const channelInfo = {
           index: channelPacket.index,
-          role: channelPacket.role,
-          name: channelPacket.settings?.name || '',
-          psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : ''
+          role: roleMap[channelPacket.role] || 'SECONDARY',
+          settings: {
+            name: channelPacket.settings?.name || '',
+            psk: channelPacket.settings?.psk ? Buffer.from(channelPacket.settings.psk).toString('base64') : '',
+            uplinkEnabled: channelPacket.settings?.uplinkEnabled ?? true,
+            downlinkEnabled: channelPacket.settings?.downlinkEnabled ?? true
+          }
         };
 
         this.channelMap.set(channelPacket.index, channelInfo);
 
         console.log(`[Meshtastic] Channel ${channelPacket.index}:`, {
-          name: channelInfo.name || '(unnamed)',
-          role: channelInfo.role === 1 ? 'PRIMARY' : 'SECONDARY',
-          pskLength: channelInfo.psk.length
+          name: channelInfo.settings.name || '(unnamed)',
+          role: channelInfo.role,
+          pskLength: channelInfo.settings.psk.length
         });
 
         // Convert Map to array for updateChannels

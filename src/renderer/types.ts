@@ -280,7 +280,7 @@ declare global {
 export type ChannelRole = 'PRIMARY' | 'SECONDARY' | 'DISABLED';
 
 export interface ChannelSettings {
-  psk?: Uint8Array;  // Pre-shared key for encryption
+  psk?: Uint8Array | string;  // Pre-shared key for encryption (Uint8Array or base64 string)
   name?: string;  // Channel name
   id?: number;  // Channel number/ID
   uplinkEnabled?: boolean;
