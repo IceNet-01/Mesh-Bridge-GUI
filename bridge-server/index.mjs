@@ -1746,6 +1746,26 @@ class MeshtasticBridgeServer {
         }
       });
 
+      protocolHandler.on('config', (data) => {
+        console.log(`⚙️  Radio ${radioId} config received: ${data.configType}`);
+        const radio = this.radios.get(radioId);
+        if (radio) {
+          // Store config on radio object
+          if (!radio.configs) {
+            radio.configs = {};
+          }
+          radio.configs[data.configType] = data.config;
+
+          // Broadcast config update to clients
+          this.broadcast({
+            type: 'radio-config-received',
+            radioId: radioId,
+            configType: data.configType,
+            config: data.config
+          });
+        }
+      });
+
       protocolHandler.on('telemetry', (telemetry) => {
         const radio = this.radios.get(radioId);
         if (radio) {
