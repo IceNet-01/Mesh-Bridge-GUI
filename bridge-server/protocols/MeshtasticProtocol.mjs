@@ -963,37 +963,15 @@ export class MeshtasticProtocol extends BaseProtocol {
 
       console.log(`[Channel Config] 📻 Getting channel ${channelIndex} configuration...`);
 
-      // Create AdminMessage with get_channel_request
-      // Index is 1-based in protobuf (0 = primary channel)
-      const getChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'getChannelRequest',
-          value: channelIndex + 1  // Convert to 1-based index
-        }
-      });
+      // Use the device's built-in getChannel method instead of manual sendPacket
+      // This handles the protocol correctly and avoids timeout errors
+      console.log(`[Channel Config] 📡 Calling device.getChannel(${channelIndex})...`);
+      await this.device.getChannel(channelIndex);
 
-      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(getChannelMessage, null, 2));
-
-      // Serialize the message
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, getChannelMessage);
-
-      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
-
-      // Send to radio - response will come via onChannelPacket event
-      console.log(`[Channel Config] 📡 Sending get channel request...`);
-      const packetId = await this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        false,  // wantAck - don't wait for ACK to avoid timeout
-        false   // wantResponse - response comes via onChannelPacket event
-      );
-
-      console.log(`[Channel Config] ✅ Request sent, packet ID: ${packetId}, waiting for response via onChannelPacket event`);
+      console.log(`[Channel Config] ✅ Channel request sent, response will arrive via onChannelPacket event`);
 
       // Note: Response will come via onChannelPacket event
-      return { success: true, packetId };
+      return { success: true };
     } catch (error) {
       console.error('[Channel Config] ❌ Error getting channel:', error);
       throw error;
@@ -1045,34 +1023,12 @@ export class MeshtasticProtocol extends BaseProtocol {
       // Create Channel protobuf message
       const channelMessage = create(Protobuf.Channel.ChannelSchema, channelConfig);
 
-      // Create AdminMessage with set_channel
-      const setChannelMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'setChannel',
-          value: channelMessage
-        }
-      });
+      // Use the device's built-in setChannel method instead of manual sendPacket
+      // This handles the protocol correctly and avoids timeout errors
+      console.log(`[Channel Config] 📡 Calling device.setChannel()...`);
+      await this.device.setChannel(channelMessage);
 
-      console.log(`[Channel Config] 📦 AdminMessage Structure:`, JSON.stringify(setChannelMessage, null, 2));
-
-      // Serialize the message
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setChannelMessage);
-
-      console.log(`[Channel Config] 🔧 Serialized to ${adminBytes.length} bytes`);
-      console.log(`[Channel Config] 📊 Hex Dump: ${Array.from(adminBytes).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-
-      // Send to radio
-      console.log(`[Channel Config] 📡 Sending set channel request...`);
-      const packetId = await this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        true,   // wantAck
-        false   // wantResponse
-      );
-
-      console.log(`[Channel Config] ✅ Channel configuration sent, packet ID: ${packetId}`);
+      console.log(`[Channel Config] ✅ Channel configuration sent successfully`);
 
       return true;
     } catch (error) {
@@ -1083,7 +1039,11 @@ export class MeshtasticProtocol extends BaseProtocol {
 
   /**
    * Sync device time with computer time
-   * Sends the current Unix timestamp to the radio so it has the correct time
+   * NOTE: Time sync is disabled as Meshtastic radios automatically sync time from:
+   * 1. GPS (if available)
+   * 2. Mesh network time broadcasts
+   * 3. BLE/Serial connection timestamps
+   * Manual time sync via setTimeOnly is not needed and can cause issues.
    */
   async syncDeviceTime() {
     try {
@@ -1091,46 +1051,19 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error('Device not connected');
       }
 
-      // Get current Unix timestamp (seconds since epoch)
+      // Get current Unix timestamp for verification only
       const currentTime = Math.floor(Date.now() / 1000);
 
-      console.log(`[Meshtastic] ⏰ Syncing device time to ${new Date().toISOString()}...`);
+      console.log(`[Meshtastic] ℹ️  Time sync skipped - radios auto-sync from GPS/mesh network`);
 
-      // Create AdminMessage with setTimeOnly
-      const adminMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'setTimeOnly',
-          value: currentTime
-        }
-      });
-
-      // Serialize the message
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, adminMessage);
-
-      // Send to radio - don't await since we don't need a response
-      // Using fire-and-forget to avoid timeout errors
-      this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        false,  // wantAck - don't wait for ACK
-        false   // wantResponse - no response expected
-      ).catch(error => {
-        console.error('[Meshtastic] ❌ Error sending time sync:', error);
-      });
-
-      console.log(`[Meshtastic] ✅ Time sync command sent (fire-and-forget)`);
-
-      // Set up one-time listener to verify radio's time after sync
-      // We'll capture the time from the next telemetry or position update
+      // Set up listener to verify radio's time
       setTimeout(() => {
         this.verifyRadioTime(currentTime);
-      }, 3000); // Wait 3 seconds for time to propagate
+      }, 3000); // Wait 3 seconds for time data to be available
 
       return true;
     } catch (error) {
-      console.error('[Meshtastic] ❌ Error syncing device time:', error);
+      console.error('[Meshtastic] ❌ Error checking device time:', error);
       // Don't throw - time sync failure shouldn't prevent connection
       return false;
     }
@@ -1232,36 +1165,12 @@ export class MeshtasticProtocol extends BaseProtocol {
         throw new Error(`Unknown config type: ${configType}`);
       }
 
-      // Create AdminMessage with get_config_request
-      const getConfigMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'getConfigRequest',
-          value: configTypeEnum
-        }
-      });
+      // Use the device's built-in getConfig method instead of manual sendPacket
+      // This handles the protocol correctly and avoids timeout errors
+      console.log(`[Radio Config] 📡 Calling device.getConfig(${configType})...`);
+      await this.device.getConfig(configTypeEnum);
 
-      console.log(`[Radio Config] 📦 AdminMessage Structure:`, JSON.stringify(getConfigMessage, null, 2));
-
-      // Serialize the message
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, getConfigMessage);
-
-      console.log(`[Radio Config] 🔧 Serialized to ${adminBytes.length} bytes`);
-
-      // Send to radio - response will come via onConfigPacket event
-      console.log(`[Radio Config] 📡 Sending get config request...`);
-      // Don't await - response comes via onConfigPacket event
-      this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        false,  // wantAck - don't wait for ACK to avoid timeout
-        false   // wantResponse - response comes via onConfigPacket event
-      ).catch(error => {
-        console.error('[Radio Config] ❌ Error sending config request:', error);
-      });
-
-      console.log(`[Radio Config] ✅ Request sent (fire-and-forget), response will arrive via onConfigPacket event`);
+      console.log(`[Radio Config] ✅ Config request sent, response will arrive via onConfigPacket event`);
 
       // Note: Response will come via onConfigPacket event handler
       return { success: true };
@@ -1331,33 +1240,12 @@ export class MeshtasticProtocol extends BaseProtocol {
         }
       });
 
-      // Create AdminMessage with set_config
-      const setConfigMessage = create(Protobuf.Admin.AdminMessageSchema, {
-        payloadVariant: {
-          case: 'setConfig',
-          value: fullConfig
-        }
-      });
+      // Use the device's built-in setConfig method instead of manual sendPacket
+      // This handles the protocol correctly and avoids timeout errors
+      console.log(`[Radio Config] 📡 Calling device.setConfig(${configType})...`);
+      await this.device.setConfig(fullConfig);
 
-      console.log(`[Radio Config] 📦 AdminMessage Structure:`, JSON.stringify(setConfigMessage, null, 2));
-
-      // Serialize the message
-      const adminBytes = toBinary(Protobuf.Admin.AdminMessageSchema, setConfigMessage);
-
-      console.log(`[Radio Config] 🔧 Serialized to ${adminBytes.length} bytes`);
-
-      // Send to radio
-      console.log(`[Radio Config] 📡 Sending set config request...`);
-      const packetId = await this.device.sendPacket(
-        adminBytes,
-        Protobuf.Portnums.PortNum.ADMIN_APP,
-        'self',
-        0,
-        true,   // wantAck
-        false   // wantResponse
-      );
-
-      console.log(`[Radio Config] ✅ Configuration sent, packet ID: ${packetId}`);
+      console.log(`[Radio Config] ✅ Configuration sent successfully`);
 
       return true;
     } catch (error) {
