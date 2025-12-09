@@ -1030,6 +1030,70 @@ class MeshtasticBridgeServer {
   }
 
   /**
+   * Check if a port is available
+   */
+  async isPortAvailable(port, host) {
+    return new Promise((resolve) => {
+      const testServer = createServer();
+
+      testServer.once('error', (error) => {
+        if (error.code === 'EADDRINUSE') {
+          resolve(false);
+        } else {
+          resolve(false);
+        }
+      });
+
+      testServer.once('listening', () => {
+        testServer.close(() => {
+          resolve(true);
+        });
+      });
+
+      testServer.listen(port, host);
+    });
+  }
+
+  /**
+   * Find an available port starting from the preferred port
+   * Uses less common ports to avoid conflicts with standard services
+   */
+  async findAvailablePort(preferredPort, host, maxAttempts = 10) {
+    // Less commonly used ports to try (avoiding 8080, 8081, 3000, 5173, etc.)
+    const lessCommonPorts = [8888, 9080, 7080, 8765, 9090, 7777, 8889, 9081];
+    let port = preferredPort;
+    const attemptedPorts = [];
+
+    for (let i = 0; i < maxAttempts; i++) {
+      attemptedPorts.push(port);
+      console.log(`🔍 Checking port ${port}...`);
+
+      const available = await this.isPortAvailable(port, host);
+
+      if (available) {
+        if (port !== preferredPort) {
+          console.log(`⚠️  Port ${preferredPort} was in use, using port ${port} instead`);
+        }
+        return port;
+      } else {
+        console.log(`⚠️  Port ${port} is already in use`);
+
+        // Try less common ports if we haven't exhausted them
+        if (i < lessCommonPorts.length) {
+          port = lessCommonPorts[i];
+        } else {
+          port++;
+        }
+      }
+    }
+
+    throw new Error(
+      `Could not find an available port. Tried ports: ${attemptedPorts.join(', ')}. ` +
+      `Please free up one of these ports or specify a different port using BRIDGE_PORT environment variable.`
+    );
+  }
+
+  /**
    * Start the HTTP and WebSocket server
    */
   async start() {
@@ -1135,8 +1199,18 @@ class MeshtasticBridgeServer {
       });
     });
 
-    // Start HTTP server
-    httpServer.listen(this.wsPort, this.wsHost, () => {
+    // Start HTTP server with automatic port conflict resolution
+    try {
+      const actualPort = await this.findAvailablePort(this.wsPort, this.wsHost);
+      this.wsPort = actualPort; // Update to the actual port being used
+
+      // Now start the server on the available port
+      await new Promise((resolve, reject) => {
+        httpServer.once('error', reject);
+        httpServer.once('listening', resolve);
+        httpServer.listen(this.wsPort, this.wsHost);
+      });
+
       const isLanMode = this.wsHost === '0.0.0.0';
 
       console.log(`✅ HTTP server listening on http://${this.wsHost}:${this.wsPort}`);
@@ -1199,7 +1273,10 @@ class MeshtasticBridgeServer {
       } else {
         console.log('ℹ️  Auto-connect disabled. Waiting for manual connection via web UI...');
       }
-    });
+    } catch (error) {
+      console.error('❌ Failed to start server:', error.message);
+      throw error;
+    }
   }
 
   /**
@@ -5726,7 +5803,9 @@ class MeshtasticBridgeServer {
 }
 
 // Main entry point
-const port = process.env.BRIDGE_PORT || 8080;
+// Default to port 8888 (less commonly used than 8080)
+// Can be overridden with BRIDGE_PORT environment variable or .env.port file
+const port = process.env.BRIDGE_PORT || 8888;
 const server = new MeshtasticBridgeServer(port);
 
 server.start().catch(error => {

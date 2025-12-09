@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, ReactElement } from 'react';
 import { Radio, Statistics, Message } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -170,7 +170,7 @@ function StatCard({ title, value, subtitle, total, icon, color }: StatCardProps)
     orange: 'from-orange-500 to-orange-700',
   };
 
-  const icons: Record<string, JSX.Element> = {
+  const icons: Record<string, ReactElement> = {
     radio: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0" />
     ),

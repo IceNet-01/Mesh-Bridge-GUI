@@ -155,71 +155,132 @@ export class WebSocketRadioManager {
 
     // Smart default: If accessing via LAN IP, use that IP. Otherwise use localhost.
     const hostname = window.location.hostname;
+    const currentPort = window.location.port;
+
+    // If we're being served from the bridge server (not Vite dev server at 5173)
+    // use the same port we're being served from
+    if (currentPort && currentPort !== '5173' && currentPort !== '3000') {
+      const url = `ws://${hostname}:${currentPort}`;
+      console.log(`[WebSocketManager] Using same-origin bridge URL: ${url}`);
+      return url;
+    }
 
     if (hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '') {
-      const url = `ws://${hostname}:8080`;
+      const url = `ws://${hostname}:8888`;
       console.log(`[WebSocketManager] Auto-detected bridge URL: ${url}`);
       return url;
     }
 
-    // Default to localhost
-    console.log(`[WebSocketManager] Using default bridge URL: ws://localhost:8080`);
-    return 'ws://localhost:8080';
+    // Default to localhost - will try port 8888 (less commonly used)
+    console.log(`[WebSocketManager] Using default bridge URL: ws://localhost:8888`);
+    return 'ws://localhost:8888';
   }
 
   /**
-   * Connect to the bridge server
+   * Try connecting to a specific URL
+   */
+  private async tryConnect(url: string): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(url);
+      let resolved = false;
+
+      const cleanup = () => {
+        if (!resolved) {
+          resolved = true;
+          ws.close();
+        }
+      };
+
+      ws.onopen = () => {
+        if (!resolved) {
+          resolved = true;
+          this.ws = ws;
+          this.bridgeUrl = url;
+          this.setupWebSocketHandlers();
+          this.log('info', `✅ Connected to bridge server at ${url}`);
+          this.reconnectAttempts = 0;
+          resolve({ success: true });
+        }
+      };
+
+      ws.onerror = () => {
+        cleanup();
+        resolve({ success: false, error: `Failed to connect to ${url}` });
+      };
+
+      // Set timeout for connection attempt
+      setTimeout(() => {
+        if (!resolved) {
+          cleanup();
+          resolve({ success: false, error: `Connection timeout for ${url}` });
+        }
+      }, 5000);
+    });
+  }
+
+  /**
+   * Setup WebSocket event handlers
+   */
+  private setupWebSocketHandlers() {
+    if (!this.ws) return;
+
+    this.ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        this.handleBridgeMessage(data);
+      } catch (error) {
+        this.log('error', 'Failed to parse bridge message', undefined, error);
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      this.log('error', 'WebSocket error', undefined, error);
+    };
+
+    this.ws.onclose = () => {
+      this.log('warn', 'Bridge server connection closed');
+      this.emit('bridge-disconnected');
+
+      // Attempt reconnect if configured
+      if (this.bridgeConfig.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.reconnectAttempts++;
+        // Cap delay at 60 seconds to avoid excessively long wait times
+        const delay = Math.min(60000, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
+        this.log('info', `Reconnecting to bridge in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+        setTimeout(() => {
+          this.connectToBridge();
+        }, delay);
+      }
+    };
+  }
+
+  /**
+   * Connect to the bridge server with automatic port fallback
    */
   async connectToBridge(): Promise<{ success: boolean; error?: string }> {
     try {
       this.log('info', `Connecting to bridge server at ${this.bridgeUrl}...`);
 
-      return new Promise((resolve, reject) => {
-        this.ws = new WebSocket(this.bridgeUrl);
+      // Try the configured URL first
+      let result = await this.tryConnect(this.bridgeUrl);
 
-        this.ws.onopen = () => {
-          this.log('info', '✅ Connected to bridge server');
-          this.reconnectAttempts = 0;
-          resolve({ success: true });
-        };
+      // If failed, try common fallback ports
+      if (!result.success) {
+        const fallbackPorts = [9080, 8080, 7080, 8765, 9090, 7777, 8081];
+        const hostname = this.bridgeUrl.includes('localhost') ? 'localhost' :
+                         this.bridgeUrl.match(/ws:\/\/([^:]+):/)?.[1] || 'localhost';
 
-        this.ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            this.handleBridgeMessage(data);
-          } catch (error) {
-            this.log('error', 'Failed to parse bridge message', undefined, error);
+        for (const port of fallbackPorts) {
+          const fallbackUrl = `ws://${hostname}:${port}`;
+          this.log('info', `Trying fallback port ${port}...`);
+          result = await this.tryConnect(fallbackUrl);
+          if (result.success) {
+            break;
           }
-        };
+        }
+      }
 
-        this.ws.onerror = (error) => {
-          this.log('error', 'WebSocket error', undefined, error);
-          resolve({ success: false, error: 'WebSocket connection error' });
-        };
-
-        this.ws.onclose = () => {
-          this.log('warn', 'Bridge server connection closed');
-          this.emit('bridge-disconnected');
-
-          // Attempt reconnect if configured
-          if (this.bridgeConfig.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            // Cap delay at 60 seconds to avoid excessively long wait times
-            const delay = Math.min(60000, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
-            this.log('info', `Reconnecting to bridge in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-            setTimeout(() => {
-              this.connectToBridge();
-            }, delay);
-          }
-        };
-
-        // Set timeout for connection
-        setTimeout(() => {
-          if (this.ws?.readyState !== WebSocket.OPEN) {
-            reject({ success: false, error: 'Connection timeout' });
-          }
-        }, 10000);
-      });
+      return result;
     } catch (error) {
       this.log('error', 'Failed to connect to bridge', undefined, error);
       return { success: false, error: (error as Error).message };
