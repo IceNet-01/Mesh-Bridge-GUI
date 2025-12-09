@@ -584,50 +584,92 @@ class MeshtasticBridgeServer {
    * Check for updates from GitHub
    */
   async checkForUpdates() {
+    const { spawn } = await import('child_process');
+    const projectRoot = join(__dirname, '..');
+
     try {
-      // Read current version from package.json
-      const packagePath = join(__dirname, '..', 'package.json');
-      const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
-      const currentVersion = packageJson.version;
+      // Helper function to run git commands
+      const runGitCommand = (args) => {
+        return new Promise((resolve, reject) => {
+          const git = spawn('git', args, { cwd: projectRoot });
+          let stdout = '';
+          let stderr = '';
 
-      // Get latest release from GitHub
-      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge/releases/latest', {
-        headers: {
-          'User-Agent': 'Meshtastic-Bridge'
+          git.stdout.on('data', (data) => { stdout += data.toString(); });
+          git.stderr.on('data', (data) => { stderr += data.toString(); });
+
+          git.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(stderr || 'Git command failed'));
+            } else {
+              resolve(stdout.trim());
+            }
+          });
+        });
+      };
+
+      // Get current branch name
+      const currentBranch = await runGitCommand(['branch', '--show-current']);
+
+      // Get current commit hash
+      const currentCommit = await runGitCommand(['rev-parse', 'HEAD']);
+      const currentCommitShort = currentCommit.substring(0, 7);
+
+      // Get current commit message
+      const currentCommitMsg = await runGitCommand(['log', '-1', '--pretty=%s']);
+
+      // Get current commit date
+      const currentCommitDate = await runGitCommand(['log', '-1', '--pretty=%ci']);
+
+      // Fetch latest from origin (don't error if it fails - might be offline)
+      try {
+        await runGitCommand(['fetch', 'origin', 'main']);
+      } catch (fetchError) {
+        console.warn('⚠️ Could not fetch from origin:', fetchError.message);
+      }
+
+      // Get main branch commit hash
+      const mainCommit = await runGitCommand(['rev-parse', 'origin/main']);
+      const mainCommitShort = mainCommit.substring(0, 7);
+
+      // Get main branch commit message
+      const mainCommitMsg = await runGitCommand(['log', 'origin/main', '-1', '--pretty=%s']);
+
+      // Get main branch commit date
+      const mainCommitDate = await runGitCommand(['log', 'origin/main', '-1', '--pretty=%ci']);
+
+      // Check if update is available (current commit != main commit)
+      const updateAvailable = currentCommit !== mainCommit;
+
+      // Get number of commits behind
+      let commitsBehind = 0;
+      if (updateAvailable) {
+        try {
+          const revList = await runGitCommand(['rev-list', '--count', `HEAD..origin/main`]);
+          commitsBehind = parseInt(revList) || 0;
+        } catch (e) {
+          // If this fails, local might be ahead or diverged
+          commitsBehind = 0;
         }
-      });
-
-      if (!response.ok) {
-        throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
       }
-
-      const release = await response.json();
-
-      if (release.message) {
-        // GitHub API error (e.g., rate limit, not found)
-        throw new Error(`GitHub API error: ${release.message}`);
-      }
-
-      // Parse version, removing 'v' prefix and any suffix like '-alpha'
-      let latestVersion = release.tag_name?.replace('v', '') || release.name?.replace('v', '') || currentVersion;
-
-      // Remove any suffix like '-alpha', '-beta', etc.
-      latestVersion = latestVersion.split('-')[0];
-
-      // Normalize current version (remove leading 0. if present for comparison)
-      const normalizedCurrent = currentVersion.startsWith('0.') ? currentVersion.substring(2) : currentVersion;
-      const normalizedLatest = latestVersion.startsWith('0.') ? latestVersion.substring(2) : latestVersion;
-
-      // Compare versions
-      const updateAvailable = this.compareVersions(normalizedLatest, normalizedCurrent) > 0;
 
       return {
-        current: currentVersion,
-        latest: release.tag_name || latestVersion,
+        current: `${currentBranch}@${currentCommitShort}`,
+        currentCommit: currentCommit,
+        currentBranch: currentBranch,
+        currentCommitMsg: currentCommitMsg,
+        currentCommitDate: currentCommitDate,
+        latest: `main@${mainCommitShort}`,
+        latestCommit: mainCommit,
+        latestCommitMsg: mainCommitMsg,
+        latestCommitDate: mainCommitDate,
         updateAvailable,
-        releaseUrl: release.html_url,
-        publishedAt: release.published_at,
-        releaseNotes: release.body || 'No release notes available.'
+        commitsBehind,
+        releaseUrl: 'https://github.com/IceNet-01/Mesh-Bridge',
+        publishedAt: mainCommitDate,
+        releaseNotes: updateAvailable
+          ? `${commitsBehind} commit(s) behind main branch.\n\nLatest on main:\n${mainCommitMsg}`
+          : 'Your local repository is up to date with main branch.'
       };
     } catch (error) {
       console.error('❌ Error checking for updates:', error);

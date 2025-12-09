@@ -55,7 +55,23 @@ export function SystemUpdate() {
       setVersionInfo(data);
     } catch (error) {
       console.error('Failed to check for updates:', error);
-      alert(`Failed to check for updates: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the bridge server is running.`);
+
+      // Check if it's a connection error with port 8080 (old default)
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || '';
+      const isUsingOldPort = bridgeUrl.includes(':8080');
+
+      let errorMessage = `Failed to check for updates: ${error instanceof Error ? error.message : 'Unknown error'}\n\n`;
+
+      if (isUsingOldPort) {
+        errorMessage += '⚠️ You may be using an old bridge server URL (port 8080).\n\n';
+        errorMessage += 'The bridge server now uses port 8888 by default.\n\n';
+        errorMessage += 'Fix: Go to Settings → Bridge Server and update the URL to ws://localhost:8888\n';
+        errorMessage += 'Or clear your browser cache and reload the page.';
+      } else {
+        errorMessage += 'Make sure the bridge server is running on the correct port.';
+      }
+
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
