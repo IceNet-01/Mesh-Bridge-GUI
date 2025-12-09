@@ -28,7 +28,7 @@ const OllamaInstaller: React.FC = () => {
     setLoading(true);
 
     try {
-      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8080';
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8888';
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/ollama/status`);
@@ -62,7 +62,7 @@ const OllamaInstaller: React.FC = () => {
     setProgress([]);
 
     try {
-      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8080';
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8888';
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/ollama/install`, {
@@ -131,7 +131,7 @@ const OllamaInstaller: React.FC = () => {
     setProgress([]);
 
     try {
-      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8080';
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8888';
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/ollama/pull-model`, {

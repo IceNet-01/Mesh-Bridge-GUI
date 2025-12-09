@@ -37,7 +37,7 @@ export function SystemUpdate() {
     setLoading(true);
     try {
       // Get bridge server URL from localStorage
-      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8080';
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8888';
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/version-check`);
@@ -76,7 +76,7 @@ export function SystemUpdate() {
 
     try {
       // Get bridge server URL from localStorage
-      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8080';
+      const bridgeUrl = localStorage.getItem('bridge-server-url') || 'ws://localhost:8888';
       const httpUrl = bridgeUrl.replace('ws://', 'http://');
 
       const response = await fetch(`${httpUrl}/api/update`, {

@@ -171,7 +171,7 @@ export class WebSocketRadioManager {
       return url;
     }
 
-    // Default to localhost - will try port 8888 (less commonly used)
+    // Default to localhost on port 8888 (standard bridge server port)
     console.log(`[WebSocketManager] Using default bridge URL: ws://localhost:8888`);
     return 'ws://localhost:8888';
   }

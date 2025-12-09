@@ -49,7 +49,7 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
               value={bridgeUrl}
               onChange={(e) => setBridgeUrl(e.target.value)}
               className="input w-full font-mono"
-              placeholder="ws://192.168.1.100:8080"
+              placeholder="ws://192.168.1.100:8888"
             />
             <p className="text-xs text-slate-500 mt-1">
               Format: ws://hostname:port or ws://ip-address:port
@@ -64,8 +64,8 @@ export function BridgeServerSettings({ onSave }: BridgeServerSettingsProps) {
               <div className="text-sm text-blue-300">
                 <strong className="font-semibold">Network Access:</strong>
                 <ul className="mt-2 space-y-1 list-disc list-inside">
-                  <li>For local access: <code className="text-blue-200 bg-blue-500/20 px-1 rounded">ws://localhost:8080</code></li>
-                  <li>For LAN access from other devices: <code className="text-blue-200 bg-blue-500/20 px-1 rounded">ws://192.168.x.x:8080</code></li>
+                  <li>For local access: <code className="text-blue-200 bg-blue-500/20 px-1 rounded">ws://localhost:8888</code></li>
+                  <li>For LAN access from other devices: <code className="text-blue-200 bg-blue-500/20 px-1 rounded">ws://192.168.x.x:8888</code></li>
                   <li>Replace IP with your bridge server's LAN IP address</li>
                   <li>Find bridge server IP by running <code className="text-blue-200 bg-blue-500/20 px-1 rounded">hostname -I</code> on the server</li>
                 </ul>
@@ -159,9 +159,9 @@ function getDefaultBridgeUrl(): string {
 
   // If accessed via IP address (not localhost/127.0.0.1), use that IP for bridge
   if (hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '') {
-    return `ws://${hostname}:8080`;
+    return `ws://${hostname}:8888`;
   }
 
   // Default to localhost
-  return 'ws://localhost:8080';
+  return 'ws://localhost:8888';
 }
