@@ -201,28 +201,28 @@ npm run start
 
 Open your browser to **http://localhost:5173**
 
-### Run as System Service (Linux)
+### Run as System Service (Linux) - RECOMMENDED FOR PRODUCTION
 
 Install as a permanent service that starts on boot:
 
 ```bash
-# Build the application first
-npm run build
-
-# Install and enable the service (requires sudo)
-sudo ./install-service.sh
+# Run the production installation script
+bash scripts/install.sh
 ```
 
 The installation script will:
+- ✅ Install dependencies
+- ✅ Configure port (default: 8888, less commonly used to avoid conflicts)
+- ✅ Build production frontend
 - ✅ Create systemd service file
 - ✅ Enable auto-start on boot
 - ✅ Start the service immediately
-- ✅ Display service status and logs
+- ✅ Display service status and access URL
 
 **Access the Interface:**
-- **Locally**: http://localhost:8080
-- **On LAN**: http://YOUR_LOCAL_IP:8080 (shown during startup)
-- **Example**: http://192.168.1.100:8080
+- **Locally**: http://localhost:8888 (or your configured port)
+- **On LAN**: http://YOUR_LOCAL_IP:8888 (shown during startup)
+- **Example**: http://192.168.1.100:8888
 
 The server automatically binds to `0.0.0.0`, making it accessible from any device on your local network!
 
@@ -235,20 +235,26 @@ sudo systemctl status mesh-bridge     # Check status
 sudo journalctl -u mesh-bridge -f     # View live logs
 ```
 
+**Reconfigure Port:**
+```bash
+bash scripts/configure-port.sh        # Change port and restart
+```
+
 **Uninstall Service:**
 ```bash
-sudo ./uninstall-service.sh
+bash scripts/uninstall.sh
 ```
 
 Benefits:
 - ✅ Starts automatically on system boot
 - ✅ Auto-restarts if it crashes (10 second delay)
 - ✅ Radio connections persist even when browser is closed
-- ✅ Single port (8080) for both WebSocket and web UI
+- ✅ Intelligent port conflict handling (automatically finds available port)
+- ✅ Default port 8888 avoids conflicts with common dev servers
 - ✅ Accessible on LAN for remote access
-- ✅ Automatic port cleanup on startup
 - ✅ Security hardening (NoNewPrivileges, PrivateTmp)
 - ✅ All settings persist across restarts
+- ✅ Production-optimized build
 
 ### Production Build (Manual)
 

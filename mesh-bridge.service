@@ -1,26 +1,35 @@
 [Unit]
-Description=Mesh Bridge - Meshtastic Relay Station
-Documentation=https://github.com/IceNet-01/Mesh-Bridge-GUI
-After=network-online.target
-Wants=network-online.target
+Description=Meshtastic Bridge Server
+Documentation=https://github.com/IceNet-01/Mesh-Bridge
+After=network.target
 
 [Service]
 Type=simple
-User=%USER%
-WorkingDirectory=%INSTALL_DIR%
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run bridge
+User=mesh
+WorkingDirectory=/home/mesh/Mesh-Bridge-GUI
+Environment="NODE_ENV=production"
+Environment="PATH=/home/mesh/.nvm/versions/node/v24.11.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/mesh/.nvm/versions/node/v24.11.1/bin/node bridge-server/index.mjs
 Restart=on-failure
-RestartSec=10s
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=mesh-bridge
 
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/mesh/Mesh-Bridge-GUI
+ReadWritePaths=/run/user/1000
 
-# Resource limits
-LimitNOFILE=65536
+# Allow access to serial devices
+SupplementaryGroups=dialout
+DeviceAllow=/dev/ttyACM0 rw
+DeviceAllow=/dev/ttyACM1 rw
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
 
 [Install]
 WantedBy=multi-user.target
