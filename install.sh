@@ -12,22 +12,22 @@ echo ""
 
 # Function to install Node.js using nvm
 install_nodejs() {
-    echo "Installing Node.js 20 LTS..."
+    echo "Installing Node.js 22 LTS..."
 
     # Install nvm if not present
     if ! command -v nvm &> /dev/null; then
         echo "Installing nvm (Node Version Manager)..."
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 
         # Load nvm
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     fi
 
-    # Install Node.js LTS
-    nvm install 20
-    nvm use 20
-    nvm alias default 20
+    # Install Node.js 22 LTS
+    nvm install 22
+    nvm use 22
+    nvm alias default 22
 
     echo "✓ Node.js $(node -v) installed successfully"
 }
@@ -36,21 +36,21 @@ install_nodejs() {
 if ! command -v node &> /dev/null; then
     echo "⚠️  Node.js is not installed"
     echo ""
-    read -p "Would you like to install Node.js 20 LTS automatically? (yes/no): " -r
+    read -p "Would you like to install Node.js 22 LTS automatically? (yes/no): " -r
     echo ""
 
     if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
         install_nodejs
     else
-        echo "❌ Node.js is required. Please install Node.js 18+ from https://nodejs.org/"
+        echo "❌ Node.js is required. Please install Node.js 20+ from https://nodejs.org/"
         exit 1
     fi
 else
     NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        echo "⚠️  Node.js version must be 18 or higher (current: $(node -v))"
+    if [ "$NODE_VERSION" -lt 20 ]; then
+        echo "⚠️  Node.js version must be 20 or higher (current: $(node -v))"
         echo ""
-        read -p "Would you like to upgrade to Node.js 20 LTS? (yes/no): " -r
+        read -p "Would you like to upgrade to Node.js 22 LTS? (yes/no): " -r
         echo ""
 
         if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then

@@ -31,15 +31,60 @@ PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 echo -e "${GREEN}Project directory: ${PROJECT_DIR}${NC}"
 echo ""
 
+# Function to install Node.js using nvm
+install_nodejs() {
+    echo -e "${BLUE}Installing Node.js 22 LTS...${NC}"
+
+    # Install nvm if not present
+    if ! command -v nvm &> /dev/null; then
+        echo -e "${YELLOW}Installing nvm (Node Version Manager)...${NC}"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+
+        # Load nvm
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    fi
+
+    # Install Node.js 22 LTS
+    nvm install 22
+    nvm use 22
+    nvm alias default 22
+
+    echo -e "${GREEN}✓ Node.js $(node -v) installed successfully${NC}"
+}
+
 # Step 1: Check Node.js version
 echo -e "${BLUE}[1/8]${NC} Checking Node.js installation..."
 if ! command -v node &> /dev/null; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
-    exit 1
-fi
+    echo ""
+    read -p "Would you like to install Node.js 22 LTS automatically? (yes/no): " -r
+    echo ""
 
-NODE_VERSION=$(node -v)
-echo -e "${GREEN}✓ Node.js ${NODE_VERSION} found${NC}"
+    if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        install_nodejs
+    else
+        echo -e "${RED}Node.js 20+ is required. Please install from https://nodejs.org/${NC}"
+        exit 1
+    fi
+else
+    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [ "$NODE_VERSION" -lt 20 ]; then
+        echo -e "${YELLOW}⚠️  Node.js version must be 20 or higher (current: $(node -v))${NC}"
+        echo ""
+        read -p "Would you like to upgrade to Node.js 22 LTS? (yes/no): " -r
+        echo ""
+
+        if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            install_nodejs
+        else
+            echo -e "${RED}Please upgrade Node.js manually from https://nodejs.org/${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}✓ Node.js $(node -v) found${NC}"
+    fi
+fi
 echo ""
 
 # Step 2: Install dependencies
