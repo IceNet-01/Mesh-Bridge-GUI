@@ -70,7 +70,7 @@ SERVICE_FILE="/etc/systemd/system/mesh-bridge.service"
 cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=Mesh Bridge - Meshtastic Relay Station
-Documentation=https://github.com/IceNet-01/Mesh-Bridge-GUI
+Documentation=https://github.com/IceNet-01/Mesh-Bridge
 After=network-online.target
 Wants=network-online.target
 

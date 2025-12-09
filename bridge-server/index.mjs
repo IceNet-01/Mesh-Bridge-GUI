@@ -591,9 +591,9 @@ class MeshtasticBridgeServer {
       const currentVersion = packageJson.version;
 
       // Get latest release from GitHub
-      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge-GUI/releases/latest', {
+      const response = await fetch('https://api.github.com/repos/IceNet-01/Mesh-Bridge/releases/latest', {
         headers: {
-          'User-Agent': 'Meshtastic-Bridge-GUI'
+          'User-Agent': 'Meshtastic-Bridge'
         }
       });
 

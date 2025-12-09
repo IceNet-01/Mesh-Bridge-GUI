@@ -185,8 +185,8 @@ A powerful **web-based communication gateway** for Meshtastic radios. Features m
 
 ```bash
 # Clone the repository
-git clone https://github.com/IceNet-01/Mesh-Bridge-GUI.git
-cd Mesh-Bridge-GUI
+git clone https://github.com/IceNet-01/Mesh-Bridge.git
+cd Mesh-Bridge
 
 # Install dependencies
 npm install
@@ -579,7 +579,7 @@ This happens if you saved settings with the masked webhook URL. Fix:
 ### Project Structure
 
 ```
-Mesh-Bridge-GUI/
+Mesh-Bridge/
 ├── bridge-server/          # Backend Node.js server
 │   ├── index.mjs          # Main server file
 │   ├── protocols/         # Radio protocol handlers
@@ -642,8 +642,8 @@ Built with:
 
 ## Support
 
-- 📧 Issues: https://github.com/IceNet-01/Mesh-Bridge-GUI/issues
-- 💬 Discussions: https://github.com/IceNet-01/Mesh-Bridge-GUI/discussions
+- 📧 Issues: https://github.com/IceNet-01/Mesh-Bridge/issues
+- 💬 Discussions: https://github.com/IceNet-01/Mesh-Bridge/discussions
 
 ---
 
