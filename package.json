@@ -30,6 +30,7 @@
     "@bufbuild/protobuf": "^2.10.1",
     "@meshtastic/core": "^2.6.7",
     "@meshtastic/protobufs": "^2.7.8",
+    "@meshtastic/transport-http": "^0.2.5",
     "@meshtastic/transport-node-serial": "^0.0.2",
     "@types/leaflet": "^1.9.21",
     "buffer": "^6.0.3",

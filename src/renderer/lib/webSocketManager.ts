@@ -853,8 +853,11 @@ export class WebSocketRadioManager {
 
   /**
    * Connect to a radio via bridge server
+   * @param portPath - Serial port path, Bluetooth address, or IP address/hostname for WiFi
+   * @param protocol - Protocol type ('meshtastic', 'bluetooth', 'wifi')
+   * @param options - Additional options (e.g., { useTLS: true } for WiFi)
    */
-  async connectRadio(portPath: string, protocol: RadioProtocol = 'meshtastic'): Promise<{ success: boolean; radioId?: string; error?: string }> {
+  async connectRadio(portPath: string, protocol: RadioProtocol = 'meshtastic', options: Record<string, unknown> = {}): Promise<{ success: boolean; radioId?: string; error?: string }> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return { success: false, error: 'Not connected to bridge server' };
     }
@@ -883,7 +886,8 @@ export class WebSocketRadioManager {
       this.ws!.send(JSON.stringify({
         type: 'connect',
         port: portPath,
-        protocol: protocol
+        protocol: protocol,
+        options: options
       }));
     });
   }

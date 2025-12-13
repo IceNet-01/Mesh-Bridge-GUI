@@ -1379,7 +1379,7 @@ class MeshtasticBridgeServer {
           break;
 
         case 'connect':
-          await this.connectRadio(ws, message.port, message.protocol || 'meshtastic');
+          await this.connectRadio(ws, message.port, message.protocol || 'meshtastic', message.options || {});
           break;
 
         case 'disconnect':
@@ -1733,10 +1733,11 @@ class MeshtasticBridgeServer {
   /**
    * Connect to a Meshtastic radio using modern @meshtastic libraries
    * @param {WebSocket} ws - Optional WebSocket client to notify (null for headless mode)
-   * @param {string} portPath - Serial port path or Bluetooth device address
-   * @param {string} protocol - Protocol type (default: 'meshtastic')
+   * @param {string} portPath - Serial port path, Bluetooth device address, or IP address/hostname for WiFi
+   * @param {string} protocol - Protocol type ('meshtastic', 'bluetooth', 'wifi')
+   * @param {object} options - Protocol-specific options (e.g., { useTLS: true } for WiFi)
    */
-  async connectRadio(ws, portPath, protocol = 'meshtastic') {
+  async connectRadio(ws, portPath, protocol = 'meshtastic', options = {}) {
     try {
       console.log(`📻 Connecting to radio on ${portPath} using ${protocol} protocol...`);
 
@@ -1753,8 +1754,8 @@ class MeshtasticBridgeServer {
         }
       }
 
-      // Create protocol handler
-      const protocolHandler = createProtocol(protocol, radioId, portPath);
+      // Create protocol handler with options
+      const protocolHandler = createProtocol(protocol, radioId, portPath, options);
 
       // Subscribe to protocol events
       protocolHandler.on('message', (packet) => {

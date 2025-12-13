@@ -40,7 +40,7 @@ interface AppStore {
   // Actions
   initialize: () => void;
   connectToBridge: () => Promise<{ success: boolean; error?: string }>;
-  connectRadio: (port: string, protocol: string) => Promise<{ success: boolean; error?: string }>;
+  connectRadio: (port: string, protocol: string, options?: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
   scanAndConnectRadio: () => Promise<void>;
   scanBluetoothDevices: (onDeviceFound?: (device: any) => void) => Promise<any[]>;
   autoScanForNewRadios: () => Promise<void>;
@@ -303,8 +303,8 @@ export const useStore = create<AppStore>((set, get) => {
       return result;
     },
 
-    connectRadio: async (port: string, protocol: string) => {
-      const result = await manager.connectRadio(port, protocol as any);
+    connectRadio: async (port: string, protocol: string, options: Record<string, unknown> = {}) => {
+      const result = await manager.connectRadio(port, protocol as any, options);
       return result;
     },
 
